@@ -1,0 +1,27 @@
+{
+  "name": "berean",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A Darby Bible reader: Rust API + Expo (React Native) client for iOS, Android and web",
+  "scripts": {
+    "data": "cd rs && PATH=$HOME/.cargo/bin:$PATH BEREAN_PUBLIC=../client/public/bible cargo run --release --bin berean-build-data -- ../data",
+    "dev": "cd client && npx expo start --web",
+    "dev:api": "cd rs && PATH=$HOME/.cargo/bin:$PATH cargo run --release --bin berean",
+    "build": "node scripts/credits-html.mjs && cd client && npx expo export --platform web --clear && node scripts/make-sw.mjs dist && cd .. && node scripts/precompress.mjs client/dist",
+    "build:server": "cd rs && PATH=$HOME/.cargo/bin:$PATH cargo build --release",
+    "release": "npm run build && npm run build:server",
+    "test": "vitest run",
+    "shot": "node scripts/shot.mjs",
+    "postinstall": "cd client && npm install --no-audit --no-fund",
+    "typecheck": "cd client && npx tsc --noEmit",
+    "ministry": "node --import ./tools/ts-resolve.mjs tools/ministry_index.ts data"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "playwright": "^1.63.0",
+    "vitest": "^5.0.1",
+    "typescript": "^7.0.2"
+  },
+  "license": "AGPL-3.0-only"
+}

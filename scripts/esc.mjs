@@ -1,0 +1,11 @@
+import { chromium } from 'playwright'
+const browser = await chromium.launch(); const page = await (await browser.newContext()).newPage()
+await page.goto('http://127.0.0.1:5173/read/1/1', { waitUntil: 'networkidle' })
+await page.click('text=Aa'); await page.waitForTimeout(800)
+await page.click('.reader .w.has-s >> nth=1'); await page.waitForTimeout(800)
+console.log('before', await page.locator('.popover').count(), await page.evaluate(() => document.activeElement?.tagName))
+await page.keyboard.press('Escape'); await page.waitForTimeout(300)
+console.log('after esc', await page.locator('.popover').count(), (await page.locator('.popover').textContent().catch(() => ''))?.slice(0, 60))
+await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))); await page.waitForTimeout(300)
+console.log('after synthetic', await page.locator('.popover').count())
+await browser.close()

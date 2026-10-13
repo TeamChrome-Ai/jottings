@@ -1,0 +1,4 @@
+# One term or phrase per line, matched without regard to case, on word boundaries. A hit HIDES the content at once
+# and queues it for the admin. A placeholder: keep your own list short and unambiguous.
+child porn
+child pornography

@@ -1,0 +1,25 @@
+[Unit]
+Description=berean: the app's API server (Rust)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=berean
+Group=berean
+Environment=BEREAN_PROD=1
+Environment=BEREAN_DATA=/var/lib/berean
+Environment=PORT=8787
+Environment=RUST_LOG=berean=info,tower_http=warn
+# secrets and optional settings (ANTHROPIC_API_KEY, BEREAN_MOD_WEBHOOK, BEREAN_GOOGLE_CLIENT_IDS) live here, root-only
+EnvironmentFile=-/etc/berean.env
+ExecStart=/usr/local/bin/berean
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/berean
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

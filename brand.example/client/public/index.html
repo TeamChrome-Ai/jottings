@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
+    <meta name="description" content="Reader: Darby's New Translation with footnotes, offline, with search, outlines, streaks and reading groups." />
+    <meta name="theme-color" content="#faf7f2" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <title>%WEB_TITLE%</title>
+    <!-- Literata, the reading face, in before the first text is drawn: preloaded, declared here under the family
+         name the app uses (theme.ts WEB_SERIF) and asked for at once by the script below. font-display: block, not
+         swap: the app draws nothing until its bundle has run, long after these 18 KB files are in, so block never
+         shows blank text in practice and can never show the browser's serif or re-flow the page as swap would. -->
+    <link rel="preload" href="/fonts/Literata-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/Literata-Bold.woff2" as="font" type="font/woff2" crossorigin />
+    <style id="app-fonts">
+      @font-face { font-family: Literata; font-weight: 400; font-style: normal; font-display: block; src: url(/fonts/Literata-Regular.woff2) format("woff2"); }
+      @font-face { font-family: Literata; font-weight: 400; font-style: italic; font-display: block; src: url(/fonts/Literata-Italic.woff2) format("woff2"); }
+      @font-face { font-family: Literata; font-weight: 700; font-style: normal; font-display: block; src: url(/fonts/Literata-Bold.woff2) format("woff2"); }
+    </style>
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        overflow: hidden;
+        margin: 0;
+      }
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+      /* the default themes' pages until the app has drawn (Paper, Slate) */
+      html { background: #faf7f2; }
+      @media (prefers-color-scheme: dark) { html { background: #1c1917; } }
+    </style>
+    <script>
+      // the page colour of the theme last used on this device, before any script loads: no light flash in a dark theme
+      try { var bg = localStorage.getItem('berean_bg'); if (/^#[0-9a-f]{6}$/i.test(bg)) { document.documentElement.style.background = bg; document.querySelector('meta[name="theme-color"]').setAttribute('content', bg) } } catch (e) {}
+      // a declared face is only fetched and decoded once some text uses it; ask now, while the bundle is still loading
+      try { ['400', '700', 'italic 400'].forEach(function (f) { document.fonts.load(f + ' 1em Literata') }) } catch (e) {}
+    </script>
+  </head>
+
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <div id="root"></div>
+  </body>
+</html>

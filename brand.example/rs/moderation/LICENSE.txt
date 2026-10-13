@@ -1,0 +1,4 @@
+rules.json, hard_terms.txt, lexicon_en.txt, tests.json: placeholders written for this repository; no third-party
+word list is included. tools/filter_lexicon.py can fill lexicon_en.txt from the "List of Dirty, Naughty, Obscene, and
+Otherwise Bad Words" (LDNOOBW, CC BY 4.0): say so here if you do.
+URL reputation at runtime: URLhaus (abuse.ch, CC0) and Phishing Army (phishing.army) blocklists, fetched every 12 h.

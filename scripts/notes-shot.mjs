@@ -1,0 +1,13 @@
+import { chromium } from 'playwright'
+const browser = await chromium.launch(); const ctx = await browser.newContext({ viewport: { width: 900, height: 900 } })
+const page = await ctx.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message))
+await page.goto('http://127.0.0.1:8787/read/43/3', { waitUntil: 'networkidle' })
+await page.click('button[title="Show all footnotes"]'); await page.waitForTimeout(400)
+await page.screenshot({ path: '/tmp/shot-notes-all.png' })
+await page.click('button[title="Show all footnotes"]'); await page.click('.nc >> nth=2'); await page.waitForTimeout(300)
+await page.screenshot({ path: '/tmp/shot-notes-one.png' })
+await page.click('text=A+'); await page.click('text=A+'); await page.waitForTimeout(200)
+const size = await page.evaluate(() => getComputedStyle(document.querySelector('.reader')).fontSize)
+await page.goto('http://127.0.0.1:8787/login', { waitUntil: 'networkidle' }); await page.screenshot({ path: '/tmp/shot-login.png' })
+console.log(JSON.stringify({ size, errors }))
+await browser.close()

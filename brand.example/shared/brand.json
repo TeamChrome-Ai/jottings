@@ -1,0 +1,21 @@
+{
+  "name": "Reader",
+  "fullName": "Reader – Darby Bible",
+  "storeName": "Reader - Darby Bible",
+  "slug": "reader",
+  "description": "Reader: Darby's New Translation with footnotes, offline, with search, outlines, streaks and reading groups.",
+  "noun": { "one": "outline", "many": "outlines", "verb": "Add" },
+  "site": "https://example.org",
+  "host": "example.org",
+  "extraHosts": [],
+  "scheme": "reader",
+  "extraSchemes": ["org.example.reader"],
+  "androidPackage": "org.example.reader",
+  "iosBundleId": "org.example.reader",
+  "androidCertFingerprints": [],
+  "owner": "Example Owner",
+  "ownerShort": "Example Owner",
+  "contactEmail": "hello@example.org",
+  "copyrightYear": 2026,
+  "googleClientIds": {"web": "", "android": ""}
+}

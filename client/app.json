@@ -1,0 +1,181 @@
+{
+  "expo": {
+    "version": "1.0.4",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#fafaf9"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#fafaf9",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "versionCode": 53,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.WRITE_CONTACTS"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "pathPrefix": "/groups"
+            },
+            {
+              "scheme": "https",
+              "pathPrefix": "/friends"
+            },
+            {
+              "scheme": "https",
+              "pathPrefix": "/read"
+            },
+            {
+              "scheme": "https",
+              "pathPrefix": "/outlines"
+            },
+            {
+              "scheme": "https",
+              "pathPrefix": "/u/"
+            },
+            {
+              "scheme": "https",
+              "pathPrefix": "/dictionary"
+            },
+            {
+              "scheme": "https",
+              "pathPrefix": "/companion"
+            },
+            {
+              "scheme": "https",
+              "pathPrefix": "/paths"
+            },
+            {
+              "scheme": "https",
+              "pathPrefix": "/ministry"
+            },
+            {
+              "scheme": "https",
+              "pathPrefix": "/jottings"
+            },
+            {
+              "scheme": "https",
+              "pathPrefix": "/plans"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "asyncRoutes": {
+            "web": true,
+            "default": false
+          },
+          "sitemap": false
+        }
+      ],
+      "expo-secure-store",
+      "expo-web-browser",
+      "expo-font",
+      "expo-sharing",
+      "expo-audio",
+      "expo-background-task",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#7c2d12"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
+      [
+        "expo-contacts",
+        {}
+      ],
+      "./plugins/withNetworkSecurityConfig",
+      [
+        "./plugins/withWidgets",
+        {
+          "fonts": [
+            "./assets/fonts/Literata-Regular.ttf"
+          ],
+          "widgets": [
+            {
+              "name": "VerseOfTheDay",
+              "label": "Verse of the day",
+              "description": "Today’s verse from Darby’s translation, new each day at midnight.",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "minResizeWidth": "180dp",
+              "minResizeHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "previewImage": "./assets/widgets/verse.png"
+            },
+            {
+              "name": "ReadingStreak",
+              "label": "Reading streak",
+              "description": "Your daily reading streak and this week’s reading days.",
+              "minWidth": "110dp",
+              "minHeight": "110dp",
+              "minResizeWidth": "110dp",
+              "minResizeHeight": "40dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "previewImage": "./assets/widgets/streak.png"
+            }
+          ]
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "apiBaseDev": {
+        "android": "http://10.0.2.2:8787",
+        "ios": "http://localhost:8787",
+        "web": "http://localhost:8787"
+      }
+    }
+  }
+}

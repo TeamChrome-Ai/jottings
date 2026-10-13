@@ -1,0 +1,156 @@
+# Baseline Profile for {{name}} ({{androidPackage}}), written by hand: the classes and methods on the cold-start path
+# from Application.onCreate to the first Fabric frame, so ART compiles them ahead of time at install instead of
+# interpreting them on the first launches. scripts/android-signing.mjs copies this file to
+# android/app/src/main/baseline-prof.txt, which AGP reads for the app module (next to AndroidManifest.xml), merges with
+# the profiles the androidx and kotlinx libraries ship, expands the wildcards against the program classes, lets R8
+# rewrite it to the obfuscated names, and compiles it to assets/dexopt/baseline.prof(m) (in an AAB:
+# BUNDLE-METADATA/com.android.tools.build.profiles/). androidx.profileinstaller installs it on devices whose store
+# does not (sideloads, Android 7-8); Play installs it from the bundle. See docs/ANDROID_RELEASE.md.
+#
+# Rule syntax: [FLAGS]Lpackage/Class;->method(args)return for methods, Lpackage/Class; for classes.
+# Flags: H hot, S startup, P post-startup. Wildcards: * any characters but '/', ** any characters, ? one character.
+# Checked 2026-09-27 with AGP 8.12's own profile compiler (profgen) against the program of versionCode 28 (RN 0.86.3,
+# expo 57, reanimated 4.5.1, worklets 0.10.1, screens 4.26.2, safe-area-context 5.7.0, svg 15.15.4, gesture-handler
+# 2.32.0, async-storage 2.2.0, android-widget 0.22.1): every line parses and every rule matches classes, before R8
+# and after it (about 2,650 classes and 25,000 methods once minified, on top of the libraries' own profiles).
+#
+# Not measured: a profile generated on a device with Macrobenchmark and the androidx.baselineprofile Gradle plugin
+# would be exact (and could add a startup profile for DEX layout); this one is the startup path as read from the
+# sources, and the JavaScript itself runs as Hermes bytecode, which the profile does not touch.
+
+# The app: Application.onCreate (SoLoader, new architecture entry point, expo lifecycle) and the activity.
+# (BuildConfig is left out: its constants are inlined and R8 removes the class.)
+HSPL{{androidPackagePath}}/MainApplication**->**(**)**
+HSPL{{androidPackagePath}}/MainActivity**->**(**)**
+L{{androidPackagePath}}/MainApplication**;
+L{{androidPackagePath}}/MainActivity**;
+
+# React Native: entry point and package list, ReactHost / ReactActivity / ReactDelegate, the package helpers.
+HSPLcom/facebook/react/*;->**(**)**
+Lcom/facebook/react/*;
+# Bridgeless runtime: ReactHostImpl, ReactInstance, BridgelessReactContext, ReactSurfaceImpl / ReactSurfaceView,
+# HermesInstance, JSRuntimeFactory, task executors.
+HSPLcom/facebook/react/runtime/**;->**(**)**
+Lcom/facebook/react/runtime/**;
+# Defaults: DefaultNewArchitectureEntryPoint, DefaultReactHost, DefaultTurboModuleManagerDelegate,
+# DefaultComponentsRegistry, DefaultReactActivityDelegate.
+HSPLcom/facebook/react/defaults/**;->**(**)**
+Lcom/facebook/react/defaults/**;
+# Fabric: FabricUIManager, its binding, mounting manager, surface mounting, events.
+HSPLcom/facebook/react/fabric/**;->**(**)**
+Lcom/facebook/react/fabric/**;
+# TurboModule manager and interop, feature flags (read on the first line of startup).
+HSPLcom/facebook/react/internal/**;->**(**)**
+Lcom/facebook/react/internal/**;
+HSPLcom/facebook/react/turbomodule/**;->**(**)**
+Lcom/facebook/react/turbomodule/**;
+# Bridge types every module call and event goes through (ReadableNativeMap, WritableNativeArray, Arguments,
+# JSBundleLoader, message queue threads, ReactContext).
+HSPLcom/facebook/react/bridge/**;->**(**)**
+Lcom/facebook/react/bridge/**;
+HSPLcom/facebook/react/common/**;->**(**)**
+Lcom/facebook/react/common/**;
+HSPLcom/facebook/react/module/**;->**(**)**
+Lcom/facebook/react/module/**;
+# View layer used on the first screen: UIManager support, events, style, View / Text / Image / ScrollView, the
+# codegen'd view manager delegates (core and library components).
+HSPLcom/facebook/react/uimanager/**;->**(**)**
+Lcom/facebook/react/uimanager/**;
+HSPLcom/facebook/react/viewmanagers/**;->**(**)**
+Lcom/facebook/react/viewmanagers/**;
+HSPLcom/facebook/react/views/view/**;->**(**)**
+Lcom/facebook/react/views/view/**;
+HSPLcom/facebook/react/views/text/**;->**(**)**
+Lcom/facebook/react/views/text/**;
+HSPLcom/facebook/react/views/image/**;->**(**)**
+Lcom/facebook/react/views/image/**;
+HSPLcom/facebook/react/views/imagehelper/**;->**(**)**
+HSPLcom/facebook/react/views/scroll/**;->**(**)**
+Lcom/facebook/react/views/scroll/**;
+HSPLcom/facebook/react/animated/**;->**(**)**
+HSPLcom/facebook/react/touch/**;->**(**)**
+# Core modules started with the instance: timers and choreographer, device info, app state, appearance, I18n,
+# status bar, networking and blob (fetch), Fresco initialisation, the release dev-support stub.
+HSPLcom/facebook/react/modules/core/**;->**(**)**
+Lcom/facebook/react/modules/core/**;
+HSPLcom/facebook/react/modules/deviceinfo/**;->**(**)**
+HSPLcom/facebook/react/modules/appstate/**;->**(**)**
+HSPLcom/facebook/react/modules/appearance/**;->**(**)**
+HSPLcom/facebook/react/modules/i18nmanager/**;->**(**)**
+HSPLcom/facebook/react/modules/systeminfo/**;->**(**)**
+HSPLcom/facebook/react/modules/statusbar/**;->**(**)**
+HSPLcom/facebook/react/modules/network/**;->**(**)**
+HSPLcom/facebook/react/modules/blob/**;->**(**)**
+HSPLcom/facebook/react/modules/fresco/**;->**(**)**
+HSPLcom/facebook/react/modules/image/**;->**(**)**
+HSPLcom/facebook/react/devsupport/ReleaseDevSupportManager;->**(**)**
+HSPLcom/facebook/react/soloader/**;->**(**)**
+
+# Native loading and JNI glue: SoLoader, fbjni, Yoga, Hermes.
+HSPLcom/facebook/soloader/**;->**(**)**
+Lcom/facebook/soloader/**;
+HSPLcom/facebook/jni/**;->**(**)**
+Lcom/facebook/jni/**;
+HSPLcom/facebook/yoga/**;->**(**)**
+Lcom/facebook/yoga/**;
+HSPLcom/facebook/hermes/**;->**(**)**
+Lcom/facebook/hermes/**;
+
+# Expo: the host factory and activity delegate wrapper, lifecycle dispatcher, generated module list, and the
+# expo-modules-core runtime that registers every module at startup (AppContext, module registry and holders,
+# JSI objects, function and type converters, view managers, events, shared objects, services).
+HSPLexpo/modules/*;->**(**)**
+Lexpo/modules/*;
+HSPLexpo/modules/kotlin/**;->**(**)**
+Lexpo/modules/kotlin/**;
+HSPLexpo/modules/adapters/**;->**(**)**
+Lexpo/modules/adapters/**;
+HSPLexpo/modules/core/**;->**(**)**
+Lexpo/modules/core/**;
+# Every expo module's definition() runs when the module registry is built at startup (ModuleHolder), which also
+# creates the function and property objects of its DSL; then the modules the first screen uses: splash screen,
+# constants, fonts (useFonts in app/_layout), file system (chapterStore and the search index, new API only, not
+# legacy/), asset, linking, router, status bar, keep awake.
+HSPLexpo/modules/**Module;->**(**)**
+Lexpo/modules/**Module;
+HSPLexpo/modules/**Module$definition**->**(**)**
+HSPLexpo/modules/splashscreen/**;->**(**)**
+HSPLexpo/modules/constants/**;->**(**)**
+HSPLexpo/modules/font/**;->**(**)**
+HSPLexpo/modules/filesystem/*;->**(**)**
+HSPLexpo/modules/filesystem/fsops/**;->**(**)**
+HSPLexpo/modules/filesystem/unifiedfile/**;->**(**)**
+HSPLexpo/modules/asset/**;->**(**)**
+HSPLexpo/modules/linking/**;->**(**)**
+HSPLexpo/modules/router/**;->**(**)**
+HSPLexpo/modules/statusbar/**;->**(**)**
+HSPLexpo/modules/keepawake/**;->**(**)**
+
+# Libraries on the first screen: react-native-screens (native stack), safe-area-context, react-native-svg
+# (icons), reanimated and worklets (JSI install, UI-thread runtime), gesture handler (root view and module),
+# async-storage (settings read at startup).
+HSPLcom/swmansion/rnscreens/*;->**(**)**
+Lcom/swmansion/rnscreens/*;
+HSPLcom/swmansion/rnscreens/utils/**;->**(**)**
+HSPLcom/swmansion/rnscreens/events/**;->**(**)**
+HSPLcom/th3rdwave/safeareacontext/**;->**(**)**
+Lcom/th3rdwave/safeareacontext/**;
+HSPLcom/horcrux/svg/**;->**(**)**
+Lcom/horcrux/svg/**;
+HSPLcom/swmansion/reanimated/**;->**(**)**
+Lcom/swmansion/reanimated/**;
+HSPLcom/swmansion/worklets/**;->**(**)**
+Lcom/swmansion/worklets/**;
+HSPLcom/swmansion/gesturehandler/*;->**(**)**
+HSPLcom/swmansion/gesturehandler/react/**;->**(**)**
+HSPLcom/swmansion/gesturehandler/core/**;->**(**)**
+Lcom/swmansion/gesturehandler/**;
+HSPLcom/reactnativecommunity/asyncstorage/**;->**(**)**
+Lcom/reactnativecommunity/asyncstorage/**;
+
+# Home-screen widgets: a widget update often starts the process cold (the midnight alarm, a reboot) and runs the
+# same React Native start-up in a headless JS task from WorkManager, then draws with react-native-android-widget.
+HSPL{{androidPackagePath}}/widget/**;->**(**)**
+L{{androidPackagePath}}/widget/**;
+HSPLcom/reactnativeandroidwidget/**;->**(**)**
+Lcom/reactnativeandroidwidget/**;

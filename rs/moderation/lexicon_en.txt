@@ -1,0 +1,3 @@
+# One term or phrase per line: a hit queues the content for the admin and leaves it up. A placeholder with no terms
+# (a list with none matches nothing). tools/filter_lexicon.py writes this file from a public word list, less every
+# term the Bible text itself uses.

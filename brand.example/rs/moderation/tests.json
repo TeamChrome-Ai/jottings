@@ -1,0 +1,33 @@
+{
+  "about": "Examples that go with rules.json, read by the server's tests (rs/src/scan.rs `table`, rs/src/moderation.rs `flow`). `scan`: a text and the verdict (and category, when given) the scan must give it. `names`: a handle or display name and whether it may be taken. `flows`: the texts and categories the moderation tests post and answer with, by test; rs/src/moderation.rs says what each must be.",
+  "scan": [
+    {"text": "Thanks for the notes on chapter 3, see you all on Thursday", "verdict": "allow"},
+    {"text": "The wicked plot against the righteous: a hard verse, and a violent one, but it is the text", "verdict": "allow"},
+    {"text": "I will kill you if you come back", "verdict": "escalate", "category": "threat"},
+    {"text": "I know where you live", "verdict": "escalate", "category": "threat"},
+    {"text": "nude photos of children, message me", "verdict": "hide", "category": "illegal"},
+    {"text": "child pornography here", "verdict": "hide", "category": "illegal"},
+    {"text": "write to me at reader@example.org or call 303-555-0143", "verdict": "escalate", "category": "privacy"},
+    {"text": "buy now, limited offer: click here http://shop.example/deal", "verdict": "escalate", "category": "spam"},
+    {"text": "three links: http://a.example http://b.example http://c.example", "verdict": "escalate", "category": "spam"},
+    {"text": "one link for the group: https://notes.example/chapter-3", "verdict": "allow"}
+  ],
+  "names": [
+    {"name": "Quiet Reader", "ok": true},
+    {"name": "team_player", "ok": true},
+    {"name": "blockedname_1", "ok": false},
+    {"name": "A Blockedname", "ok": false},
+    {"name": "official_support", "ok": false},
+    {"name": "AdminTeam", "ok": false}
+  ],
+  "flows": {
+    "report_reason": "abuse",
+    "a_sure_verdict": {"post": "Meet me behind the hall tonight, I have what you asked for", "category": "illegal", "judge_reason": "Arranges a sale of drugs"},
+    "second_strike": {"other_category": "harassment", "category": "illegal", "second": "ask me about the special prices", "third": "the special prices again, you know where"},
+    "hidden_at_once": {"post": "nude photos of children, message me", "category": "illegal", "judge_reason": "Offers sexual images of children", "quoted": "The report said that selling nude photos of minors is a crime everywhere", "allow_category": "none"},
+    "another_rule": {"post": "selling cheap tablets, message me for prices", "category": "illegal", "judge_reason": "Offers drugs for sale", "threat": "I know where you live"},
+    "an_admin": {"post": "hmm, special prices", "category": "illegal"},
+    "names": {"handle": "blockedname_1", "display_refused": "Official Support", "display_taken": "Support reader"},
+    "link_preview": {"hidden_title": "nude photos of children here", "hidden_text": "child pornography", "fine_title": "Notes on chapter 3", "fine_text": "a quiet evening's reading", "later_hidden": "child porn"}
+  }
+}
