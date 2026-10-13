@@ -1,18 +1,16 @@
-# The Jottings name and mark
+# Trademark
 
-The code in this repository is free software under the GNU Affero General Public License, version 3, and each release
-also becomes MIT one year after it is published (see `LICENSING.md`). You may use, change and share it on those terms.
+The code in this repository is open source. `LICENSING.md` has the terms. The brand is not part of that license.
 
-The brand is not part of that licence. "Jottings", "Jottings – Darby Bible", the app icon and the wordmark are
-© 2026 TeamChrome.AI LLC, all rights reserved, and are claimed as trademarks of TeamChrome.AI LLC.
+"Jottings", "Jottings - Darby Bible", the app icon and the wordmark are © 2026 TeamChrome.AI LLC, all rights
+reserved. TeamChrome.AI LLC claims them as trademarks.
 
-What that means in practice:
+In practice:
 
-- You may say truthfully that your work is based on, or works with, Jottings.
-- A copy or a changed version that you publish needs its own name and its own icon, and must not suggest it is
-  Jottings or that it comes from, or is endorsed by, its author.
-- The icon and wordmark artwork (`client/assets`, `client/public/icon-*.png`) may not be reused outside this project
-  without written permission.
+- You can say, truthfully, that your work is based on Jottings or works with it.
+- If you publish a copy or a changed version, give it its own name and its own icon. Don't suggest that it is
+  Jottings, or that TeamChrome.AI LLC made it or endorses it.
+- Don't reuse the Jottings icon or wordmark without written permission. The public copy of this repository ships
+  placeholder artwork in their place.
 
-The scripture text, the ministry and the other third-party material keep their own terms, listed in
-`client/src/lib/credits.ts` and on the in-app Credits screen.
+Third-party material keeps its own terms.

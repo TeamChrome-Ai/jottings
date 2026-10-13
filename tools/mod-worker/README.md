@@ -1,16 +1,23 @@
-# Report judge worker (Grok subscription, no API key)
+# Report judge worker
 
-Runs anywhere the `grok` CLI is signed in (here: the MCP host). Polls the app server every 20 s for queued
-report jobs, gets a structured verdict from Grok (`grok -p … --json-schema`), and posts it back. The rules come from
-the server with each job (the judge's instructions and the answer format, `rs/moderation/rules.json`): the worker
-holds no policy. Automatic scanning of shared content is rule-based on the server; only the hits in the categories its
-rules always send on (`judge.always`) come here, because the judge alone can ban (`ban` verdict, honoured by the server
-only for a category of `judge.may_ban` at confidence ≥ 0.85).
+This worker answers queued moderation reports with an AI model. It runs on any machine where the `grok` CLI is signed
+in, so it needs no API key.
+
+Every 20 seconds it asks the server for queued report jobs. For each job it gets a structured verdict from the model
+and posts it back. The instructions and the answer format come from the server with each job, so the worker holds no
+policy of its own. They are defined in `rs/moderation/rules.json`.
+
+The server's automatic scan handles most shared content by rule. Only reports, and hits in the categories the rules
+always send on, reach the worker. The server honors a `ban` verdict only in the categories the rules allow, and only
+at a confidence of 0.85 or more.
+
+## Run
 
 ```bash
-BDB_WORKER_TOKEN=<from /etc/berean.env on the server> node tools/mod-worker/worker.mjs   # BDB_API=<server>: default is `site` of shared/brand.json
+BDB_WORKER_TOKEN=<the server's BEREAN_MOD_WORKER_TOKEN> node tools/mod-worker/worker.mjs
 ```
 
-Installed on the MCP host as a user systemd unit (`~/.config/systemd/user/bdb-mod-worker.service`) with the token in
-`~/.config/bdb-mod-worker.env` (mode 600). If the worker is down, the server escalates queued reports to the admin
-after `BEREAN_MOD_TIMEOUT_SECS` (default 15 min), so nothing is lost.
+Set `BDB_API` to point at a different server. The default is `site` from `shared/brand.json`.
+
+If the worker is down, the server sends queued reports to the site admin after `BEREAN_MOD_TIMEOUT_SECS`. Nothing is
+lost.

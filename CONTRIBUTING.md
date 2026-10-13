@@ -1,32 +1,35 @@
 # Contributing
 
-Thank you for wanting to help. Two things to know before you send a change.
+Thanks for wanting to help. Read this first, because sending a change here has a licensing consequence.
 
-## Your change takes the project's licence, including its change to MIT
+## How your change is licensed
 
-`LICENSING.md` sets the terms: the code is AGPL-3.0-only, and each release also becomes MIT one year after it is
-published. A change you offer here is licensed the same way: AGPL-3.0-only at once, and MIT from the Change Date of
-the first release that contains it, and you cannot take that back later. If you cannot agree to both, say so
-plainly in the pull request: a change offered under the AGPL alone can still be taken in, but it is listed in
-`LICENSING.md` and keeps every release that contains it from becoming MIT as a whole, so expect it to be declined
-unless it is worth that.
+The project is AGPL-3.0-only, and each release also becomes MIT one year after it is published. `LICENSING.md` has
+the full terms.
 
-Say so in each commit by signing it off (`git commit -s`), which adds:
+Any change you send is licensed the same way. It is AGPL-3.0-only immediately, and MIT from the Change Date of the
+first release that includes it. You cannot withdraw that later.
+
+If you can only offer a change under the AGPL, say so in the pull request. We can still accept it, but it then has to
+be listed in `LICENSING.md`, and no release that contains it can become MIT as a whole. Expect us to decline unless
+the change is worth that cost.
+
+## Sign off your commits
+
+Use `git commit -s`. It adds a line like this:
 
 ```
 Signed-off-by: Your Name <you@example.org>
 ```
 
-With that line you certify the Developer Certificate of Origin 1.1 (https://developercertificate.org): the change is
-yours to give, or you have the right to pass it on under these terms.
+The sign-off certifies the Developer Certificate of Origin 1.1, published at https://developercertificate.org. It
+means the change is yours to give, or that you have the right to pass it on under these terms.
 
-## What is not open to change by pull request
+## What we don't take by pull request
 
-- The scripture text, the notes and the ministry are other people's work and are corrected only against their
-  printed sources (`data/corrections.json` shows how).
-- The name, the icon and the wordmark (`TRADEMARK.md`).
+- Changes to the name, the icon or the wordmark. See `TRADEMARK.md`.
+- Texts. This repository holds none.
 
 ## Before you send it
 
-`npm test`, `npm run typecheck`, and in `rs/` `cargo test`. `STYLE.md` describes how the code and its comments are
-written.
+Run `npm test` and `npm run typecheck`. If you have built the texts database, also run `cargo test` in `rs/`.

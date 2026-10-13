@@ -1,50 +1,67 @@
-# Jottings: the source
+# Jottings
 
-This is the code of [Jottings](https://jottingsbible.com), a reader for J. N. Darby's *New Translation* that works
-offline: search with reference parsing, inline footnotes, word lookup, read-aloud, bookmarks and highlights, study
-notes that can be shared and printed, a page-turning reader, reading streaks and small reading groups.
+Source code for [Jottings](https://jottingsbible.com), an offline reader for J. N. Darby's New Translation of the
+Bible. It runs on Android, iOS and the web.
 
-One Expo (React Native, expo-router) client in `client/` for Android, iOS and the web; a Rust server (axum, SQLite
-with FTS5) in `rs/` that embeds the web build into one binary; shared TypeScript in `shared/`.
+The app does these things:
 
-## What is here and what is not
+- Search by word or by reference
+- Footnotes shown inline, and word lookup
+- Read-aloud
+- Bookmarks, highlights and study notes you can share or print
+- A page-turning reader
+- Reading streaks and small reading groups
 
-Here: the code, under the terms in `LICENSING.md`.
+## What's in this repo
 
-Not here, on purpose:
+The client is an Expo app in `client/`, built with React Native and expo-router. The server is Rust in `rs/`, using
+axum and SQLite with FTS5. It embeds the web build, so the whole service ships as one binary. Code used by both lives
+in `shared/`.
 
-- **The name and the artwork.** The app builds under a placeholder brand. Every brand value is in
-  `shared/brand.json` and the artwork and legal pages are placeholder files: put your own there. "Jottings", its icon
-  and its wordmark are not licensed to you (`TRADEMARK.md`).
-- **The texts.** No scripture, notes, ministry or dictionary is included, and neither are the converters that made
-  them. `data/` and `client/public/bible1890/` hold empty stand-ins so the code builds; `npm run data` builds the
-  database and the chapter files from whatever you put under `data/` in the same shapes.
-- **The moderation rules.** `rs/moderation/` holds a small generic rule set. The rules a real service runs are its
-  own.
-- **The history.** This repository starts at its first public release.
+## What's not in this repo
 
-## Licence
+This is the code only. Four things are left out on purpose.
 
-GNU Affero General Public License, version 3 (`LICENSE`). Each release also becomes available under the MIT License
-one year after it is published. `LICENSING.md` has the terms and the dates; `CONTRIBUTING.md` says what sending a
-change means.
+**The brand.** The app builds as "Reader" with grey placeholder artwork. The Jottings name, icon and wordmark are
+trademarks and are not licensed. See `TRADEMARK.md`. To use your own brand, edit `shared/brand.json` and replace the
+placeholder images and legal pages.
 
-## Run
+**The texts.** There is no scripture, notes, ministry or dictionary here. `data/` and `client/public/bible1890/`
+contain empty files so the build works. To get an app with content, put your own texts in `data/` in the same file
+formats and run `npm run data`.
 
-```bash
-npm install                     # installs the client's dependencies too
-npm test && npm run typecheck   # the tests of the texts skip themselves while the texts are absent
-npm run build                   # the web app, into client/dist, which the server embeds
-npm run build:server            # the server and the data builder, in rs/target/release
-```
+**The moderation rules.** `rs/moderation/` has a small generic rule set. The live service runs its own.
 
-That much works on a fresh clone. The rest needs the texts: put them under `data/`, then
+**The history.** The repo starts at the first public release, 1.0.4.
+
+## Getting started
+
+These work on a fresh clone:
 
 ```bash
-npm run data                    # data/scripture.db and the chapter files, from the texts
-npm run dev:api                 # the Rust API on :8787; without scripture.db it says so and stops
-npm run dev                     # expo start --web
-(cd rs && cargo test)           # some of the server's tests read scripture.db or the texts compiled in
+npm install                     # also installs the client's dependencies
+npm test && npm run typecheck   # tests that need the texts skip themselves
+npm run build                   # builds the web app into client/dist
+npm run build:server            # builds the server into rs/target/release
 ```
 
-The Android and iOS apps bundle the chapter files `npm run data` writes: built before it, they carry no text.
+The rest needs texts in `data/`:
+
+```bash
+npm run data                    # builds data/scripture.db and the chapter files
+npm run dev:api                 # runs the API on port 8787
+npm run dev                     # runs the web app with Expo
+(cd rs && cargo test)           # 18 of the server's tests read the texts
+```
+
+Without `scripture.db` the server prints one line saying so and exits. The Android and iOS apps bundle the chapter
+files that `npm run data` writes, so build them after it.
+
+## License
+
+AGPL-3.0. One year after each release is published, that release also becomes available under the MIT License.
+`LICENSING.md` has the terms and the dates.
+
+## Contributing
+
+Read `CONTRIBUTING.md` first. Sending a change here licenses it on the same terms.
