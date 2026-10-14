@@ -1,5 +1,6 @@
-// What it takes for a chapter to count as read. The server holds the same rule (rs/src/bible.rs
-// `chapter_required_seconds`, rs/src/activity.rs) and decides; the client uses it to report the moment it is met.
+// What it took for a chapter to count as read before 1.0.5: at its end, with time to match its length. The server still
+// judges the beats of older apps by it (rs/src/bible.rs `chapter_required_seconds`, rs/src/activity.rs); the rule since
+// is shared/readThrough.ts (docs/READING.md). The word count and `atEnd` are used by both.
 
 /** An unhurried reader's pace: 400 credited chapters read halfway (build 31). */
 export const READ_WPM = 250
@@ -15,8 +16,8 @@ export function wordCount(text: string): number {
 
 export const chapterWords = (verses: readonly { t: string }[]) => verses.reduce((n, v) => n + wordCount(v.t), 0)
 
-/** Active seconds a chapter of `words` needs before it counts: its length at `READ_WPM`, held to 45 s … 10 min. The
- *  beat that credits must also find the reader AT the end (not merely having touched it once): see rs/src/activity.rs. */
+/** Active seconds a chapter of `words` needed before it counted for an app before 1.0.5: its length at `READ_WPM`, held
+ *  to 45 s … 10 min, with the crediting beat finding the reader AT the end: see rs/src/activity.rs. */
 export function requiredSeconds(words: number): number {
   return Math.min(READ_MAX_SECONDS, Math.max(READ_MIN_SECONDS, Math.round(words / READ_WPM * 60)))
 }

@@ -3,14 +3,15 @@
  * (`GET/PUT/DELETE /api/me/path`); signed out, the same state lives in AsyncStorage under `berean_path`, and progress
  * comes from a local read set (`berean_path_reads`) the reader appends to when a visit is credited (useActivity: the
  * server's credit signed in, the same rule judged on the device signed out). On sign-in a local path moves to the
- * account when the account has none (its start kept); the read sets are unioned for progress either way. One store
- * outside React (useSyncExternalStore), so the reader, Home, read aloud and the Paths screen see one answer. Web-safe.
+ * account when the account has none (its start kept); the read sets are unioned for progress either way. The reader's
+ * own path also counts the chapters they marked read by hand since its start (readMarks.ts); nothing shared does. One
+ * store outside React (useSyncExternalStore), so the reader, Home, read aloud and the Paths screen see one answer. Web-safe.
  */
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { AuthorId, CompanionIndex } from '@shared/companion'
 import {
-  chapterKey, defaultWithMinistry, nextOnPath, nextPortion, paceFor, pathCompanion, portionOf, progress as progressOf, readSetOf, readSetSince, standing, withMinistry,
+  chapterKey, defaultWithMinistry, nextOnPath, nextPortion, onPath as isOnPath, paceFor, pathCompanion, portionOf, progress as progressOf, readSetOf, readSetSince, standing, withMinistry,
   type CustomPath, type GroupPath, type PathAccount, type PathHistoryEntry, type PathId, type PathState, type Portion, type Progress, type Standing,
 } from '@shared/paths'
 import { cachedGet, del, getToken, put } from './api'
@@ -18,6 +19,9 @@ import { loadCompanionIndex } from './companion'
 import { useAuth } from '../store/auth'
 import { onEditionChange, pathOffered, shownPathId } from './editionCore'
 import { useEdition } from './edition'
+import { deviceMarks, onMarksChange, peekMarks, refreshMarks } from './readMarks'
+import { useMarks } from '../hooks/useMarks'
+import { marksSince } from './readMarksCore'
 
 export const PATH_KEY = 'berean_path'
 export const PATH_READS_KEY = 'berean_path_reads'
@@ -28,9 +32,12 @@ interface Local { path: PathState | null; history: PathHistoryEntry[] }
 // ---------------- the local read set ----------------
 
 let reads: LocalRead[] = []
+/** `reads` by `chapterKey`: a new set whenever they change. */
+let readKeys: ReadonlySet<string> = new Set()
 let readsLoad: Promise<void> | null = null
 function loadReads(): Promise<void> {
   readsLoad ??= AsyncStorage.getItem(PATH_READS_KEY).then(s => { if (s) { try { reads = JSON.parse(s) as LocalRead[] } catch { reads = [] } } }, () => {})
+    .then(() => { if (reads.length) { readKeys = new Set(reads.map(([b, c]) => chapterKey(b, c))); emit() } })
   return readsLoad
 }
 /**
@@ -40,6 +47,7 @@ function loadReads(): Promise<void> {
 export function noteLocalRead(book: number, chapter: number, at: string = new Date().toISOString()): void {
   void loadReads().then(() => {
     reads = [...reads.filter(([b, c]) => b !== book || c !== chapter), [book, chapter, at]]
+    readKeys = new Set(reads.map(([b, c]) => chapterKey(b, c)))
     AsyncStorage.setItem(PATH_READS_KEY, JSON.stringify(reads)).catch(() => {})
     emit()
   })
@@ -51,6 +59,12 @@ export const anyLocalRead = (): Promise<boolean> => loadReads().then(() => reads
 
 /** Every chapter ever credited on this device, by `chapterKey`: signed-out Stats and the whole-Bible strip read it. */
 export const localReadSet = (): Promise<Set<string>> => loadReads().then(() => new Set(reads.map(([b, c]) => chapterKey(b, c))))
+/** The same, live: what a signed-out reader's ticks and the chapter's end read. */
+export function useDeviceReads(): ReadonlySet<string> {
+  useEffect(() => { void loadReads() }, [])
+  return useSyncExternalStore(subscribe, getReadKeys, getReadKeys)
+}
+const getReadKeys = () => readKeys
 
 // ---------------- the store ----------------
 
@@ -69,6 +83,10 @@ const emit = () => { snap = { ...snap }; listeners.forEach(l => l()) }
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } }
 const getSnap = () => snap
 const set = (patch: Partial<Snapshot>) => { snap = { ...snap, ...patch }; listeners.forEach(l => l()) }
+/** Counts every change of the account's state made here, so a re-read that began before one does not undo it. */
+let rev = 0
+// a mark made or undone moves the reader's own path
+onMarksChange(() => emit())
 
 async function readLocal(): Promise<Local> {
   try { const s = await AsyncStorage.getItem(PATH_KEY); if (s) return JSON.parse(s) as Local } catch { /* a torn write starts over */ }
@@ -102,13 +120,15 @@ function wantIndex(stored: PathState | null) {
 }
 
 let loading: Promise<void> | null = null
-/** Loads the state for `uid` (the server's, merging a local path into an empty account) or the local one. */
+/** Loads the state for `uid` (the server's, merging a local path into an empty account) or the local one. Once per reader: the hooks call it, and `refreshPath` re-reads. */
+export const loadPath = (uid: number | undefined): Promise<void> => load(uid)
 function load(uid: number | undefined): Promise<void> {
   if (snap.uid === uid && snap.account !== undefined) return Promise.resolve()
   loading = (async () => {
     await loadReads()
     if (uid === undefined) {
       const l = await readLocal()
+      rev++
       set({ uid, account: { path: l.path, history: l.history, read: [] }, error: null })
       wantIndex(l.path)
       return
@@ -123,6 +143,7 @@ function load(uid: number | undefined): Promise<void> {
     }
     if (l.path || l.history.length) void clearLocal()
     if (getToken() !== token) return
+    rev++
     set({ uid, account: acc, error: null })
     wantIndex(acc.path)
   })().catch(e => { if (snap.account === undefined) set({ uid, account: { path: null, history: [], read: [] } }); set({ error: errText(e) }) })
@@ -130,11 +151,44 @@ function load(uid: number | undefined): Promise<void> {
 }
 const errText = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong')
 
-/** The chapters that count: the server's reads since the start, plus this device's own since the start. */
-function readSet(acc: PathAccount | undefined): Set<string> {
-  if (!acc?.path) return new Set()
+/**
+ * Re-reads the account's path and marks without clearing what is shown (Home and the Paths screen on focus). The card
+ * otherwise moves only by what this device saw credited: a chapter credited on another device, one whose beat was
+ * answered after the connection dropped, one this device's clock dated before the path's start, or a first load that
+ * failed, left "Next on your path" where it was until the app was started again. A failure leaves what is shown.
+ */
+export async function refreshPath(): Promise<void> {
+  void refreshMarks()
+  const uid = snap.uid, token = getToken(), at = rev
+  if (uid === undefined || snap.account === undefined || !token) return
+  try {
+    const acc = await cachedGet<PathAccount>('/me/path')
+    // a sign-out, another reader, or a change made here while the answer was on its way: this answer is the older one
+    if (snap.uid !== uid || getToken() !== token || rev !== at) return
+    if (JSON.stringify(acc) === JSON.stringify(snap.account)) { if (snap.error) set({ error: null }); return }
+    rev++
+    set({ account: acc, error: null })
+    wantIndex(acc.path)
+  } catch { /* offline: the path as last known stays */ }
+}
+
+/** Counted by a credit: the server's reads since the start, plus this device's own since the start. */
+function creditSet(acc: PathAccount & { path: PathState }): Set<string> {
   const s = readSetOf(acc.read)
   for (const k of readSetSince(reads, acc.path.started_at)) s.add(k)
+  return s
+}
+/** Counted by the reader's own mark made since the start (readMarks.ts); until this device's marks for the reader are in, the server's list stands in. */
+function markSet(acc: PathAccount & { path: PathState }): Set<string> {
+  const m = peekMarks()
+  return m.ready && m.uid === (snap.uid ?? null) ? marksSince(m.at, acc.path.started_at) : readSetOf(acc.marked ?? [])
+}
+const withPath = (acc: PathAccount | undefined): acc is PathAccount & { path: PathState } => !!acc?.path
+/** The chapters that count on the reader's own path: credited or marked since its start. */
+function readSet(acc: PathAccount | undefined): Set<string> {
+  if (!withPath(acc)) return new Set()
+  const s = creditSet(acc)
+  for (const k of markSet(acc)) s.add(k)
   return s
 }
 
@@ -147,6 +201,7 @@ async function apply(change: Partial<Change> | null): Promise<void> {
   try {
     if (snap.uid !== undefined) {
       const next = change === null ? await del<{ ok: true }>('/me/path').then(() => ({ path: null, history: [], read: [] } as PathAccount)) : await put<PathAccount>('/me/path', change)
+      rev++
       set({ account: next, error: null })
       wantIndex(next.path)
       return
@@ -164,6 +219,7 @@ async function apply(change: Partial<Change> | null): Promise<void> {
       l = { ...l, path: { ...l.path, pace_per_week: change.pace_per_week === undefined ? l.path.pace_per_week : change.pace_per_week, target_date: change.target_date === undefined ? l.path.target_date : change.target_date, with_ministry: change.with_ministry ?? l.path.with_ministry, custom: l.path.id === 'custom' && change.custom ? change.custom : l.path.custom } }
     }
     await writeLocal(l)
+    rev++
     set({ account: { path: l.path, history: l.history, read: [] }, error: null })
     wantIndex(l.path)
   } catch (e) { set({ error: errText(e) }) }
@@ -175,7 +231,7 @@ export interface PathView {
   /** Undefined while the first load is out. */
   state: PathState | null | undefined
   history: PathHistoryEntry[]
-  /** Chapters that count for the path (the streak's credits since its start, this device's included). Empty without a path. */
+  /** Chapters that count for the reader's own path: credited since its start (this device's credits included) or marked read by hand since then. Empty without a path. */
   readSet: Set<string>
   progress: Progress | null
   /** The next portion and its 0-based index; null without a path or once it is finished. */
@@ -198,7 +254,7 @@ export interface PathView {
   setWithMinistry: (on: boolean) => Promise<void>
   /** Re-choose a custom path's books (a different set of books is a new path and goes through `start`). */
   setCustom: (custom: CustomPath) => Promise<void>
-  /** Re-read the account's state (after a credit elsewhere, or a screen focus). */
+  /** Re-read the account's state without clearing what is shown (`refreshPath`). */
   refresh: () => Promise<void>
 }
 
@@ -208,13 +264,14 @@ export function usePath(): PathView {
   const uid = user?.id
   const s = useSyncExternalStore(subscribe, getSnap, getSnap)
   useEdition()
+  useMarks()
   useEffect(() => { void load(uid) }, [uid])
   const state = shown(s.uid === uid ? s.account?.path : undefined)
   const acc = s.uid === uid ? s.account : undefined
   const set_ = readSet(acc)
   const pr = state ? progressOf(state, set_) : null
   const today = dayOf(new Date())
-  const refresh = useCallback(async () => { set({ account: undefined }); await load(uid) }, [uid])
+  const refresh = useCallback(() => refreshPath(), [])
   return {
     state, history: shownHistory(acc?.history ?? []), readSet: set_, progress: pr,
     next: state ? nextPortion(state, set_, s.indexes) : null,
@@ -263,6 +320,7 @@ export function usePathHere(book: number, chapter: number): PathHere {
   const uid = user?.id
   const s = useSyncExternalStore(subscribe, getSnap, getSnap)
   const edition = useEdition()
+  useMarks()
   useEffect(() => { void load(uid) }, [uid])
   return useMemo(() => {
     const acc = s.uid === uid ? s.account : undefined
@@ -271,6 +329,29 @@ export function usePathHere(book: number, chapter: number): PathHere {
     const portion = portionOf(p, book, chapter, s.indexes)
     if (!portion) return OFF_PATH
     return { onPath: true, portion, next: nextOnPath(p, readSet(acc), book, chapter, s.indexes) }
+  }, [s, uid, book, chapter, edition])  // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/**
+ * How the active path counts `book` `chapter`, for the line at the chapter's end: whether the chapter is on the path,
+ * and whether a credit since the start or the reader's own mark since the start has counted it. A chapter read or
+ * marked before the path began is on it and counted by neither.
+ */
+export interface PathCounts { onPath: boolean; byCredit: boolean; byMark: boolean }
+const NOT_COUNTED: PathCounts = { onPath: false, byCredit: false, byMark: false }
+export function usePathCounts(book: number, chapter: number): PathCounts {
+  const { user } = useAuth()
+  const uid = user?.id
+  const s = useSyncExternalStore(subscribe, getSnap, getSnap)
+  const edition = useEdition()
+  useMarks()
+  useEffect(() => { void load(uid) }, [uid])
+  return useMemo(() => {
+    const acc = s.uid === uid ? s.account : undefined
+    const p = shown(acc?.path)
+    if (!p || !withPath(acc) || !isOnPath(p, book, chapter)) return NOT_COUNTED
+    const k = chapterKey(book, chapter)
+    return { onPath: true, byCredit: creditSet(acc).has(k), byMark: markSet(acc).has(k) }
   }, [s, uid, book, chapter, edition])  // eslint-disable-line react-hooks/exhaustive-deps
 }
 
@@ -285,7 +366,10 @@ export function peekPathNext(): { path: PathState; next: Portion | null } | null
 export async function localPathNext(): Promise<{ path: PathState; next: Portion | null } | null> {
   await loadReads()
   const p = shown((await readLocal()).path)
-  return p ? { path: p, next: nextPortion(p, readSetSince(reads, p.started_at))?.portion ?? null } : null
+  if (!p) return null
+  const set_ = readSetSince(reads, p.started_at)
+  for (const k of marksSince(await deviceMarks(), p.started_at)) set_.add(k)
+  return { path: p, next: nextPortion(p, set_)?.portion ?? null }
 }
 
 // ---------------- a group's path ----------------

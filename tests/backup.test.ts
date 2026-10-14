@@ -26,6 +26,8 @@ import { backupText, deviceContent } from '../client/src/lib/backup'
 import { DARBY_APP_NOTES_TITLE, describeCounts, parseBackup } from '../client/src/lib/backupFile'
 import { addLocalBookmark, createLocalOutline } from '../client/src/lib/localLibrary'
 import { setHighlight } from '../client/src/lib/highlights'
+import { markRead } from '../client/src/lib/readMarks'
+import { readBackupMarks } from '../client/src/lib/backupMarks'
 import type { Prefs, PrefsStore } from '../client/src/store/prefs'
 
 const prefsStore = (start: Partial<Prefs> = {}) => {
@@ -49,8 +51,12 @@ describe('restore, signed out', () => {
     await setHighlight(null, 45_011_007, 'pink')
     await createLocalOutline({ title: 'Grace' }, [{ kind: 'verse', book: 49, chapter: 2, v1: 8, v2: 9, text: null, url: null, depth: 0 }, { kind: 'note', book: null, chapter: null, v1: null, v2: null, text: 'not of works', url: null, depth: 0 }])
     store.set('berean_pos', JSON.stringify({ book: 45, chapter: 11, verse: 7 }))
+    // two chapters marked as read by hand: the reader's own marks, kept on the device signed out
+    await markRead(40, 1)
+    await markRead(43, 3)
     const old = prefsStore({ fontSize: 23, theme: 'slate' as Prefs['theme'], paragraphs: true })
     const file = await backupText(false, old.get())
+    expect((JSON.parse(file) as { chapter_marks: { book: number; chapter: number; marked_at: string }[] }).chapter_marks.map(m => [m.book, m.chapter, typeof m.marked_at])).toEqual([[40, 1, 'string'], [43, 3, 'string']])
     const before = await deviceContent(old.get())
     expect([before.bookmarks.length, before.highlights.length, before.jottings.length, before.position]).toEqual([2, 2, 1, { book: 45, chapter: 11, verse: 7 }])
 
@@ -63,8 +69,12 @@ describe('restore, signed out', () => {
     const P = await import('../client/src/hooks/usePosition')
     const fresh = prefsStore()
     const parsed = parseBackup(file)
-    const r = await B.applyBackup(parsed, null, fresh)
-    expect(r).toEqual({ bookmarks: 2, highlights: 2, jottings: 1, refused: 0, position: true, settings: true, history: null })
+    const M = await import('../client/src/lib/readMarks')
+    const marks = readBackupMarks(file, new Date().toISOString())
+    const r = await B.applyBackup(parsed, null, fresh, undefined, marks)
+    expect(r).toEqual({ bookmarks: 2, highlights: 2, jottings: 1, marks: 2, refused: 0, position: true, settings: true, history: null })
+    expect((await M.allMarks()).map(m => [m[0], m[1]])).toEqual([[40, 1], [43, 3]])
+    expect(B.describeRestore(r, 0, describeCounts)).toMatch(/^Added 2 bookmarks, 2 highlights, 1 \S+, 2 chapters marked as read\. /)
     expect((await L.localBookmarks()).map(b => [b.book, b.chapter, b.verse ?? null]).sort()).toEqual([[19, 23, null], [43, 3, 16]])
     expect([...(await H.cachedHighlights(null, 43, 3))]).toEqual([[43_003_016, 'green']])
     expect([...(await H.cachedHighlights(null, 45, 11))]).toEqual([[45_011_007, 'pink']])
@@ -74,8 +84,8 @@ describe('restore, signed out', () => {
     expect([fresh.get().fontSize, fresh.get().theme, fresh.get().paragraphs]).toEqual([23, 'slate', true])
     expect(await B.deviceContent(fresh.get())).toEqual(before)
 
-    const again = await B.applyBackup(parsed, null, fresh)
-    expect(again).toMatchObject({ bookmarks: 0, highlights: 0, jottings: 0, position: false })
+    const again = await B.applyBackup(parsed, null, fresh, undefined, marks)
+    expect(again).toMatchObject({ bookmarks: 0, highlights: 0, jottings: 0, marks: 0, position: false })
     expect((await L.localOutlines()).length).toBe(1)
     expect(B.describeRestore(again, 0, describeCounts)).toMatch(/^Nothing new to add/)
   })
@@ -90,7 +100,7 @@ describe('restore, signed out', () => {
     store.set('berean_pos', JSON.stringify({ book: 43, chapter: 1, verse: 1 }))
     const prefs = prefsStore({ fontSize: 25 })
     const r = await B.applyBackup(parseBackup(SETTING), null, prefs)
-    expect(r).toEqual({ bookmarks: 1, highlights: 0, jottings: 1, refused: 0, position: false, settings: false, history: null })
+    expect(r).toEqual({ bookmarks: 1, highlights: 0, jottings: 1, marks: 0, refused: 0, position: false, settings: false, history: null })
     expect([...(await H.cachedHighlights(null, 1, 1))]).toEqual([[1_001_026, 'pink']])
     expect((await L.localOutlines()).map(o => o.title)).toEqual([DARBY_APP_NOTES_TITLE])
     expect(prefs.get().fontSize).toBe(25)

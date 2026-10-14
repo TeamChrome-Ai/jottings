@@ -4,7 +4,8 @@ import { Stack, useFocusEffect, useRouter } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { PATH_IDS, chapterKey, pathBlurb, pathBooks, pathChapters, pathCompanion, pathLength, pathTitle, progress as progressOf, readSetSince, type PathHistoryEntry, type PathId } from '@shared/paths'
 import { get } from '../src/lib/api'
-import { PATH_READS_KEY, usePath } from '../src/lib/paths'
+import { PATH_READS_KEY, refreshPath, usePath } from '../src/lib/paths'
+import { useReadTicks } from '../src/hooks/useReadTicks'
 import { useEdition } from '../src/lib/edition'
 import { pathOffered } from '../src/lib/editionCore'
 import { countWords, paceLine, paceWords, portionTitle, thenLine } from '../src/lib/pathWords'
@@ -18,11 +19,13 @@ import { Button, Card, Enter, ErrorText, H2, ListRow, Row, SPACE, Screen, Sheet,
 import { FadeSwap } from '../src/components/motion/nav'
 
 type LocalRead = [book: number, chapter: number, at: string]
+const NO_READS = new Set<string>()
 
 /**
  * Library → Paths (docs/PATHS.md "Surfaces"): the strip for the active path (or, with none, the whole Bible with what
  * has ever been read), the active path's card with its next portion, count, target or pace and pairing, then the
- * eight built-in paths and the reader's own. Nothing here is ticked by hand: the reading itself moves the strip.
+ * eight built-in paths and the reader's own. Nothing is ticked on this screen: the reading moves the strip, and so does
+ * a chapter the reader marked read at its end (their own view; lib/readMarks.ts).
  */
 export default function PathsScreen() {
   const router = useRouter()
@@ -35,12 +38,15 @@ export default function PathsScreen() {
   const [dateOpen, setDateOpen] = useState(false)
   // the whole-Bible strip's reads: the account's chapters ever credited, or this device's own
   const [ever, setEver] = useState<{ set: Set<string>; local: LocalRead[] } | null>(null)
+  /** With the chapters the reader marked read by hand: this strip is their own view. */
+  const everRead = useReadTicks(ever?.set ?? NO_READS)
   useFocusEffect(useCallback(() => {
     if (!ready) return
     let cancelled = false
     const local = AsyncStorage.getItem(PATH_READS_KEY).then((s): LocalRead[] => { try { return s ? JSON.parse(s) as LocalRead[] : [] } catch { return [] } }, () => [] as LocalRead[])
     const server = user ? get<Record<string, number[]>>('/stats/progress').then(p => Object.entries(p).flatMap(([b, cs]) => cs.map(ch => chapterKey(Number(b), ch))), () => [] as string[]) : Promise.resolve([] as string[])
     Promise.all([local, server]).then(([l, s]) => { if (!cancelled) setEver({ set: new Set([...s, ...l.map(([b, ch]) => chapterKey(b, ch))]), local: l }) })
+    void refreshPath()
     return () => { cancelled = true }
   }, [ready, user?.id]))
 
@@ -81,8 +87,8 @@ export default function PathsScreen() {
                     accessibilityLabel={`${pathTitle(state)}: ${path.progress.done} of ${plural(path.progress.total, 'chapter')} read`} />
                 ) : (
                   <>
-                    <PathStrip route={null} readSet={ever?.set ?? null} delay={120} accessibilityLabel={`The Bible: ${plural(ever?.set.size ?? 0, 'chapter')} read`} />
-                    <T small muted>{ever?.set.size ? `What you have read so far: ${ever.set.size} of 1,189 chapters. ` : ''}No path at the moment. A path is an order of chapters, never a calendar; set a date only if you want one.</T>
+                    <PathStrip route={null} readSet={ever ? everRead : null} delay={120} accessibilityLabel={`The Bible: ${plural(ever ? everRead.size : 0, 'chapter')} read`} />
+                    <T small muted>{ever && everRead.size ? `What you have read so far: ${everRead.size} of 1,189 chapters. ` : ''}No path at the moment. A path is an order of chapters, never a calendar; set a date only if you want one.</T>
                   </>
                 )}
               </Card>

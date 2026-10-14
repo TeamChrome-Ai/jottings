@@ -11,7 +11,7 @@ import type { EventCountsFrom, EventMetric, EventRepeat, EventVisibility, GroupE
 export interface MetricInfo { value: EventMetric; label: string; unit: string; explain: string }
 export const METRICS: MetricInfo[] = [
   { value: 'active_minutes', label: 'Active minutes', unit: 'min', explain: 'Time with the reader open and moving; a pause of over 20 s between beats is not counted.' },
-  { value: 'pages', label: 'Chapters', unit: 'ch.', explain: 'Read to the end, with time on each to match its length; the same chapter counts once a day.' },
+  { value: 'pages', label: 'Chapters', unit: 'ch.', explain: 'Read through, each part of it, with time on each to match its length; the same chapter counts once a day.' },
   { value: 'chapters', label: 'New chapters', unit: 'ch.', explain: 'Chapters read for the first time ever; a chapter read before the event counts nothing.' },
   { value: 'score', label: 'Score', unit: 'pts', explain: 'Minutes × time weight + chapters × chapter weight.' },
   { value: 'streak', label: 'Streak', unit: 'days', explain: 'Days in a row with the member’s own daily goal of minutes met.' },

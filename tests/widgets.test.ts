@@ -120,6 +120,22 @@ describe('reading streak widget', () => {
     expect(streakCard({ ...s, today_goal_seconds: 0 }, SAT_EVENING)).toMatchObject({ tone: 'waiting', state: 'Still to read today' })
   })
 
+  it('on a kept day short of the reader’s own goal, says how far there is to go', () => {
+    const s = info({ today: '2026-09-26', current: 5, longest: 9, today_active_seconds: 700, days: [day('2026-09-26'), day('2026-09-25')] })
+    // 11 min 40 s read of 30: the seal is kept, the line counts down
+    expect(streakCard(s, SAT_EVENING, undefined, 30)).toMatchObject({ current: 5, tone: 'kept', state: '19 min to your goal', a11y: 'Reading streak, 5 days. Read today. 19 minutes to your goal. Open the reader' })
+    expect(streakCard({ ...s, today_active_seconds: 1741 }, SAT_EVENING, undefined, 30)).toMatchObject({ tone: 'kept', state: '1 min to your goal', a11y: 'Reading streak, 5 days. Read today. 1 minute to your goal. Open the reader' })
+    expect(streakCard({ ...s, today_active_seconds: 1800 }, SAT_EVENING, undefined, 30)).toMatchObject({ tone: 'kept', state: 'Read today' })
+    // the default goal, given or not, is the card as it has always been
+    expect(streakCard(s, SAT_EVENING, undefined, 10)).toEqual(streakCard(s, SAT_EVENING))
+    expect(streakCard(s, SAT_EVENING)).toMatchObject({ state: 'Read today' })
+  })
+  it('never counts the reader’s own goal before the day is kept, or into the streak', () => {
+    const s = info({ today: '2026-09-26', current: 4, today_active_seconds: 530, days: [day('2026-09-26', 0, 530), day('2026-09-25')] })
+    for (const goal of [15, 30, 60]) expect(streakCard(s, SAT_EVENING, undefined, goal)).toEqual(streakCard(s, SAT_EVENING))
+    expect(streakCard(s, SAT_EVENING, undefined, 60)).toMatchObject({ current: 4, tone: 'waiting', state: '2 min left' })
+  })
+
   it('carries a run over midnight and starts the new day from the whole goal', () => {
     // synced at 23:50 on Friday with Friday met; drawn by the midnight alarm on Saturday
     const s = info({ today: '2026-09-25', current: 3, today_active_seconds: 700, days: [day('2026-09-25'), day('2026-09-24'), day('2026-09-23')] })

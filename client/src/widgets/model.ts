@@ -3,6 +3,7 @@ import type { StreakInfo } from '@shared/types'
 import { formatRef } from '@shared/ref'
 import { presentVotd, votdFor, type VotdRef } from '@shared/votd'
 import { localDay, streakToday } from '../lib/localDay'
+import { DAILY_GOAL_DEFAULT, goalView } from '../lib/dailyGoal'
 import { dayLetter, weekOf } from '../lib/week'
 import { DARK_DEFAULT, LIGHT_DEFAULT, THEME_MAP, isThemeId, migrateThemeId, type ThemeId } from '../theme'
 
@@ -78,19 +79,21 @@ const minutes = (n: number) => `${n} ${n === 1 ? 'minute' : 'minutes'}`
 /**
  * The streak as of the device's day `now`, from the stats cached at the last sync (null: signed out, or nothing synced
  * yet). Stats read on an earlier day are judged on today (`streakToday`), so a day missed shows as a lapse at midnight
- * without the app running. Minutes left are the day's goal less the time the cache records for today.
+ * without the app running. Minutes left are the day's goal less the time the cache records for today. `goal` is the
+ * reader's own minutes (lib/dailyGoal.ts): a kept day short of it says how far there is to go, and nothing else changes.
  */
-export function streakCard(s: StreakInfo | null, now: Date, locale?: string): StreakCard {
+export function streakCard(s: StreakInfo | null, now: Date, locale?: string, goal: number = DAILY_GOAL_DEFAULT): StreakCard {
   if (!s) return { kind: 'signed-out', text: 'Sign in to keep a streak', url: LOGIN_URL, a11y: 'Reading streak. Sign in to keep a streak' }
   const today = localDay(now)
   const { current, todayMet, todaySeconds } = streakToday(s, today)
   const hadRun = s.longest > 0 || s.days.some(d => d.met === 1)
   const tone: SealTone = current > 0 ? (todayMet ? 'kept' : 'waiting') : hadRun ? 'lapsed' : 'none'
   const left = tone === 'waiting' && s.today_goal_seconds > 0 ? Math.ceil(Math.max(0, s.today_goal_seconds - todaySeconds) / 60) : 0
-  const state = tone === 'kept' ? 'Read today' : tone === 'lapsed' ? 'Start again today' : tone === 'none' ? 'Start a streak today' : left > 0 ? `${left} min left` : 'Still to read today'
+  const toGoal = tone === 'kept' ? goalView(todaySeconds, s.today_goal_seconds, goal).left : 0
+  const state = toGoal > 0 ? `${toGoal} min to your goal` : tone === 'kept' ? 'Read today' : tone === 'lapsed' ? 'Start again today' : tone === 'none' ? 'Start a streak today' : left > 0 ? `${left} min left` : 'Still to read today'
   const met = new Set(s.days.filter(d => d.met === 1).map(d => d.date))
   const week = weekOf(today).map(date => ({ date, letter: dayLetter(date, locale), met: met.has(date), today: date === today, ahead: date > today }))
-  const spoken = left > 0 ? `${minutes(left)} left today` : state
+  const spoken = toGoal > 0 ? `Read today. ${minutes(toGoal)} to your goal` : left > 0 ? `${minutes(left)} left today` : state
   return { kind: 'streak', current, tone, state, week, url: READ_URL, a11y: `Reading streak, ${current} ${current === 1 ? 'day' : 'days'}. ${spoken}. Open the reader` }
 }
 

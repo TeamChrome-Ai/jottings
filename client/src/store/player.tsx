@@ -37,6 +37,11 @@ interface PlayerCtx extends PlayerState {
   prev: () => void
   /** Fires when a chapter finishes; the reader decides whether to move on. */
   onEnded: (cb: ((book: number, chapter: number) => void) | null) => void
+  /** Fires each time the voice finishes a verse, read out to its last word (a skip or a stop is not finishing it):
+   *  what the read-through rule counts as heard (lib/readCredit.ts). Returns the unsubscribe. */
+  onVerseHeard: (cb: (book: number, chapter: number, v: number) => void) => () => void
+  /** The recording playing, while it is of this chapter: its verse timings time the verses heard. */
+  marksOf: (book: number, chapter: number) => ChapterMarks | null
   /** Height of the docked player bar (0 when hidden), so other bottom bars can sit above it. */
   barHeight: number
   setBarHeight: (h: number) => void
@@ -63,6 +68,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   /** Started with `cue`: loaded and paused; Play starts the reading loop rather than resuming it. */
   const cued = useRef(false)
   const current = useRef<Current>({ book: 0, chapter: 0, verses: [], marks: null, index: 0, heading: false, stopAfter: null })
+  const heardCbs = useRef(new Set<(book: number, chapter: number, v: number) => void>())
+  const heard = (book: number, chapter: number, v: number) => heardCbs.current.forEach(cb => cb(book, chapter, v))
 
   useEffect(() => {
     setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: 'doNotMix' }).catch(() => {})
@@ -204,6 +211,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             const near = now <= vm.start + 60 && vm.start - now < 700
             await playSpan(vm.start, vm.end, token, vm.v, { noSeek: near, keepPlaying: keep })
           } else if (text) { await speakDevice(text, token) }
+          if (run.current === token) heard(c.book, c.chapter, vm.v)
           if (c.stopAfter !== null && vm.v >= c.stopAfter) { c.index++; break }
           if (nextVm) await wait(pause, token)
         }
@@ -216,6 +224,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           if (!v.t.trim()) continue
           setState(s => ({ ...s, spoken: { book: c.book, chapter: c.chapter, v: v.v, off: null } }))
           await speakDevice(`${p.ttsNumbers ? `${v.v}. ` : ''}${v.t}`, token)
+          if (run.current === token) heard(c.book, c.chapter, v.v)
           if (c.stopAfter !== null && v.v >= c.stopAfter) { c.index++; break }
           if (c.index < c.verses.length - 1) await wait(PAUSE_MS[p.ttsPause], token)
         }
@@ -317,7 +326,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (i >= 0) { jumpTo(i); current.current.stopAfter = opts?.stopAfter ?? null }
   }, [state.status, jumpTo, start])
 
-  const value = useMemo<PlayerCtx>(() => ({ ...state, start, seekVerse, toggle, stop, next: () => jump(1), prev: () => jump(-1), onEnded: cb => { endedCb.current = cb }, barHeight, setBarHeight }), [state, start, seekVerse, toggle, stop, jump, barHeight])
+  const onVerseHeard = useCallback((cb: (book: number, chapter: number, v: number) => void) => { heardCbs.current.add(cb); return () => { heardCbs.current.delete(cb) } }, [])
+  const marksOf = useCallback((book: number, chapter: number) => { const c = current.current; return c.book === book && c.chapter === chapter ? c.marks : null }, [])
+  const value = useMemo<PlayerCtx>(() => ({ ...state, start, seekVerse, toggle, stop, next: () => jump(1), prev: () => jump(-1), onEnded: cb => { endedCb.current = cb }, onVerseHeard, marksOf, barHeight, setBarHeight }), [state, start, seekVerse, toggle, stop, jump, onVerseHeard, marksOf, barHeight])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

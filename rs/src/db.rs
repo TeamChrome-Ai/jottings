@@ -121,6 +121,25 @@ CREATE TABLE IF NOT EXISTS chapters_read (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, book INTEGER NOT NULL, chapter INTEGER NOT NULL,
   first_read_at TEXT NOT NULL, times INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (user_id, book, chapter)
 );
+-- rs/src/marks.rs: chapters a reader ticked by hand. Their own view only (the read tick, their own path's place):
+-- nothing that is earned or shown to another reader is counted from here
+CREATE TABLE IF NOT EXISTS chapter_marks (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, book INTEGER NOT NULL, chapter INTEGER NOT NULL,
+  marked_at TEXT NOT NULL, PRIMARY KEY (user_id, book, chapter)
+);
+-- rs/src/readthrough.rs: a chapter part-read (which verses went past the reader, the time spent), kept two days after it
+-- was last read so two sittings add up; `credited_date` holds a chapter credited today until tomorrow
+CREATE TABLE IF NOT EXISTS read_throughs (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, book INTEGER NOT NULL, chapter INTEGER NOT NULL,
+  state TEXT NOT NULL, credited_date TEXT, updated_at TEXT NOT NULL,
+  -- touch and scroll bursts until all of it was taken in, and the reading time that took (0: not yet): its pace
+  signals INTEGER NOT NULL DEFAULT 0, covered_ms INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, book, chapter)
+);
+-- readthrough.rs: a reader's own pace, from the last chapters they read themselves (words a minute, oldest first)
+CREATE TABLE IF NOT EXISTS reading_pace (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, samples TEXT NOT NULL
+);
 -- the reader's path (docs/PATHS.md): one active path; the ones left behind ride in history_json with their starts
 CREATE TABLE IF NOT EXISTS user_paths (
   user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, path_id TEXT NOT NULL,
@@ -349,6 +368,8 @@ pub fn open_pool(path: &str, key: Option<String>) -> Result<DbPool> {
         ("outlines", "published_at", "TEXT"),
         // a preset avatar id (shared/avatars.ts, avatars::IDS); NULL shows the default for the user id
         ("users", "avatar", "TEXT"),
+        // the last beat that counted time, from any of the reader's sessions (activity.rs): one clock per reader
+        ("users", "last_beat_at", "TEXT"),
         // whose content a report is about, so repeat strikes under one rule are counted per author (moderation::settle)
         ("reports", "author_id", "INTEGER"),
         // an account an admin unbanned is not caught again by the ban-evasion check (bans.rs)

@@ -4,7 +4,7 @@ import { useInks } from '../hooks/useTheme'
 import { usePrefsStore } from './prefs'
 import { EXIT_MS, RISE_SPRING, POP_SPRING } from '../lib/motion'
 
-interface ToastCtx { show: (message: string, ms?: number) => void }
+interface ToastCtx { show: (message: string, ms?: number, top?: boolean) => void }
 const Ctx = createContext<ToastCtx>({ show: () => {} })
 
 /** A toast stays up at least this long before a newer one replaces it, so a burst ("Chapter credited", then a badge) stays readable. */
@@ -12,7 +12,8 @@ const MIN_READ = 1100
 /** Pending toasts beyond this are dropped oldest-first. */
 const MAX_QUEUED = 2
 
-type Item = { id: number; text: string; ms: number }
+/** `top`: shown under the header instead, for a toast about something at the foot of the screen. */
+type Item = { id: number; text: string; ms: number; top: boolean }
 
 /**
  * One toast slot. The first toast rises from the bottom (RISE_SPRING, no lift past its rest); a newer one replaces it in place (the text dips out and back),
@@ -60,8 +61,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     })
   }
 
-  const show = useCallback((text: string, ms = 3000) => {
-    const it = { id: ++seq.current, text, ms }
+  const show = useCallback((text: string, ms = 3000, top = false) => {
+    const it = { id: ++seq.current, text, ms, top }
     queue.current = [...queue.current.slice(-(MAX_QUEUED - 1)), it]
     if (leaving.current) {
       // the old toast was on its way out: bring the pill back and swap into the new text
@@ -87,18 +88,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={value}>
       {children}
-      {cur && <ToastHost text={cur.text} enter={enter} swap={swap} />}
+      {cur && <ToastHost text={cur.text} top={cur.top} enter={enter} swap={swap} />}
     </Ctx.Provider>
   )
 }
 
-function ToastHost({ text, enter, swap }: { text: string; enter: Animated.Value; swap: Animated.Value }) {
+function ToastHost({ text, top, enter, swap }: { text: string; top: boolean; enter: Animated.Value; swap: Animated.Value }) {
   const c = useInks()
   return (
     <Animated.View
       pointerEvents="none"
       accessibilityLiveRegion="polite"
-      style={[styles.host, { opacity: enter, transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [28, 0] }) }] }]}>
+      style={[styles.host, top ? styles.top : styles.foot, { opacity: enter, transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [top ? -28 : 28, 0] }) }] }]}>
       <Animated.View style={[styles.toast, { backgroundColor: c.text, opacity: swap, transform: [{ scale: swap.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) }] }]}>
         <Text style={{ color: c.bg, fontSize: 14 }}>{text}</Text>
       </Animated.View>
@@ -106,7 +107,9 @@ function ToastHost({ text, enter, swap }: { text: string; enter: Animated.Value;
   )
 }
 const styles = StyleSheet.create({
-  host: { position: 'absolute', left: 0, right: 0, bottom: 96, alignItems: 'center' },
+  host: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  foot: { bottom: 96 },
+  top: { top: 108 },
   toast: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, maxWidth: '86%' },
 })
 export const useToast = () => useContext(Ctx)

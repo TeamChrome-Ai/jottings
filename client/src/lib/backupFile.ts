@@ -12,12 +12,15 @@ import { BOOKS } from '@shared/books'
 import type { OutlineItemKind } from '@shared/types'
 import { VERSE_COUNTS } from '@shared/verseCounts'
 import { DARBY_APP_COLORS, darbyAppPlace } from './darbyApp'
+import { DAILY_GOALS, type DailyGoal } from './dailyGoal'
+import { HL_ALL } from './hlColours'
 import { BRAND, NOUN, withArticle } from '@shared/brand'
 
 export const BACKUP_FORMAT = 'jottings-backup'
 export const BACKUP_VERSION = 1
 
-export const HL_COLORS = ['yellow', 'green', 'blue', 'pink'] as const
+/** Every highlighter the app has, the extra eight included: a backup keeps a colour whether or not it is offered. */
+export const HL_COLORS = HL_ALL
 export type BackupColor = typeof HL_COLORS[number]
 
 export interface BackupBookmark { book: number; chapter: number | null; verse: number | null; label: string | null }
@@ -32,6 +35,7 @@ export type BackupPrefs = Partial<{
   verseNumbers: boolean; paragraphs: boolean; showNotes: boolean; reduceMotion: boolean
   noteLetters: 'chapter' | 'printed'; motionSpeed: number; align: 'left' | 'center' | 'right'; width: 'narrow' | 'medium' | 'wide' | 'full'
   ttsSpeed: number; ttsNumbers: boolean; ttsHeading: boolean; ttsPause: 'none' | 'short' | 'long'; ttsWord: boolean; ttsAutoNext: boolean
+  moreColours: boolean; dailyGoal: DailyGoal
   readerName: string
 }>
 
@@ -132,6 +136,7 @@ const PREF_READERS: { [K in keyof BackupPrefs]-?: (v: unknown) => BackupPrefs[K]
   verseNumbers: bool, paragraphs: bool, showNotes: bool, reduceMotion: bool,
   noteLetters: one('chapter', 'printed'), motionSpeed: num(0.5, 1.5), align: one('left', 'center', 'right'), width: one('narrow', 'medium', 'wide', 'full'),
   ttsSpeed: num(0.5, 2), ttsNumbers: bool, ttsHeading: bool, ttsPause: one('none', 'short', 'long'), ttsWord: bool, ttsAutoNext: bool,
+  moreColours: bool, dailyGoal: v => (DAILY_GOALS.includes(v as DailyGoal) ? v as DailyGoal : undefined),
   readerName: v => (typeof v === 'string' ? v.slice(0, 40) : undefined),
 }
 /** Only the settings named above, each of the right kind and in range; anything else in the record is left out. */

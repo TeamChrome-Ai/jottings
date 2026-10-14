@@ -66,6 +66,7 @@ release can still only be used under the AGPL.
 | Release | First published here | Change Date, also MIT from |
 |---|---|---|
 | 1.0.4 | 13 October 2026 | 13 October 2027 |
+| 1.0.5 | 14 October 2026 | 14 October 2027 |
 
 ## 6. What these licenses do not cover
 

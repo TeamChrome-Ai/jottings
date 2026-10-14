@@ -1,6 +1,6 @@
 //! Paths (docs/PATHS.md): a reader's reading plan as an order of chapters and a pace, never a calendar. The server keeps
-//! the state (`user_paths`) and answers with the chapters credited since the start; the client derives progress with
-//! shared/paths.ts. The chapter orders live here as well, for a group's per-member places: the contiguous ones from the
+//! the state (`user_paths`) and answers with the chapters credited since the start and, apart, the ones the reader
+//! marked by hand since then (marks.rs); the client derives progress with shared/paths.ts. The chapter orders live here as well, for a group's per-member places: the contiguous ones from the
 //! book table, the two data-driven ones from shared/pathOrders.json (tools/path_orders.ts writes it; the TypeScript side
 //! reads the same file), Coates's from the companion index. Custom paths (whole books, a reader's own order) are the
 //! reader's alone; a group walks a built-in path.
@@ -70,11 +70,14 @@ pub fn default_with_ministry(id: &str) -> bool { matches!(id, "synopsis" | "coat
 pub fn is_day(s: &str) -> bool { s.len() == 10 && s.as_bytes()[4] == b'-' && s.as_bytes()[7] == b'-' && s.chars().enumerate().all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit()) && crate::activity::parse_day(s).is_some() }
 fn answer(conn: &Connection, uid: i64) -> ApiResult<Json<Value>> {
     Ok(Json(match load(conn, uid)? {
-        None => json!({ "path": null, "history": [], "read": [] }),
+        None => json!({ "path": null, "history": [], "read": [], "marked": [] }),
         Some(r) => json!({
             "path": { "id": r.path_id, "started_at": r.started_at, "target_date": r.target, "pace_per_week": r.pace, "with_ministry": r.with_ministry, "custom": r.custom },
             "history": r.history,
             "read": read_since(conn, uid, &r.started_at)?,
+            // the reader's own marks since the start (marks.rs), beside the credits and never among them: an app from
+            // before marks reads `read` alone, and a group's places (groups.rs) are counted from credits only
+            "marked": crate::marks::marked_since(conn, uid, &r.started_at)?,
         }),
     }))
 }
@@ -228,7 +231,7 @@ mod tests {
         let (app, pool) = app();
         let (id, anna) = user(&pool, "anna");
         let (st, v) = call(&app, "GET", "/me/path", Some(&anna), Value::Null).await;
-        assert_eq!((st, v), (200, json!({ "path": null, "history": [], "read": [] })));
+        assert_eq!((st, v), (200, json!({ "path": null, "history": [], "read": [], "marked": [] })));
         // reads before the start do not count; a re-read after it does
         credit(&pool, id, 40, 1, "2026-01-01T00:00:00.000Z");
         credit(&pool, id, 40, 2, "2026-01-01T00:00:00.000Z");
@@ -293,7 +296,7 @@ mod tests {
         let (st, _) = call(&app, "DELETE", "/me/path", Some(&anna), Value::Null).await;
         assert_eq!(st, 200);
         let (_, v) = call(&app, "GET", "/me/path", Some(&anna), Value::Null).await;
-        assert_eq!(v, json!({ "path": null, "history": [], "read": [] }));
+        assert_eq!(v, json!({ "path": null, "history": [], "read": [], "marked": [] }));
         assert_eq!(pool.get().unwrap().query_row("SELECT count(*) FROM chapters_read WHERE user_id=?1", params![id], |r| r.get::<_, i64>(0)).unwrap(), 4);
         assert_eq!(call(&app, "PUT", "/me/path", Some(&anna), json!({ "pace_per_week": 3 })).await.0, 400);
         assert_eq!(call(&app, "GET", "/me/path", None, Value::Null).await.0, 401);

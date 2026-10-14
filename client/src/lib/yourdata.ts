@@ -4,6 +4,7 @@
  */
 import { ApiError, api, getApiBase, getToken } from './api'
 import { NOUN } from '@shared/brand'
+import { forgetMarks } from './readMarks'
 
 export type DataCategory = 'activity' | 'bookmarks' | 'highlights' | 'position' | 'outlines' | 'posts' | 'groups' | 'reports' | 'blocks' | 'friends'
 
@@ -17,7 +18,7 @@ export interface CategoryInfo {
 
 /** Order is the order the contract lists them; the screen renders one SwitchRow each. */
 export const DATA_CATEGORIES: readonly CategoryInfo[] = [
-  { id: 'activity', label: 'Activity', hint: 'Reading time, streaks, chapter credits and badges', noun: ['activity record', 'activity records'] },
+  { id: 'activity', label: 'Activity', hint: 'Reading time, streaks, chapter credits, badges and the chapters you marked as read', noun: ['activity record', 'activity records'] },
   { id: 'bookmarks', label: 'Bookmarks', hint: 'Every verse, chapter and book you bookmarked', noun: ['bookmark', 'bookmarks'] },
   { id: 'highlights', label: 'Highlights', hint: 'Every highlight and its colour', noun: ['highlight', 'highlights'] },
   { id: 'position', label: 'Position', hint: 'Where you left off reading', noun: ['reading position', 'reading positions'] },
@@ -69,6 +70,8 @@ function parseDeleteResponse(body: unknown): DeletedCounts {
 export async function deleteMyData(categories: readonly DataCategory[]): Promise<DeletedCounts> {
   if (categories.length === 0) throw new Error('Choose at least one category')
   const body = await api<unknown>('/me/data', { method: 'DELETE', json: { categories } })
+  // the reader's own "read" marks go with the activity, the copy on this device too
+  if (categories.includes('activity')) await forgetMarks()
   return parseDeleteResponse(body)
 }
 

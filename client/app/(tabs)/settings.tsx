@@ -25,6 +25,7 @@ import { adminSummary, listBlocks, unblockUser } from '../../src/lib/moderation'
 import { FONT_MAX, FONT_MIN, usePref, usePrefs, usePrefsStore, type Align, type Font, type Width } from '../../src/store/prefs'
 import type { NoteLetters } from '../../src/lib/noteLetters'
 import { REMINDER_PRESETS, formatTime, parseTime } from '../../src/lib/reminderPlan'
+import { DAILY_GOALS, readDailyGoal } from '../../src/lib/dailyGoal'
 import { askNotifyPermission, notifyPermission, type NotifyPermission } from '../../src/lib/streakReminder'
 import { ANY_BOOK, ANY_BOOK_LABEL, DEFAULT_ITEM, PATH_BOOK, PATH_LABEL, VERSE_NOTIFY_MAX_ITEMS, VERSE_NOTIFY_PRESETS, bookLabel, verseItemDetail, verseNotifyDetail, type VerseNotifyItem } from '../../src/lib/verseNotifyPlan'
 import { usePath } from '../../src/lib/paths'
@@ -150,6 +151,7 @@ export default function Settings() {
             <Segmented<NoteLetters> value={prefs.noteLetters} onChange={noteLetters => set({ noteLetters })} options={[{ value: 'chapter', label: 'Through the chapter' }, { value: 'printed', label: 'As printed' }]} />
           </View>
         ) : null}
+        <SwitchRow label="More highlight colours" hint="Eight more colours when you tap a verse" value={prefs.moreColours} onChange={moreColours => set({ moreColours })} />
         {wideScreen ? (
           <View style={{ gap: 6, paddingVertical: 10 }}>
             <T>Page</T>
@@ -197,6 +199,12 @@ export default function Settings() {
           </View>
           <FriendsRow onPress={() => setSheet('friends')} />
           <PublicProfileRow />
+          {/* the reader's own bar, kept on this device: a day counts for the streak at the server's ten minutes whatever is chosen */}
+          <View style={{ gap: 6, paddingVertical: 10 }}>
+            <T>Daily goal</T>
+            <T small muted>Minutes a day. The streak still counts at ten.</T>
+            <Segmented value={String(prefs.dailyGoal)} onChange={v => set({ dailyGoal: readDailyGoal(Number(v)) })} options={DAILY_GOALS.map(g => ({ value: String(g), label: String(g) }))} />
+          </View>
           {/* local notifications exist only in the native apps */}
           {Platform.OS !== 'web' ? <ListRow icon="clock" label="Streak reminder" detail={prefs.streakReminder.enabled ? `Evenings at ${formatTime(prefs.streakReminder.hour, prefs.streakReminder.minute)}, if today’s reading is still to do` : 'Off'} onPress={() => setSheet('reminder')} /> : null}
           <ListRow icon="block" label="Blocked users" detail="Hidden from you, and no longer friends" onPress={() => setSheet('blocked')} />
@@ -208,7 +216,7 @@ export default function Settings() {
         <SignInCard ref={tourRef('settings-account')} title="Not signed in" text="Sign in to sync bookmarks, keep a streak and join groups." />
       )}
 
-      <H2 hint="Text, theme, reading and listening go back to how they came; added fonts, the reminder and your name stay">Reset</H2>
+      <H2 hint="Text, theme, reading and listening go back to how they came; added fonts, the daily goal, the reminder and your name stay">Reset</H2>
       <Card ref={tourRef('settings-reset')}>
         <Button title="Reset all settings" onPress={() => { reset(); toast.show('Settings reset') }} style={{ alignSelf: 'flex-start' }} small />
       </Card>

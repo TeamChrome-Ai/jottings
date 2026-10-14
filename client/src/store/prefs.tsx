@@ -6,6 +6,7 @@ import { customIdOf, migrateFontPrefs, setCustomFonts, type CustomFont, type Cus
 import { clampSpeed } from '../lib/motionSpeed'
 import { NOTE_LETTERS, type NoteLetters } from '../lib/noteLetters'
 import { readVerseNotify, type VerseNotifyPref } from '../lib/verseNotifyPlan'
+import { DAILY_GOAL_DEFAULT, readDailyGoal, type DailyGoal } from '../lib/dailyGoal'
 
 /** A theme id from the gallery, or `system` to follow the device with `themeLight` / `themeDark`. */
 export type Theme = 'system' | ThemeId
@@ -16,6 +17,8 @@ export interface Prefs {
   /** Fonts the reader added from Google Fonts or a file; the files live on the device, only the records are here. */
   customFonts: CustomFont[]
   verseNumbers: boolean; paragraphs: boolean; showNotes: boolean; reduceMotion: boolean
+  /** The selection bar offers the eight extra highlighters too (lib/hlColours.ts); a verse already in one shows either way. */
+  moreColours: boolean
   /** Footnote letters: once through the chapter, or as the printed edition restarts them on each page (lib/noteLetters.ts). */
   noteLetters: NoteLetters
   /** Animation speed, 0.5 to 1.5 (1 as authored): scales every duration and spring (lib/motionSpeed.ts). */
@@ -26,6 +29,8 @@ export interface Prefs {
   ttsVoice: string; ttsSpeed: number; ttsNumbers: boolean; ttsHeading: boolean; ttsPause: 'none' | 'short' | 'long'; ttsWord: boolean; ttsAutoNext: boolean; ttsDevice: boolean
   /** Listen from a selection reads the selected verses and stops. */
   ttsStopAtSelection: boolean
+  /** The reader's own minutes a day, at or above the streak's ten: what their progress is shown against, never what counts (lib/dailyGoal.ts). */
+  dailyGoal: DailyGoal
   /** Streak notifications (native only): on unless turned off, silent until the system permission is granted. */
   streakReminder: StreakReminder
   /** Morning verse notifications (native only): up to four items, each a book (0 = any: the verse of the day) at a time; none = off. */
@@ -52,7 +57,7 @@ export const FONT_MIN = 14, FONT_MAX = 32
 export const NAME_MAX = 40
 /** A value missing from the stored record takes these; `paragraphs` is off, so a new install starts every verse on its own
  *  line while a saved record keeps its choice. */
-export const DEFAULTS: Prefs = { theme: 'system', themeLight: LIGHT_DEFAULT, themeDark: DARK_DEFAULT, font: 'serif', fontSize: 19, lineHeight: 1.6, letterSpacing: 0, wordSpacing: 0, verseNumbers: true, paragraphs: false, showNotes: true, noteLetters: 'chapter', reduceMotion: false, motionSpeed: 1, align: 'center', width: 'medium', ttsVoice: 'alec', ttsSpeed: 1, ttsNumbers: false, ttsHeading: true, ttsPause: 'short', ttsWord: true, ttsAutoNext: true, ttsDevice: false, ttsStopAtSelection: false, customFonts: [], streakReminder: { enabled: true, hour: 20, minute: 0 }, verseNotify: { items: [] }, inviteNotify: true, onboarded: false, toured: false, readerName: '' }
+export const DEFAULTS: Prefs = { theme: 'system', themeLight: LIGHT_DEFAULT, themeDark: DARK_DEFAULT, font: 'serif', fontSize: 19, lineHeight: 1.6, letterSpacing: 0, wordSpacing: 0, verseNumbers: true, paragraphs: false, showNotes: true, moreColours: false, noteLetters: 'chapter', reduceMotion: false, motionSpeed: 1, align: 'center', width: 'medium', ttsVoice: 'alec', ttsSpeed: 1, ttsNumbers: false, ttsHeading: true, ttsPause: 'short', ttsWord: true, ttsAutoNext: true, ttsDevice: false, ttsStopAtSelection: false, customFonts: [], dailyGoal: DAILY_GOAL_DEFAULT, streakReminder: { enabled: true, hour: 20, minute: 0 }, verseNotify: { items: [] }, inviteNotify: true, onboarded: false, toured: false, readerName: '' }
 const KEY = 'berean_prefs'
 /** usePosition's key, read once at start-up to tell a returning reader from a new device. */
 const POSITION_KEY = 'berean_pos'
@@ -104,8 +109,8 @@ function createStore(): PrefsStore & { hydrate: (stored: Prefs | null) => void; 
     get: () => prefs,
     isLoaded: () => loaded,
     set: p => commit({ ...prefs, ...p, fontSize: clamp(p.fontSize ?? prefs.fontSize, FONT_MIN, FONT_MAX) }),
-    // the added fonts are files on the device; the notifications, the welcome, the tour and the name are not reading preferences
-    reset: () => commit({ ...DEFAULTS, customFonts: prefs.customFonts, streakReminder: prefs.streakReminder, verseNotify: prefs.verseNotify, inviteNotify: prefs.inviteNotify, onboarded: prefs.onboarded, toured: prefs.toured, readerName: prefs.readerName }),
+    // the added fonts are files on the device; the daily goal, the notifications, the welcome, the tour and the name are not reading preferences
+    reset: () => commit({ ...DEFAULTS, customFonts: prefs.customFonts, dailyGoal: prefs.dailyGoal, streakReminder: prefs.streakReminder, verseNotify: prefs.verseNotify, inviteNotify: prefs.inviteNotify, onboarded: prefs.onboarded, toured: prefs.toured, readerName: prefs.readerName }),
     subscribe: fn => { listeners.add(fn); return () => { listeners.delete(fn) } },
     hydrate: stored => { if (stored) prefs = withFonts(stored, DEFAULTS); loaded = true; emit() },
     flush,
@@ -144,6 +149,8 @@ function migrate(raw: Record<string, unknown>): Partial<Prefs> {
   if (typeof raw.themeLight !== 'string' || !isThemeId(raw.themeLight)) out.themeLight = out.themeLight ?? LIGHT_DEFAULT
   if (typeof raw.themeDark !== 'string' || !isThemeId(raw.themeDark)) out.themeDark = DARK_DEFAULT
   Object.assign(out, migrateFontPrefs(raw))
+  out.moreColours = raw.moreColours === true
+  out.dailyGoal = readDailyGoal(raw.dailyGoal)
   out.streakReminder = readReminder(raw.streakReminder, DEFAULTS.streakReminder)
   // versionCode 31's first shape was one switch + time; it becomes one Any-book item (the reader's time kept) or none
   out.verseNotify = readVerseNotify(raw.verseNotify)

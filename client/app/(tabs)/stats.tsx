@@ -10,6 +10,8 @@ import { useAuth } from '../../src/store/auth'
 import { useInks } from '../../src/hooks/useTheme'
 import { fetchStats } from '../../src/hooks/useStreakAlive'
 import { localDay, streakToday } from '../../src/lib/localDay'
+import { goalView } from '../../src/lib/dailyGoal'
+import { usePref } from '../../src/store/prefs'
 import { WeekStrip } from '../../src/components/StreakCard'
 import { useCountUp } from '../../src/components/motion/home'
 import { BadgeGrid, useFreshBadges } from '../../src/components/motion/badges'
@@ -26,6 +28,7 @@ const whole = (n: number) => String(Math.round(n))
 
 export default function StatsScreen() {
   const { user } = useAuth()
+  const dailyGoal = usePref('dailyGoal')
   const [stats, setStats] = useState<Stats | null>(null)
   const [progress, setProgress] = useState<Record<string, number[]> | null>(null)
   const [err, setErr] = useState('')
@@ -68,7 +71,7 @@ export default function StatsScreen() {
             <Tile label="Books" value={stats.books_completed} />
           </View>
           <H2>This week</H2>
-          <Card ref={tourRef('stats-week')}><WeekStrip days={stats.streak.days} /><T small muted>{fmtDuration(streakToday(stats.streak, localDay()).todaySeconds)} of {fmtDuration(stats.streak.today_goal_seconds)} today</T></Card>
+          <Card ref={tourRef('stats-week')}><WeekStrip days={stats.streak.days} /><T small muted>{goalView(streakToday(stats.streak, localDay()).todaySeconds, stats.streak.today_goal_seconds, dailyGoal).line}</T></Card>
           <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
             <H2>Badges</H2>
             <BadgeCount earned={earned} total={stats.badges.length} />

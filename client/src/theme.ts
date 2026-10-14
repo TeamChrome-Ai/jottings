@@ -2,18 +2,41 @@ import { Platform, type TextStyle } from 'react-native'
 import type { Font } from './store/prefs'
 import { customIdOf, getCustomFont, nativeFamily, webFamily, type FaceKey } from './lib/customFonts'
 import { lineFactor } from './lib/lineHeight'
+import { HL_EXTRA, type HlColor, type HlCore, type HlExtra } from './lib/hlColours'
 
 export type Group = 'light' | 'dark' | 'black'
 export interface Colors {
   bg: string; card: string; text: string; muted: string; border: string; accent: string; accentText: string
-  selected: string; danger: string; hl: Record<'yellow' | 'green' | 'blue' | 'pink', string>; bar: string
+  selected: string; danger: string; hl: Record<HlColor, string>; bar: string
   /** Solid accent tint on `bg`: secondary fills, the selected tab pill, chips. Text on it uses `text`. */
   accentSoft: string
 }
 export interface ThemeDef extends Colors { id: ThemeId; name: string; group: Group; dark: boolean }
 
-const HL_LIGHT = { yellow: '#fde68a', green: '#bbf7d0', blue: '#bfdbfe', pink: '#fbcfe8' }
-const HL_DARK = { yellow: '#713f12', green: '#14532d', blue: '#1e3a8a', pink: '#831843' }
+const HL_LIGHT: Record<HlCore, string> = { yellow: '#fde68a', green: '#bbf7d0', blue: '#bfdbfe', pink: '#fbcfe8' }
+const HL_DARK: Record<HlCore, string> = { yellow: '#713f12', green: '#14532d', blue: '#1e3a8a', pink: '#831843' }
+/**
+ * The eight extra highlighters ("More highlight colours"), each as OKLCH [lightness, chroma, hue] on a light page and
+ * on a dark one. The hue moves between the two because the core four do: yellow is 96° light and 58° dark, so orange
+ * and brown stand clear of it on each. `hlTints` makes a theme's eight from these; tests/hlColours.test.ts holds what
+ * they must keep on every theme.
+ */
+type LCH = readonly [number, number, number]
+const HL_LCH: Record<HlExtra, { light: LCH; dark: LCH }> = {
+  orange: { light: [0.885, 0.115, 62], dark: [0.44, 0.13, 42] },
+  red: { light: [0.83, 0.1, 22], dark: [0.41, 0.16, 28] },
+  purple: { light: [0.85, 0.09, 300], dark: [0.4, 0.14, 305] },
+  teal: { light: [0.88, 0.1, 188], dark: [0.42, 0.075, 195] },
+  sky: { light: [0.87, 0.09, 220], dark: [0.42, 0.09, 235] },
+  lime: { light: [0.93, 0.15, 125], dark: [0.42, 0.1, 120] },
+  brown: { light: [0.79, 0.05, 55], dark: [0.33, 0.04, 45] },
+  grey: { light: [0.84, 0.003, 90], dark: [0.37, 0, 0] },
+}
+/** What is printed on a tinted verse (its words, its number, a note's letter) and the contrast each keeps on an extra
+ *  tint: this, or what the theme's weakest core tint gives that ink where that is lower. */
+const HL_INKS = [['text', 7], ['muted', 3], ['accent', 3]] as const
+/** A dark tint rises with its page (Nord's is far lighter than Black's), by this share of the page's lightness. */
+const HL_LIFT = 0.2
 
 /** `#rrggbb` → `rgba(r,g,b,a)`; used for the selection tint derived from each theme's accent. */
 export function alpha(hex: string, a: number): string {
@@ -34,6 +57,32 @@ const lum = (hex: string) => {
 export function contrast(a: string, b: string): number {
   const x = lum(a), y = lum(b)
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+}
+/** OKLCH → `#rrggbb`; the chroma gives way until sRGB can show the colour. */
+function oklch(L: number, C: number, h: number): string {
+  const a = Math.cos(h * Math.PI / 180), b = Math.sin(h * Math.PI / 180)
+  for (let c = C; ; c = Math.max(0, c - 0.004)) {
+    const l = (L + 0.3963377774 * a * c + 0.2158037573 * b * c) ** 3, m = (L - 0.1055613458 * a * c - 0.0638541728 * b * c) ** 3, s = (L - 0.0894841775 * a * c - 1.291485548 * b * c) ** 3
+    const v = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s]
+    if (c === 0 || v.every(x => x > -0.0005 && x < 1.0005)) return '#' + v.map(x => { const y = Math.min(1, Math.max(0, x)); return Math.round(255 * (y <= 0.0031308 ? 12.92 * y : 1.055 * y ** (1 / 2.4) - 0.055)).toString(16).padStart(2, '0') }).join('')
+  }
+}
+/**
+ * A theme's twelve highlight tints: the core four as they are, and each extra from its hue. An extra starts at its
+ * lightness (a dark one lifted with the page) and steps away from the inks, lighter on a light page and darker on a
+ * dark one, until all three read on it (HL_INKS).
+ */
+function hlTints(core: Record<HlCore, string>, inks: Pick<Colors, 'text' | 'muted' | 'accent'>, bg: string, dark: boolean): Record<HlColor, string> {
+  const floors = HL_INKS.map(([k, want]) => [inks[k], Math.min(want, ...Object.values(core).map(t => contrast(inks[k], t)))] as const)
+  const lift = dark ? HL_LIFT * Math.cbrt(lum(bg)) : 0, step = dark ? -0.005 : 0.005
+  const out = { ...core } as Record<HlColor, string>
+  for (const k of HL_EXTRA) {
+    const [L, C, h] = HL_LCH[k][dark ? 'dark' : 'light']
+    let l = L + lift, tint = oklch(l, C, h)
+    for (let i = 0; i < 80 && floors.some(([ink, min]) => contrast(ink, tint) < min); i++) tint = oklch(l += step, C, h)
+    out[k] = tint
+  }
+  return out
 }
 /** The faint accent band behind a harmony's filled cells (the Gospels that share a passage): a step of the soft accent,
  *  so the accent's references keep 4.5:1 on it in every theme. */
@@ -58,17 +107,16 @@ const BLACK_MIX: Mix = { card: 0.085, bar: 0.05, border: 0.2, soft: 0.2 }
 
 function build(s: Spec, dark: boolean, m: Mix): Omit<ThemeDef, 'id'> & { id: string } {
   const card = mix(s.bg, s.text, m.card)
+  const muted = legible(s.muted, s.text, [s.bg, card], 4.5), accent = legible(s.accent, s.text, [s.bg, card], 4.5)
   return {
-    ...s, dark, card,
+    ...s, dark, card, muted, accent,
     bar: mix(s.bg, s.text, m.bar),
     border: mix(s.bg, s.text, m.border),
-    muted: legible(s.muted, s.text, [s.bg, card], 4.5),
-    accent: legible(s.accent, s.text, [s.bg, card], 4.5),
     accentText: s.accentText ?? (dark ? s.bg : '#ffffff'),
     accentSoft: mix(s.bg, s.accent, m.soft),
     danger: s.danger ?? (dark ? '#f87171' : '#b91c1c'),
     selected: alpha(s.accent, dark ? 0.24 : 0.16),
-    hl: dark ? HL_DARK : HL_LIGHT,
+    hl: hlTints(dark ? HL_DARK : HL_LIGHT, { text: s.text, muted, accent }, s.bg, dark),
   }
 }
 const light = (s: Spec) => build(s, false, LIGHT_MIX)

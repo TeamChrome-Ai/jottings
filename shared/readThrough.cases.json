@@ -1,0 +1,1184 @@
+{
+  "about": "Worked cases for the read-through rule (shared/readThrough.ts, rs/src/readthrough.rs). Each case starts fresh, applies its beats in order and must end in `expect`. `earned` cases check the time a beat brings. Regenerate the expectations with UPDATE_CASES=1 npx vitest run tests/readThrough.test.ts after a deliberate rule change, and read the diff.",
+  "shapes": {
+    "five": {
+      "verses": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "words": [
+        30,
+        40,
+        50,
+        60,
+        20
+      ],
+      "audioMs": [
+        9000,
+        12000,
+        null,
+        18000,
+        6000
+      ]
+    },
+    "gap": {
+      "verses": [
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "words": [
+        100,
+        100,
+        100,
+        100,
+        100
+      ]
+    },
+    "psalm117": {
+      "verses": [
+        1,
+        2
+      ],
+      "words": [
+        12,
+        15
+      ],
+      "audioMs": [
+        5200,
+        6100
+      ]
+    },
+    "quick": {
+      "verses": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "words": [
+        30,
+        40,
+        50,
+        60,
+        20
+      ],
+      "msPerWord": 150
+    }
+  },
+  "cases": [
+    {
+      "name": "a steady read, a screen at a time",
+      "shape": "five",
+      "beats": [
+        {
+          "ms": 0,
+          "seen": [
+            [
+              1,
+              2
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "seen": [
+            [
+              1,
+              3
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "seen": [
+            [
+              2,
+              4
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "seen": [
+            [
+              4,
+              5
+            ]
+          ]
+        }
+      ],
+      "expect": {
+        "state": {
+          "seen": [
+            30,
+            40,
+            50,
+            60,
+            20
+          ],
+          "heard": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "bank": 250,
+          "activeMs": 45000,
+          "listenBank": 20000
+        },
+        "judgement": {
+          "covered": true,
+          "gaps": [],
+          "requiredMs": 48000,
+          "owingMs": 3000,
+          "read": false
+        }
+      }
+    },
+    {
+      "name": "flicked to the end, then waiting there",
+      "shape": "five",
+      "beats": [
+        {
+          "ms": 2000,
+          "seen": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "seen": [
+            [
+              5,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "seen": [
+            [
+              5,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "seen": [
+            [
+              4,
+              5
+            ]
+          ]
+        }
+      ],
+      "expect": {
+        "state": {
+          "seen": [
+            25,
+            0,
+            0,
+            60,
+            20
+          ],
+          "heard": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "bank": 250,
+          "activeMs": 47000,
+          "listenBank": 20000
+        },
+        "judgement": {
+          "covered": false,
+          "gaps": [
+            [
+              1,
+              3
+            ]
+          ],
+          "requiredMs": 48000,
+          "owingMs": 1000,
+          "read": false
+        }
+      }
+    },
+    {
+      "name": "a long pause on the first screen banks a screenful, no more",
+      "shape": "gap",
+      "beats": [
+        {
+          "ms": 20000,
+          "seen": [
+            [
+              1,
+              1
+            ]
+          ]
+        },
+        {
+          "ms": 20000,
+          "seen": [
+            [
+              1,
+              1
+            ]
+          ]
+        },
+        {
+          "ms": 20000,
+          "seen": [
+            [
+              1,
+              1
+            ]
+          ]
+        },
+        {
+          "ms": 1000,
+          "seen": [
+            [
+              2,
+              6
+            ]
+          ]
+        }
+      ],
+      "expect": {
+        "state": {
+          "seen": [
+            100,
+            100,
+            100,
+            62,
+            0
+          ],
+          "heard": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "bank": 0,
+          "activeMs": 61000,
+          "listenBank": 20000
+        },
+        "judgement": {
+          "covered": false,
+          "gaps": [
+            [
+              5,
+              6
+            ]
+          ],
+          "requiredMs": 120000,
+          "owingMs": 59000,
+          "read": false
+        }
+      }
+    },
+    {
+      "name": "a verse missing from the text is not a gap",
+      "shape": "gap",
+      "beats": [
+        {
+          "ms": 20000,
+          "seen": [
+            [
+              1,
+              3
+            ]
+          ]
+        },
+        {
+          "ms": 20000,
+          "seen": [
+            [
+              3,
+              6
+            ]
+          ]
+        },
+        {
+          "ms": 20000,
+          "seen": [
+            [
+              5,
+              6
+            ]
+          ]
+        },
+        {
+          "ms": 20000,
+          "seen": [
+            [
+              6,
+              6
+            ]
+          ]
+        },
+        {
+          "ms": 20000,
+          "seen": [
+            [
+              6,
+              6
+            ]
+          ]
+        },
+        {
+          "ms": 20000,
+          "seen": [
+            [
+              6,
+              6
+            ]
+          ]
+        },
+        {
+          "ms": 20000,
+          "seen": [
+            [
+              6,
+              6
+            ]
+          ]
+        }
+      ],
+      "expect": {
+        "state": {
+          "seen": [
+            100,
+            100,
+            100,
+            100,
+            100
+          ],
+          "heard": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "bank": 250,
+          "activeMs": 140000,
+          "listenBank": 20000
+        },
+        "judgement": {
+          "covered": true,
+          "gaps": [],
+          "requiredMs": 120000,
+          "owingMs": 0,
+          "read": true
+        }
+      }
+    },
+    {
+      "name": "heard at 1.5x",
+      "shape": "five",
+      "beats": [
+        {
+          "ms": 14000,
+          "heard": [
+            [
+              1,
+              2
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "heard": [
+            [
+              3,
+              3
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "heard": [
+            [
+              4,
+              5
+            ]
+          ]
+        }
+      ],
+      "expect": {
+        "state": {
+          "seen": [
+            30,
+            40,
+            50,
+            60,
+            20
+          ],
+          "heard": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "bank": 250,
+          "activeMs": 44000,
+          "listenBank": 2000
+        },
+        "judgement": {
+          "covered": true,
+          "gaps": [],
+          "requiredMs": 40500,
+          "owingMs": 0,
+          "read": true
+        }
+      }
+    },
+    {
+      "name": "more heard than the time allows: only what fits, in order",
+      "shape": "five",
+      "beats": [
+        {
+          "ms": 6000,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        }
+      ],
+      "expect": {
+        "state": {
+          "seen": [
+            30,
+            0,
+            0,
+            0,
+            0
+          ],
+          "heard": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "bank": 75,
+          "activeMs": 6000,
+          "listenBank": 0
+        },
+        "judgement": {
+          "covered": false,
+          "gaps": [
+            [
+              2,
+              5
+            ]
+          ],
+          "requiredMs": 46500,
+          "owingMs": 40500,
+          "read": false
+        }
+      }
+    },
+    {
+      "name": "read half, heard the rest",
+      "shape": "five",
+      "beats": [
+        {
+          "ms": 15000,
+          "seen": [
+            [
+              1,
+              3
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "seen": [
+            [
+              1,
+              3
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "heard": [
+            [
+              4,
+              5
+            ]
+          ]
+        }
+      ],
+      "expect": {
+        "state": {
+          "seen": [
+            30,
+            40,
+            50,
+            60,
+            20
+          ],
+          "heard": [
+            0,
+            0,
+            0,
+            1,
+            1
+          ],
+          "bank": 250,
+          "activeMs": 45000,
+          "listenBank": 19000
+        },
+        "judgement": {
+          "covered": true,
+          "gaps": [],
+          "requiredMs": 44000,
+          "owingMs": 0,
+          "read": true
+        }
+      }
+    },
+    {
+      "name": "a short psalm needs its own time, held to 10 s",
+      "shape": "psalm117",
+      "beats": [
+        {
+          "ms": 4000,
+          "seen": [
+            [
+              1,
+              2
+            ]
+          ]
+        },
+        {
+          "ms": 5000,
+          "seen": [
+            [
+              1,
+              2
+            ]
+          ]
+        },
+        {
+          "ms": 2000,
+          "seen": [
+            [
+              1,
+              2
+            ]
+          ]
+        }
+      ],
+      "expect": {
+        "state": {
+          "seen": [
+            12,
+            15
+          ],
+          "heard": [
+            0,
+            0
+          ],
+          "bank": 110,
+          "activeMs": 11000,
+          "listenBank": 11000
+        },
+        "judgement": {
+          "covered": true,
+          "gaps": [],
+          "requiredMs": 10000,
+          "owingMs": 0,
+          "read": true
+        }
+      }
+    },
+    {
+      "name": "ranges out of the chapter, and repeated ones, add nothing",
+      "shape": "five",
+      "beats": [
+        {
+          "ms": 15000,
+          "seen": [
+            [
+              9,
+              12
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              2,
+              1
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "seen": [
+            [
+              1,
+              1
+            ],
+            [
+              1,
+              1
+            ]
+          ]
+        }
+      ],
+      "expect": {
+        "state": {
+          "seen": [
+            30,
+            0,
+            0,
+            0,
+            0
+          ],
+          "heard": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "bank": 250,
+          "activeMs": 30000,
+          "listenBank": 20000
+        },
+        "judgement": {
+          "covered": false,
+          "gaps": [
+            [
+              2,
+              5
+            ]
+          ],
+          "requiredMs": 48000,
+          "owingMs": 18000,
+          "read": false
+        }
+      }
+    },
+    {
+      "name": "a verse begun in one beat and ended in the next is paid for by both",
+      "shape": "five",
+      "beats": [
+        {
+          "ms": 4000
+        },
+        {
+          "ms": 3000,
+          "heard": [
+            [
+              1,
+              1
+            ]
+          ]
+        }
+      ],
+      "expect": {
+        "state": {
+          "seen": [
+            30,
+            0,
+            0,
+            0,
+            0
+          ],
+          "heard": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "bank": 87,
+          "activeMs": 7000,
+          "listenBank": 1000
+        },
+        "judgement": {
+          "covered": false,
+          "gaps": [
+            [
+              2,
+              5
+            ]
+          ],
+          "requiredMs": 46500,
+          "owingMs": 39500,
+          "read": false
+        }
+      }
+    },
+    {
+      "name": "beats that bring no time hear nothing, however many",
+      "shape": "five",
+      "beats": [
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "ms": 0,
+          "heard": [
+            [
+              1,
+              5
+            ]
+          ]
+        }
+      ],
+      "expect": {
+        "state": {
+          "seen": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "heard": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "bank": 0,
+          "activeMs": 0,
+          "listenBank": 0
+        },
+        "judgement": {
+          "covered": false,
+          "gaps": [
+            [
+              1,
+              5
+            ]
+          ],
+          "requiredMs": 48000,
+          "owingMs": 48000,
+          "read": false
+        }
+      }
+    },
+    {
+      "name": "a reader's own quicker pace asks less time",
+      "shape": "quick",
+      "beats": [
+        {
+          "ms": 0,
+          "seen": [
+            [
+              1,
+              2
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "seen": [
+            [
+              1,
+              3
+            ]
+          ]
+        },
+        {
+          "ms": 15000,
+          "seen": [
+            [
+              2,
+              4
+            ]
+          ]
+        },
+        {
+          "ms": 1000,
+          "seen": [
+            [
+              4,
+              5
+            ]
+          ]
+        }
+      ],
+      "expect": {
+        "state": {
+          "seen": [
+            30,
+            40,
+            50,
+            60,
+            20
+          ],
+          "heard": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "bank": 186,
+          "activeMs": 31000,
+          "listenBank": 20000
+        },
+        "judgement": {
+          "covered": true,
+          "gaps": [],
+          "requiredMs": 30000,
+          "owingMs": 0,
+          "read": true
+        }
+      }
+    }
+  ],
+  "earned": [
+    {
+      "elapsedMs": 15000,
+      "active": true,
+      "visible": true,
+      "listening": false,
+      "heardCostMs": 0,
+      "expect": 15000
+    },
+    {
+      "elapsedMs": 90000,
+      "active": true,
+      "visible": true,
+      "listening": false,
+      "heardCostMs": 0,
+      "expect": 20000
+    },
+    {
+      "elapsedMs": 15000,
+      "active": false,
+      "visible": true,
+      "listening": false,
+      "heardCostMs": 0,
+      "expect": 0
+    },
+    {
+      "elapsedMs": 15000,
+      "active": true,
+      "visible": false,
+      "listening": false,
+      "heardCostMs": 0,
+      "expect": 0
+    },
+    {
+      "elapsedMs": 45000,
+      "active": true,
+      "visible": false,
+      "listening": true,
+      "heardCostMs": 30000,
+      "expect": 45000
+    },
+    {
+      "elapsedMs": 45000,
+      "active": false,
+      "visible": false,
+      "listening": true,
+      "heardCostMs": 0,
+      "expect": 20000
+    },
+    {
+      "elapsedMs": 7200000,
+      "active": false,
+      "visible": false,
+      "listening": true,
+      "heardCostMs": 400000,
+      "expect": 300000
+    },
+    {
+      "elapsedMs": -5,
+      "active": true,
+      "visible": true,
+      "listening": false,
+      "heardCostMs": 0,
+      "expect": 0
+    }
+  ]
+}

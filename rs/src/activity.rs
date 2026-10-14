@@ -17,6 +17,13 @@ pub struct Beat {
     /// The reader is at the chapter's end as this beat is sent (scrolled to the bottom or it fits, the last page, the
     /// voice finishing it). Absent from clients older than the rule, which `LEGACY_END_PROGRESS` stands in for.
     #[serde(default)] pub reached_end: Option<bool>,
+    /// Verse ranges on screen since the previous beat (readthrough.rs). A beat that carries `seen` or `heard` is judged
+    /// by the read-through rule; one with neither comes from an app older than it and keeps the end-and-time rule.
+    #[serde(default)] pub seen: Option<crate::readthrough::Ranges>,
+    /// Verse ranges the voice finished since the previous beat.
+    #[serde(default)] pub heard: Option<crate::readthrough::Ranges>,
+    /// The voice is reading this chapter: a beat with the screen off still brings the time the verses it finished take.
+    #[serde(default)] pub listening: Option<bool>,
 }
 
 /// A beat without `reached_end` counts as the end when its scroll progress is this far.
@@ -30,7 +37,9 @@ pub struct BeatResult { pub date: String, pub active_seconds_today: i64, pub pag
     pub unseen_reactions: i64,
     /// Friend invites waiting (friends.rs, none while invites are off); a larger number than last time sends the app to
     /// `GET /friends/invites/incoming` for the new ones.
-    pub incoming_invites: i64 }
+    pub incoming_invites: i64,
+    /// Where the beat's chapter stands under the read-through rule; absent for a beat from an older app.
+    #[serde(skip_serializing_if = "Option::is_none")] pub reading: Option<crate::readthrough::Standing> }
 
 #[derive(Serialize, Clone)]
 pub struct Day { pub date: String, pub active_seconds: i64, pub pages: i64, pub met: u8 }
@@ -86,21 +95,59 @@ pub fn beat_at(conn: &mut Conn, user_id: i64, b: &Beat, now: time::OffsetDateTim
     let offset = valid_offset(b.tz_offset_min).unwrap_or_else(|| user_offset(conn, user_id));
     let latest: Option<String> = conn.query_row("SELECT max(date) FROM activity_days WHERE user_id=?1", params![user_id], |r| r.get(0))?;
     let date = resolve_day(now, b.local_date.as_deref(), Some(offset), latest.as_deref());
-    let mut earned = 0i64;
-    let sess: Option<(i64, String)> = conn.query_row("SELECT user_id, last_beat_at FROM activity_sessions WHERE id=?1", params![b.session_id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+    // everything from reading the clock to moving it is one write transaction, taken at once: two beats sent together
+    // queue here instead of each counting the same gap
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let sess: Option<(i64, String)> = tx.query_row("SELECT user_id, last_beat_at FROM activity_sessions WHERE id=?1", params![b.session_id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+    // the read-through rule's view of the chapter, read before the time is counted: a beat while the voice reads can
+    // bring the time the verses it finished take, so the time depends on them
+    let through = match (b.book, b.chapter) {
+        (Some(book), Some(chapter)) if b.seen.is_some() || b.heard.is_some() => Some(Through::open(&tx, user_id, book, chapter, &date, now)?),
+        _ => None,
+    };
+    // the reader's own clock: the last beat that counted time, from any of their sessions. A beat counts the time since
+    // the later of that and its own session's last beat, so sessions or devices beating side by side never count the
+    // same seconds twice (a chapter's time is the reader's, not the session's). A beat that counts nothing leaves the
+    // clock alone, so a tab left open on another device does not eat into the one being read.
+    let user_last: Option<String> = tx.query_row("SELECT last_beat_at FROM users WHERE id=?1", params![user_id], |r| r.get(0))?;
+    let mut earned_ms = 0i64;
     match sess {
-        None => { conn.execute("INSERT INTO activity_sessions (id, user_id, started_at, last_beat_at, device) VALUES (?1,?2,?3,?3,?4)", params![b.session_id, user_id, now_s, b.device])?; }
+        None => { tx.execute("INSERT INTO activity_sessions (id, user_id, started_at, last_beat_at, device) VALUES (?1,?2,?3,?3,?4)", params![b.session_id, user_id, now_s, b.device])?; }
         Some((uid, _)) if uid != user_id => anyhow::bail!("session belongs to another user"),
         Some((_, last)) => {
-            let elapsed = parse_iso(&last).map(|t| (now - t).whole_seconds()).unwrap_or(0);
-            if b.active && b.visible && elapsed > 0 { earned = elapsed.min(MAX_BEAT_SECONDS); }
-            conn.execute("UPDATE activity_sessions SET last_beat_at=?1, active_seconds=active_seconds+?2 WHERE id=?3", params![now_s, earned, b.session_id])?;
+            let from = [Some(last.as_str()), user_last.as_deref()].into_iter().flatten().filter_map(parse_iso).max();
+            let elapsed_ms = from.map_or(0, |t| (now - t).whole_milliseconds() as i64).max(0);
+            earned_ms = match &through {
+                Some(t) => {
+                    let cost = crate::readthrough::heard_cost_ms(&t.shape, b.heard.as_ref());
+                    // the voice finishing a verse is the voice reading, whatever the flag says (it goes idle at the end)
+                    let listening = b.listening.unwrap_or(false) || b.heard.as_ref().is_some_and(|h| !h.is_empty());
+                    crate::readthrough::earned_ms(elapsed_ms, b.active, b.visible, listening, cost)
+                }
+                None if b.active && b.visible => elapsed_ms.min(MAX_BEAT_SECONDS * 1000),
+                None => 0,
+            };
+            tx.execute("UPDATE activity_sessions SET last_beat_at=?1, active_seconds=active_seconds+?2 WHERE id=?3", params![now_s, earned_ms / 1000, b.session_id])?;
         }
     }
+    if earned_ms > 0 { tx.execute("UPDATE users SET last_beat_at=?1 WHERE id=?2", params![now_s, user_id])?; }
+    let earned = earned_ms / 1000;
     let mut credited = None;
     let mut chapter_new = 0i64;
-    let tx = conn.transaction()?;
-    if let (Some(book), Some(chapter)) = (b.book, b.chapter) {
+    let mut reading = None;
+    if let (Some(book), Some(chapter), Some(t)) = (b.book, b.chapter, through) {
+        tx.execute("INSERT INTO chapter_dwell (session_id, book, chapter, active_seconds, max_progress, signal_events, reached_end) VALUES (?1,?2,?3,?4,?5,?6,?7)
+            ON CONFLICT(session_id, book, chapter) DO UPDATE SET active_seconds=active_seconds+excluded.active_seconds, max_progress=max(max_progress, excluded.max_progress), signal_events=signal_events+excluded.signal_events, reached_end=max(reached_end, excluded.reached_end)",
+            params![b.session_id, book, chapter, earned, b.progress.unwrap_or(0.0).clamp(0.0, 1.0), b.signals.unwrap_or(0).clamp(0, 50), b.reached_end.unwrap_or(false) as i64])?;
+        let standing = t.beat(&tx, earned_ms, b.seen.as_ref(), b.heard.as_ref(), b.signals.unwrap_or(0), &now_s)?;
+        if standing.judgement.read && !standing.credited_today {
+            let (c, new) = credit(&tx, user_id, &b.session_id, book, chapter, &date, standing.through.active_ms / 1000, &now_s, offset)?;
+            credited = c; chapter_new = new;
+            t.close(&tx, &standing.through, &date, &now_s)?;
+        }
+        crate::readthrough::forget_old(&tx, user_id, now)?;
+        reading = Some(crate::readthrough::Standing { credited_today: standing.credited_today || standing.judgement.read, ..standing });
+    } else if let (Some(book), Some(chapter)) = (b.book, b.chapter) {
         let progress = b.progress.unwrap_or(0.0).clamp(0.0, 1.0);
         let signals = b.signals.unwrap_or(0).clamp(0, 50);
         let end = b.reached_end.unwrap_or(progress >= LEGACY_END_PROGRESS);
@@ -112,15 +159,10 @@ pub fn beat_at(conn: &mut Conn, user_id: i64, b: &Beat, now: time::OffsetDateTim
         // length. Not "the end was touched once": a scroll to the bottom and back, then time spent halfway, was being
         // credited (the owner, build 31). The stored `reached_end` stays for the stats; it no longer credits by itself.
         let _ = reached;
-        if cred == 0 && end && dwell >= chapter_required_seconds(&tx, book, chapter) {
-            tx.execute("UPDATE chapter_dwell SET credited=1 WHERE session_id=?1 AND book=?2 AND chapter=?3", params![b.session_id, book, chapter])?;
-            let n = tx.execute("INSERT OR IGNORE INTO page_credits (user_id, book, chapter, date, dwell_seconds, credited_at, tz_offset_min) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![user_id, book, chapter, date, dwell, now_s, offset])?;
-            if n > 0 {
-                credited = Some(Credited { book, chapter });
-                let before: Option<i64> = tx.query_row("SELECT 1 FROM chapters_read WHERE user_id=?1 AND book=?2 AND chapter=?3", params![user_id, book, chapter], |r| r.get(0)).optional()?;
-                tx.execute("INSERT INTO chapters_read (user_id, book, chapter, first_read_at, last_read_at) VALUES (?1,?2,?3,?4,?4) ON CONFLICT(user_id, book, chapter) DO UPDATE SET times=times+1, last_read_at=excluded.last_read_at", params![user_id, book, chapter, now_s])?;
-                if before.is_none() { chapter_new = 1; }
-            }
+        // a chapter the text does not have is never credited (it was taken as 1000 words)
+        let exists: bool = tx.query_row("SELECT 1 FROM chapters WHERE book=?1 AND chapter=?2", params![book, chapter], |_| Ok(true)).optional()?.unwrap_or(false);
+        if cred == 0 && end && exists && dwell >= chapter_required_seconds(&tx, book, chapter) {
+            (credited, chapter_new) = credit(&tx, user_id, &b.session_id, book, chapter, &date, dwell, &now_s, offset)?;
         }
     }
     if earned > 0 || credited.is_some() {
@@ -136,7 +178,63 @@ pub fn beat_at(conn: &mut Conn, user_id: i64, b: &Beat, now: time::OffsetDateTim
     if day_met(ta, goal) && !day_met(ta - earned, goal) { crate::friends::on_day_met(conn, user_id)?; crate::groups::on_day_met(conn, user_id)?; }
     let unseen_reactions = crate::friends::unseen_reactions(conn, user_id)?;
     let incoming_invites = crate::friends::incoming_count(conn, user_id)?;
-    Ok(BeatResult { active_seconds_today: ta, pages_today: tp, credited, streak: streak_info(conn, user_id, &date)?, new_badges, date, unseen_reactions, incoming_invites })
+    Ok(BeatResult { active_seconds_today: ta, pages_today: tp, credited, streak: streak_info(conn, user_id, &date)?, new_badges, date, unseen_reactions, incoming_invites, reading })
+}
+
+/// Credits a chapter on `date`: the session's dwell row, the day's credit (once a day), the chapter's read count.
+/// Returns the credit when it is new today, and 1 when the chapter was never read before.
+#[allow(clippy::too_many_arguments)]
+fn credit(tx: &rusqlite::Transaction, user_id: i64, session: &str, book: i64, chapter: i64, date: &str, dwell: i64, now_s: &str, offset: i64) -> rusqlite::Result<(Option<Credited>, i64)> {
+    tx.execute("UPDATE chapter_dwell SET credited=1 WHERE session_id=?1 AND book=?2 AND chapter=?3", params![session, book, chapter])?;
+    let n = tx.execute("INSERT OR IGNORE INTO page_credits (user_id, book, chapter, date, dwell_seconds, credited_at, tz_offset_min) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![user_id, book, chapter, date, dwell, now_s, offset])?;
+    if n == 0 { return Ok((None, 0)) }
+    let before: Option<i64> = tx.query_row("SELECT 1 FROM chapters_read WHERE user_id=?1 AND book=?2 AND chapter=?3", params![user_id, book, chapter], |r| r.get(0)).optional()?;
+    tx.execute("INSERT INTO chapters_read (user_id, book, chapter, first_read_at, last_read_at) VALUES (?1,?2,?3,?4,?4) ON CONFLICT(user_id, book, chapter) DO UPDATE SET times=times+1, last_read_at=excluded.last_read_at", params![user_id, book, chapter, now_s])?;
+    Ok((Some(Credited { book, chapter }), before.is_none() as i64))
+}
+
+/// A beat's chapter under the read-through rule: its shape, and the reader's state on it as stored (None: credited
+/// today already, nothing more counts until tomorrow; or a chapter the text does not have).
+struct Through { user_id: i64, book: i64, chapter: i64, shape: std::sync::Arc<crate::readthrough::Shape>, state: Option<crate::readthrough::ReadThrough>, credited_today: bool }
+
+impl Through {
+    fn open(conn: &rusqlite::Connection, user_id: i64, book: i64, chapter: i64, date: &str, now: time::OffsetDateTime) -> anyhow::Result<Through> {
+        use crate::readthrough as rt;
+        let mut shape = rt::shape(conn, book, chapter)?;
+        // the reader's own pace, once learned, sets the time a verse read asks
+        if let Some(p) = rt::pace_ms_per_word(conn, user_id)? { shape = std::sync::Arc::new(rt::Shape { ms_per_word: Some(p), ..(*shape).clone() }); }
+        let stored = rt::load(conn, user_id, book, chapter)?;
+        let credited_today = stored.as_ref().and_then(|s| s.credited_date.as_deref()) == Some(date);
+        // kept while read within the last two days and not credited since (a credit on an earlier day starts it again)
+        let keep = |s: &rt::Stored| s.credited_date.is_none() && parse_iso(&s.updated_at).is_some_and(|t| now - t < time::Duration::hours(rt::KEEP_HOURS));
+        let stale = stored.as_ref().is_some_and(|s| !credited_today && !keep(s));
+        // a chapter starting again starts with no touches and no timing either
+        if stale { rt::drop_row(conn, user_id, book, chapter)?; }
+        let state = (!shape.words.is_empty() && !credited_today).then(|| rt::fit(stored.filter(keep).and_then(|s| s.through), &shape));
+        Ok(Through { user_id, book, chapter, shape, state, credited_today })
+    }
+    /// Adds the beat to the chapter and stores it.
+    fn beat(&self, tx: &rusqlite::Transaction, ms: i64, seen: Option<&crate::readthrough::Ranges>, heard: Option<&crate::readthrough::Ranges>, signals: i64, now_s: &str) -> rusqlite::Result<crate::readthrough::Standing> {
+        use crate::readthrough as rt;
+        let through = match &self.state {
+            // stored only when it changed, so the two days run from the last reading, not the last look
+            Some(st) => { let t = rt::apply(st, &self.shape, ms, seen, heard); if t != *st { rt::save(tx, self.user_id, self.book, self.chapter, &t, None, now_s)?; } t }
+            None => rt::fresh(&self.shape),
+        };
+        let mut judgement = rt::judge(&through, &self.shape);
+        // nothing to credit in a chapter the text does not have, nor twice in a day
+        if self.state.is_none() { judgement.read = false; } else { rt::note_reading(tx, self.user_id, self.book, self.chapter, signals, judgement.covered, through.active_ms)?; }
+        // the recordings' timings go with a chapter being listened to, so the device counts down as the server will
+        let audio_ms = if through.heard.iter().any(|h| *h != 0) { self.shape.audio_ms.clone() } else { None };
+        Ok(rt::Standing { book: self.book, chapter: self.chapter, through, judgement, credited_today: self.credited_today, audio_ms, ms_per_word: self.shape.ms_per_word })
+    }
+    /// Holds the chapter as credited on `date`: nothing more counts toward it until the next day starts it again. A chapter
+    /// read through by the reader's own touches and scrolls teaches the server their pace.
+    fn close(&self, tx: &rusqlite::Transaction, t: &crate::readthrough::ReadThrough, date: &str, now_s: &str) -> rusqlite::Result<()> {
+        use crate::readthrough as rt;
+        rt::learn_pace(tx, self.user_id, self.book, self.chapter, self.shape.words.iter().sum(), t.heard.iter().any(|h| *h != 0))?;
+        rt::save(tx, self.user_id, self.book, self.chapter, t, Some(date), now_s)
+    }
 }
 
 
@@ -218,8 +316,11 @@ mod tests {
         c.execute("INSERT INTO users (handle, display_name, password_hash) VALUES ('t', 'T', 'x')", []).unwrap();
         c
     }
-    fn backdate(c: &Conn, sid: &str) { c.execute("UPDATE activity_sessions SET last_beat_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-60 seconds') WHERE id=?1", params![sid]).unwrap(); }
-    fn b(sid: &str, active: bool, progress: f64, signals: i64) -> Beat { Beat { session_id: sid.into(), book: Some(65), chapter: Some(1), progress: Some(progress), signals: Some(signals), active, visible: true, device: None, local_date: None, tz_offset_min: None, reached_end: Some(progress >= 1.0) } }
+    fn backdate(c: &Conn, sid: &str) {
+        c.execute("UPDATE activity_sessions SET last_beat_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-60 seconds') WHERE id=?1", params![sid]).unwrap();
+        c.execute("UPDATE users SET last_beat_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-60 seconds')", []).unwrap();
+    }
+    fn b(sid: &str, active: bool, progress: f64, signals: i64) -> Beat { Beat { session_id: sid.into(), book: Some(65), chapter: Some(1), progress: Some(progress), signals: Some(signals), active, visible: true, device: None, local_date: None, tz_offset_min: None, reached_end: Some(progress >= 1.0), seen: None, heard: None, listening: None } }
     fn at(s: &str) -> time::OffsetDateTime { time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).unwrap() }
     fn date(s: &str) -> time::Date { parse_day(s).unwrap() }
     /// A reading beat from a device at `offset`: the local date is what that device's clock shows at `now`.
@@ -280,7 +381,9 @@ mod tests {
         // 23:30 in Auckland (UTC+12) on the 27th is 11:30 UTC on the 27th: same date
         let r = read_at(&mut c, "akl", at("2026-09-27T11:30:00Z"), 720, 20);
         assert_eq!(r.date, "2026-09-27");
-        // 00:30 on the 28th in Kiritimati (UTC+14) is still the 27th at 10:30 UTC: a day ahead of UTC
+        // 00:30 on the 28th in Kiritimati (UTC+14) is still the 27th at 10:30 UTC: a day ahead of UTC. (Sent after the
+        // 11:30 beat, so the reader's clock is put back first: a server's own clock never runs backwards.)
+        c.execute("UPDATE users SET last_beat_at=NULL WHERE id=1", []).unwrap();
         let r = read_at(&mut c, "kir", at("2026-09-27T10:30:00Z"), 840, 20);
         assert_eq!(r.date, "2026-09-28");
         let days: Vec<String> = c.prepare("SELECT date FROM activity_days WHERE user_id=1 ORDER BY date").unwrap().query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
@@ -443,6 +546,310 @@ mod tests {
         assert!(visit(&mut c, "old1", (65, 1), "2026-09-26T12:00:00Z", &[(20, None, 0.9); 6]).iter().all(|x| !x));
         let got = visit(&mut c, "old2", (65, 1), "2026-09-26T12:10:00Z", &[(20, None, 1.0); 10]);
         assert_eq!(got.iter().position(|x| *x), Some(7), "{got:?}"); // 160 s ≥ 144 s
+    }
+
+    /// Read aloud (client/src/store/player.tsx, useActivity): each spoken verse counts as input, so every 15 s beat earns
+    /// its time, and the end is reached when the voice finishes the chapter, `secs` after it began: the last beat says so.
+    fn listened(c: &mut Conn, sid: &str, chapter: (i64, i64), secs: i64) -> Vec<bool> {
+        let mut beats = vec![(15, NOT_END, 0.5); (secs / 15) as usize];
+        beats.push((secs % 15, END, 1.0));
+        visit(c, sid, chapter, "2026-09-26T12:00:00Z", &beats)
+    }
+
+    #[test]
+    fn a_chapter_listened_to_its_end_is_credited_when_the_recording_outlasts_the_time_its_length_asks() {
+        // John 3, 802 words: 192 s at 250 wpm. The three voices take 222 s to 266 s over it at 1× (167 to 217 wpm)
+        let john3 = |secs: i64| { let mut c = fresh(); chapter(&c, 43, 3, 802); assert_eq!(chapter_required_seconds(&c, 43, 3), 192); listened(&mut c, "aloud", (43, 3), secs) };
+        for secs in [222, 266] {
+            let got = john3(secs);
+            assert_eq!((got.iter().filter(|x| **x).count(), got.last()), (1, Some(&true)), "{secs} s at 1×: credited once, by the beat that ends it");
+        }
+        // at 1.5×, the fastest speed offered (client/src/lib/tts.ts SPEEDS), the same recordings last 148 s to 177 s, and
+        // the half-second pauses between 36 verses add 17 s: all but the slowest end under the 192 s, uncredited
+        for secs in [148, 148 + 17, 177] { assert!(john3(secs).iter().all(|x| !x), "{secs} s at 1.5×"); }
+        assert_eq!(john3(177 + 17).last(), Some(&true), "the slowest voice with its pauses just meets it");
+        // the rule is the same for a listener: staying at the end for the time still owing credits the chapter
+        let mut c = fresh();
+        chapter(&c, 43, 3, 802);
+        assert!(listened(&mut c, "aloud", (43, 3), 165).iter().all(|x| !x));
+        assert_eq!(visit(&mut c, "aloud", (43, 3), "2026-09-26T12:02:45Z", &[(15, END, 1.0), (12, END, 1.0)]), [false, true]);
+        // a chapter shorter than the 45 s floor is not credited by its recording at any speed: Psalm 117 is 13 s to 18 s
+        let mut c = fresh();
+        chapter(&c, 19, 117, 27);
+        assert!(listened(&mut c, "aloud", (19, 117), 18).iter().all(|x| !x));
+    }
+
+    // ---------------- the read-through rule (readthrough.rs): beats that say what went past the reader
+
+    /// A chapter whose verses have these many words each.
+    fn verses(c: &Conn, book: i64, chapter: i64, words: &[i64]) {
+        c.execute("INSERT OR IGNORE INTO chapters (book, chapter, words, verse_count) VALUES (?1,?2,?3,?4)", params![book, chapter, words.iter().sum::<i64>(), words.len() as i64]).unwrap();
+        for (i, w) in words.iter().enumerate() { c.execute("INSERT INTO verses (book, chapter, verse, text) VALUES (?1,?2,?3,?4)", params![book, chapter, i as i64 + 1, vec!["word"; *w as usize].join(" ")]).unwrap(); }
+    }
+    /// One beat `secs` after the last: the verses on screen and heard since it; `screen`: the reader is active on a
+    /// showing screen (else the screen is off and only the voice can bring time).
+    struct Step { secs: i64, seen: Vec<[i64; 2]>, heard: Vec<[i64; 2]>, screen: bool, listening: bool }
+    fn on(secs: i64, a: i64, b: i64) -> Step { Step { secs, seen: vec![[a, b]], heard: vec![], screen: true, listening: false } }
+    fn aloud(secs: i64, a: i64, b: i64) -> Step { Step { secs, seen: vec![], heard: vec![[a, b]], screen: false, listening: true } }
+    /// Beats on chapter `ch` from session `sid`, the first (opening the session) at `start`; each beat's result.
+    fn through(c: &mut Conn, sid: &str, ch: (i64, i64), start: time::OffsetDateTime, steps: &[Step]) -> Vec<BeatResult> {
+        let mut t = start;
+        let beat = |t, s: &Step| Beat { book: Some(ch.0), chapter: Some(ch.1), active: s.screen, visible: s.screen, seen: Some(s.seen.clone()), heard: Some(s.heard.clone()), listening: Some(s.listening), ..local_beat(sid, t, 0) };
+        beat_at(c, 1, &beat(t, &on(0, 1, 1)), t).unwrap();
+        steps.iter().map(|s| { t += time::Duration::seconds(s.secs); beat_at(c, 1, &beat(t, s), t).unwrap() }).collect()
+    }
+    impl Beat { fn with_session(self, sid: &str) -> Beat { Beat { session_id: sid.into(), ..self } } }
+    fn credits(rs: &[BeatResult]) -> Vec<usize> { rs.iter().enumerate().filter(|(_, r)| r.credited.is_some()).map(|(i, _)| i).collect() }
+    const PHLM: (i64, i64) = (57, 1);
+    /// Six verses of 100 words: 600 words, 144 s at 250 words a minute.
+    fn philemon(c: &Conn) { verses(c, PHLM.0, PHLM.1, &[100; 6]); }
+
+    #[test]
+    fn a_chapter_read_through_counts_wherever_the_reader_is_when_its_time_is_met() {
+        let mut c = fresh();
+        philemon(&c);
+        // a screen at a time to the end in 90 s, then back up to verses 2 and 3 to read them again: the time is met there
+        let mut steps: Vec<Step> = [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 6)].iter().map(|&(a, b)| on(15, a, b)).collect();
+        steps.extend((0..6).map(|_| on(15, 2, 3)));
+        let rs = through(&mut c, "s", PHLM, at("2026-10-14T12:00:00Z"), &steps);
+        assert_eq!(credits(&rs), [9], "credited once, at 150 s, on the beat that met 144 s, away from the end");
+        let r = rs[9].reading.as_ref().unwrap();
+        assert!(r.credited_today && r.judgement.covered && r.judgement.required_ms == 144_000);
+        assert!(rs[10].reading.as_ref().unwrap().credited_today);
+        assert_eq!(rs[8].reading.as_ref().unwrap().judgement.owing_ms, 9_000, "the beat before says what is still owed");
+    }
+
+    #[test]
+    fn a_chapter_flicked_through_is_not_read_however_long_the_reader_waits_at_its_end() {
+        let mut c = fresh();
+        philemon(&c);
+        let mut steps = vec![on(5, 1, 6)];
+        steps.extend((0..14).map(|_| on(15, 6, 6)));
+        let rs = through(&mut c, "s", PHLM, at("2026-10-14T12:00:00Z"), &steps);
+        assert!(credits(&rs).is_empty());
+        let last = rs.last().unwrap().reading.as_ref().unwrap();
+        assert!(last.through.active_ms >= 144_000);
+        assert_eq!(last.judgement.gaps, vec![[1, 5]], "what is still to read: 600 words went by in 5 s, enough for 62 of them");
+        // the old rule, still applied to the beats of an older app, credits the same visit
+        let mut c = fresh();
+        chapter(&c, 43, 3, 600);
+        let mut beats = vec![(5, END, 1.0)];
+        beats.extend(vec![(15, END, 1.0); 14]);
+        assert!(visit(&mut c, "old", (43, 3), "2026-10-14T12:00:00Z", &beats).iter().any(|x| *x));
+    }
+
+    #[test]
+    fn a_chapter_heard_with_the_screen_off_counts() {
+        let mut c = fresh();
+        philemon(&c);
+        // the voice reads a verse every 30 s with the phone locked; the beats come late and say what it finished
+        let steps: Vec<Step> = (1..=6).map(|v| aloud(30, v, v)).collect();
+        let rs = through(&mut c, "s", PHLM, at("2026-10-14T12:00:00Z"), &steps);
+        assert_eq!(credits(&rs), [5]);
+        assert_eq!(rs[5].active_seconds_today, 180, "and the time counts toward the day");
+        // a locked screen with no voice reading brings nothing
+        let mut c = fresh();
+        philemon(&c);
+        let idle: Vec<Step> = (0..12).map(|_| Step { listening: false, heard: vec![], ..aloud(30, 1, 1) }).collect();
+        let rs = through(&mut c, "s", PHLM, at("2026-10-14T12:00:00Z"), &idle);
+        assert!(credits(&rs).is_empty());
+        assert_eq!(rs.last().unwrap().active_seconds_today, 0);
+    }
+
+    #[test]
+    fn listening_again_with_the_screen_off_still_counts_toward_the_day() {
+        let mut c = fresh();
+        philemon(&c);
+        let steps: Vec<Step> = (1..=6).map(|v| aloud(30, v, v)).collect();
+        assert_eq!(credits(&through(&mut c, "a", PHLM, at("2026-10-14T12:00:00Z"), &steps)), [5]);
+        let rs = through(&mut c, "b", PHLM, at("2026-10-14T13:00:00Z"), &steps);
+        assert!(credits(&rs).is_empty(), "once a day");
+        assert_eq!(rs[5].active_seconds_today, 360, "the second listen counts toward the day as the first did");
+    }
+
+    #[test]
+    fn sessions_side_by_side_count_the_same_seconds_once() {
+        let mut c = fresh();
+        philemon(&c);
+        // eight sessions opened together, each beating 20 s later and claiming the whole chapter seen
+        let t0 = at("2026-10-14T12:00:00Z");
+        let beat = |sid: &str, t| Beat { book: Some(PHLM.0), chapter: Some(PHLM.1), seen: Some(vec![[1, 6]]), heard: Some(vec![]), listening: Some(false), ..local_beat(sid, t, 0) };
+        for i in 0..8 { beat_at(&mut c, 1, &beat(&format!("s{i}"), t0), t0).unwrap(); }
+        let t1 = t0 + time::Duration::seconds(20);
+        let rs: Vec<BeatResult> = (0..8).map(|i| beat_at(&mut c, 1, &beat(&format!("s{i}"), t1), t1).unwrap()).collect();
+        assert!(credits(&rs).is_empty());
+        assert_eq!(rs[7].active_seconds_today, 20, "20 s passed, 20 s counted");
+        assert_eq!(rs[7].reading.as_ref().unwrap().through.active_ms, 20_000);
+        // two devices taking turns on one chapter: the time counted is the time that passed
+        let mut c = fresh();
+        philemon(&c);
+        let mut t = t0;
+        beat_at(&mut c, 1, &beat("phone", t), t).unwrap();
+        beat_at(&mut c, 1, &beat("web", t), t).unwrap();
+        for i in 0..8 { t += time::Duration::milliseconds(7_500); beat_at(&mut c, 1, &beat(if i % 2 == 0 { "phone" } else { "web" }, t), t).unwrap(); }
+        let r = beat_at(&mut c, 1, &beat("phone", t), t).unwrap();
+        assert_eq!(r.reading.unwrap().through.active_ms, 60_000);
+    }
+
+    #[test]
+    fn two_beats_sent_at_once_count_the_gap_once() {
+        let path = std::env::temp_dir().join(format!("berean-race-{}.db", crate::auth::random_token(6)));
+        let pool = crate::db::open_pool(path.to_str().unwrap(), None).unwrap();
+        {
+            let c = pool.get().unwrap();
+            c.execute("INSERT INTO users (handle, display_name, password_hash) VALUES ('t', 'T', 'x')", []).unwrap();
+            verses(&c, PHLM.0, PHLM.1, &[100; 6]);
+        }
+        let t0 = at("2026-10-14T12:00:00Z");
+        let beat = |t| Beat { book: Some(PHLM.0), chapter: Some(PHLM.1), seen: Some(vec![[1, 2]]), heard: Some(vec![]), listening: Some(false), ..local_beat("one", t, 0) };
+        beat_at(&mut pool.get().unwrap(), 1, &beat(t0), t0).unwrap();
+        let t1 = t0 + time::Duration::seconds(15);
+        let gate = std::sync::Barrier::new(4);
+        std::thread::scope(|s| {
+            for _ in 0..4 { s.spawn(|| { let mut c = pool.get().unwrap(); gate.wait(); beat_at(&mut c, 1, &beat(t1), t1).unwrap(); }); }
+        });
+        let c = pool.get().unwrap();
+        let day: i64 = c.query_row("SELECT active_seconds FROM activity_days WHERE user_id=1", [], |r| r.get(0)).unwrap();
+        let state: String = c.query_row("SELECT state FROM read_throughs WHERE user_id=1", [], |r| r.get(0)).unwrap();
+        assert_eq!(day, 15, "four beats at once, one 15 s gap");
+        assert!(state.contains("\"activeMs\":15000"), "{state}");
+    }
+
+    #[test]
+    fn a_tab_left_open_elsewhere_does_not_eat_into_the_reading() {
+        let mut c = fresh();
+        philemon(&c);
+        let t0 = at("2026-10-14T12:00:00Z");
+        let reading = |t| Beat { book: Some(PHLM.0), chapter: Some(PHLM.1), seen: Some(vec![[1, 1]]), heard: Some(vec![]), listening: Some(false), ..local_beat("phone", t, 0) };
+        let idle = |t| Beat { active: false, ..reading(t) }.with_session("web");
+        beat_at(&mut c, 1, &reading(t0), t0).unwrap();
+        beat_at(&mut c, 1, &idle(t0), t0).unwrap();
+        let mut last = None;
+        for i in 1..=4 {
+            beat_at(&mut c, 1, &idle(t0 + time::Duration::seconds(15 * i - 7)), t0 + time::Duration::seconds(15 * i - 7)).unwrap();
+            last = Some(beat_at(&mut c, 1, &reading(t0 + time::Duration::seconds(15 * i)), t0 + time::Duration::seconds(15 * i)).unwrap());
+        }
+        assert_eq!(last.unwrap().reading.unwrap().through.active_ms, 60_000);
+    }
+
+    #[test]
+    fn the_voice_going_quiet_at_the_end_keeps_the_verses_it_read() {
+        let mut c = fresh();
+        philemon(&c);
+        // the last verse ends as the voice stops: that beat says it was heard and no longer that the voice is reading
+        let mut steps: Vec<Step> = (1..=5).map(|v| aloud(30, v, v)).collect();
+        steps.push(Step { listening: false, ..aloud(30, 6, 6) });
+        assert_eq!(credits(&through(&mut c, "s", PHLM, at("2026-10-14T12:00:00Z"), &steps)), [5]);
+    }
+
+    #[test]
+    fn listening_again_to_verses_heard_before_still_counts_toward_the_day() {
+        let mut c = fresh();
+        philemon(&c);
+        let first: Vec<Step> = (1..=3).map(|v| aloud(30, v, v)).collect();
+        through(&mut c, "a", PHLM, at("2026-10-14T12:00:00Z"), &first);
+        let rs = through(&mut c, "b", PHLM, at("2026-10-14T13:00:00Z"), &first);
+        assert_eq!(rs[2].active_seconds_today, 180);
+    }
+
+    /// A chapter of 6 verses x 60 words (360 words, 86.4 s at 250 a minute) read a verse a beat, 10 s apart (360 a
+    /// minute), touching once a beat, then waited on at its end until it counts. Returns the beat it was credited on.
+    fn read_quickly(c: &mut Conn, ch: (i64, i64), start: time::OffsetDateTime, touches: i64) -> Option<usize> {
+        let mut t = start;
+        let beat = |t, a: i64, b: i64| Beat { book: Some(ch.0), chapter: Some(ch.1), seen: Some(vec![[a, b]]), heard: Some(vec![]), listening: Some(false), signals: Some(touches), ..local_beat(&format!("quick-{}-{}", ch.0, ch.1), t, 0) };
+        beat_at(c, 1, &beat(t, 1, 1), t).unwrap();
+        let mut steps: Vec<(i64, i64)> = (1..=6).map(|v| (v, v)).collect();
+        steps.extend(vec![(6, 6); 12]);
+        steps.iter().position(|&(a, b)| { t += time::Duration::seconds(10); beat_at(c, 1, &beat(t, a, b), t).unwrap().credited.is_some() })
+    }
+
+    #[test]
+    fn a_reader_who_touches_and_scrolls_through_quickly_earns_a_quicker_pace() {
+        let mut c = fresh();
+        for ch in 1..=7 { verses(&c, 19, ch, &[60; 6]); }
+        let day = at("2026-10-14T08:00:00Z");
+        // the unhurried pace at first: 86.4 s, the 9th beat (90 s)
+        for ch in 1..=5 { assert_eq!(read_quickly(&mut c, (19, ch), day + time::Duration::hours(ch), 1), Some(8), "chapter {ch}"); }
+        // five chapters taken in at 360 a minute, touched all the way: 360 a minute is now theirs (60 s, the 6th beat)
+        assert_eq!(crate::readthrough::pace_ms_per_word(&c, 1).unwrap(), Some(166));
+        assert_eq!(read_quickly(&mut c, (19, 6), day + time::Duration::hours(6), 1), Some(5));
+        // not touched: says nothing about the reader, and the pace stays what it was
+        let mut c = fresh();
+        for ch in 1..=7 { verses(&c, 19, ch, &[60; 6]); }
+        for ch in 1..=6 { read_quickly(&mut c, (19, ch), day + time::Duration::hours(ch), 0); }
+        assert_eq!(crate::readthrough::pace_ms_per_word(&c, 1).unwrap(), None);
+    }
+
+    #[test]
+    fn a_pace_is_learned_only_from_reading_and_held_to_400_a_minute() {
+        use crate::readthrough::{pace_of, pace_sample};
+        assert_eq!(pace_sample(360, 60_000, 4, false), Some(360));
+        assert_eq!(pace_sample(360, 60_000, 4, true), None, "heard: the voice set the pace");
+        assert_eq!(pace_sample(150, 30_000, 4, false), None, "too short to say");
+        assert_eq!(pace_sample(360, 60_000, 2, false), None, "a touch every 30 s: not read by hand");
+        assert_eq!(pace_of(&[900, 900, 900, 900]), None, "four chapters are not enough");
+        assert_eq!(pace_of(&[900, 900, 900, 900, 900]), Some(400));
+        assert_eq!(pace_of(&[180, 200, 220, 240, 260]), Some(250), "never asks more than the unhurried pace");
+        assert_eq!(pace_of(&[300, 1000, 310, 320, 1000, 330, 340]), Some(330), "the median, not the outliers");
+    }
+
+    #[test]
+    fn a_beat_cannot_claim_a_whole_chapter_at_once() {
+        let mut c = fresh();
+        philemon(&c);
+        let mut steps = vec![Step { secs: 20, seen: vec![[1, 6]], heard: vec![[1, 6]], screen: true, listening: true }];
+        steps.extend((0..12).map(|_| on(15, 6, 6)));
+        let rs = through(&mut c, "s", PHLM, at("2026-10-14T12:00:00Z"), &steps);
+        assert!(credits(&rs).is_empty());
+        let first = rs[0].reading.as_ref().unwrap();
+        assert_eq!(first.through.heard, [0, 0, 0, 0, 0, 0], "20 s does not hold even one 100-word verse heard (24 s with no recording)");
+        assert_eq!(first.through.seen, [100, 100, 50, 0, 0, 0], "and 250 words glanced, in order");
+    }
+
+    #[test]
+    fn two_sittings_add_up_and_a_part_read_is_forgotten_after_two_days() {
+        let mut c = fresh();
+        philemon(&c);
+        let start = at("2026-10-14T07:00:00Z");
+        let first: Vec<Step> = [(1, 2), (2, 3), (3, 3), (3, 3), (3, 3)].iter().map(|&(a, b)| on(15, a, b)).collect();
+        assert!(credits(&through(&mut c, "morning", PHLM, start, &first)).is_empty());
+        let evening: Vec<Step> = [(4, 5), (5, 6), (6, 6), (6, 6), (6, 6)].iter().map(|&(a, b)| on(15, a, b)).collect();
+        let rs = through(&mut c, "evening", PHLM, start + time::Duration::hours(10), &evening);
+        assert_eq!(credits(&rs), [4], "75 s in the morning and 75 s in the evening make the 144 s");
+        // the same halves two days and an hour apart: the first is forgotten
+        let mut c = fresh();
+        philemon(&c);
+        through(&mut c, "monday", PHLM, start, &first);
+        let rs = through(&mut c, "wednesday", PHLM, start + time::Duration::hours(49), &evening);
+        assert!(credits(&rs).is_empty());
+        assert_eq!(rs.last().unwrap().reading.as_ref().unwrap().judgement.gaps, vec![[1, 3]]);
+    }
+
+    #[test]
+    fn a_chapter_read_through_is_credited_once_a_day_and_counts_again_the_next() {
+        let mut c = fresh();
+        philemon(&c);
+        let read: Vec<Step> = [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 6), (6, 6), (6, 6), (6, 6), (6, 6)].iter().map(|&(a, b)| on(15, a, b)).collect();
+        let day1 = at("2026-10-14T12:00:00Z");
+        assert_eq!(credits(&through(&mut c, "a", PHLM, day1, &read)).len(), 1);
+        assert!(credits(&through(&mut c, "b", PHLM, day1 + time::Duration::minutes(10), &read)).is_empty(), "read again the same day: once a day");
+        assert_eq!(credits(&through(&mut c, "c", PHLM, day1 + time::Duration::days(1), &read)).len(), 1, "the next day it counts again, read in full");
+        let n: i64 = c.query_row("SELECT count(*) FROM page_credits WHERE user_id=1", [], |r| r.get(0)).unwrap();
+        let times: i64 = c.query_row("SELECT times FROM chapters_read WHERE user_id=1", [], |r| r.get(0)).unwrap();
+        assert_eq!((n, times), (2, 2));
+    }
+
+    #[test]
+    fn a_chapter_the_text_lacks_is_never_credited() {
+        let mut c = fresh();
+        let steps: Vec<Step> = (0..20).map(|_| on(15, 1, 1)).collect();
+        let rs = through(&mut c, "s", (57, 99), at("2026-10-14T12:00:00Z"), &steps);
+        assert!(credits(&rs).is_empty());
+        let n: i64 = c.query_row("SELECT count(*) FROM read_throughs", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0, "and nothing is kept for it");
+        // nor by the old rule, which took a chapter it did not know as 1000 words
+        let mut c = fresh();
+        assert!(visit(&mut c, "old", (65, 99), "2026-10-14T12:00:00Z", &vec![(20, END, 1.0); 40]).iter().all(|x| !x));
     }
 
     /// Credits Revelation 1 by beats ending at `now` from a device at `offset`; the codes of the badges it earned.

@@ -25,7 +25,7 @@ import HomeFriends from '../../src/components/friends/HomeFriends'
 import SignInCard from '../../src/components/SignInCard'
 import PathCard from '../../src/components/PathCard'
 import Wordmark from '../../src/components/Wordmark'
-import { anyLocalRead, usePath } from '../../src/lib/paths'
+import { anyLocalRead, refreshPath, usePath } from '../../src/lib/paths'
 import { signInPromptBelowLibrary } from '../../src/lib/jot'
 import { pathTitle } from '@shared/paths'
 import { countWords } from '../../src/lib/pathWords'
@@ -65,6 +65,8 @@ export default function Home() {
     if (uid) loadFriendsCached().then(f => { if (!cancelled) setFriends(f) }).catch(() => {})
     else setFriends(null)
     anyLocalRead().then(r => { if (!cancelled) setReadAny(r) })
+    // the path card moves by what this device saw credited or marked; what it did not see is asked for on every return
+    void refreshPath()
     return () => { cancelled = true }
   }, [ready, uid]))
 

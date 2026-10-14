@@ -1,5 +1,5 @@
 //! Berean server: axum + SQLite, one static binary with the client and data embedded.
-mod activity; mod auth; mod bans; mod avatars; mod badges; mod bible; mod brand; mod books; mod cleanse; mod companion; mod dictionary; mod db; mod edition; mod error; mod feedback; mod friends; mod google; mod groups; mod link_preview; mod me_data; mod ministry; mod ministry_offline; mod moderation; mod og; mod scan; mod outlines; mod refparse; mod search; mod tts; mod routes; mod rules; mod r#static; mod paths; mod store; mod live;
+mod activity; mod auth; mod bans; mod avatars; mod badges; mod bible; mod brand; mod books; mod cleanse; mod companion; mod dictionary; mod db; mod edition; mod error; mod feedback; mod friends; mod google; mod groups; mod link_preview; mod me_data; mod ministry; mod ministry_offline; mod moderation; mod og; mod scan; mod outlines; mod refparse; mod search; mod tts; mod routes; mod rules; mod r#static; mod paths; mod store; mod live; mod marks; mod readthrough;
 #[cfg(test)] mod testkit;
 
 use axum::{http::{header, HeaderValue}, Router};

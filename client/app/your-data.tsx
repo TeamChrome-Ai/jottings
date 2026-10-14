@@ -7,6 +7,7 @@ import { confirmAsync, errMsg } from '../src/lib/community'
 import { DATA_CATEGORIES, deleteMyData, summarizeDeleted, type DataCategory } from '../src/lib/yourdata'
 import { applyBackup, canSaveToFolder, describeRestore, pickBackupText, saveBackup, saveBackupToFolder } from '../src/lib/backup'
 import { DARBY_APP_NOTES_TITLE, describeCounts, isEmptyBackup, parseBackup } from '../src/lib/backupFile'
+import { describeMarks, readBackupMarks } from '../src/lib/backupMarks'
 import { usePrefsStore } from '../src/store/prefs'
 import { Button, Card, Enter, ErrorText, H, H2, Row, Screen, Spinner, SwitchRow, T } from '../src/components/ui'
 import SignInCard from '../src/components/SignInCard'
@@ -70,17 +71,19 @@ function Backup({ user }: { user: { id: number } | null }) {
       const text = await pickBackupText()
       if (text === null) return
       const parsed = parseBackup(text)
-      if (isEmptyBackup(parsed)) { setRestoreErr(parsed.skipped ? 'Nothing in this file could be read.' : 'This backup is empty.'); return }
+      // the chapters marked as read by hand, which the parsed backup does not carry (lib/backupMarks.ts)
+      const marks = parsed.kind === 'jottings' ? readBackupMarks(text, new Date().toISOString()) : []
+      if (isEmptyBackup(parsed) && !marks.length) { setRestoreErr(parsed.skipped ? 'Nothing in this file could be read.' : 'This backup is empty.'); return }
       const old = parsed.kind === 'darby-app'
       const c = parsed.content
       const notes = old ? (c.jottings[0]?.items.length ?? 0) / 2 : 0
       const holds = old
         ? [describeCounts({ bookmarks: c.bookmarks.length, highlights: c.highlights.length, jottings: 0 }), notes ? `${notes} ${notes === 1 ? 'note' : 'notes'}` : ''].filter(Boolean).join(', ')
-        : [describeCounts({ bookmarks: c.bookmarks.length, highlights: c.highlights.length, jottings: c.jottings.length }), c.position || c.prefs ? 'your place and reading settings' : '', parsed.history ? 'your streak and reading history' : ''].filter(Boolean).join(', ')
+        : [describeCounts({ bookmarks: c.bookmarks.length, highlights: c.highlights.length, jottings: c.jottings.length }), describeMarks(marks.length), c.position || c.prefs ? 'your place and reading settings' : '', parsed.history ? 'your streak and reading history' : ''].filter(Boolean).join(', ')
       const body = `${old ? 'This Darby Bible app backup' : 'This backup'} holds ${holds}.\n\nIt is added to ${where}. Nothing already here is removed or replaced.${notes ? `\n\nThe notes arrive together as one ${NOUN.one}, “${DARBY_APP_NOTES_TITLE}”.` : ''}`
       if (!(await confirmAsync(old ? 'Import this backup?' : 'Restore this backup?', body, old ? 'Import' : 'Restore'))) return
       setBusy('Restoring…')
-      const r = await applyBackup(parsed, user, prefs, setBusy)
+      const r = await applyBackup(parsed, user, prefs, setBusy, marks)
       const summary = describeRestore(r, parsed.skipped, describeCounts)
       setDone(summary); toast.show(summary, 6000)
     } catch (e) {
@@ -93,9 +96,9 @@ function Backup({ user }: { user: { id: number } | null }) {
       <H2>Back up</H2>
       <Card>
         {user ? (
-          <T>Save everything the server holds about you as one file: your profile and settings, reading activity and chapter credits, bookmarks, highlights, where you left off, your {NOUN.many} with their items, group memberships and posts, reports you filed, your block list, and your friends, invites, reactions and contact fingerprints.</T>
+          <T>Save everything the server holds about you as one file: your profile and settings, reading activity and chapter credits, the chapters you marked as read, bookmarks, highlights, where you left off, your {NOUN.many} with their items, group memberships and posts, reports you filed, your block list, and your friends, invites, reactions and contact fingerprints.</T>
         ) : (
-          <T>Save what is on this device as one file: your bookmarks, highlights, {NOUN.many}, where you left off and your reading settings. Keep it somewhere safe; on a new phone, restore it below.</T>
+          <T>Save what is on this device as one file: your bookmarks, highlights, {NOUN.many}, the chapters you marked as read, where you left off and your reading settings. Keep it somewhere safe; on a new phone, restore it below.</T>
         )}
         <T small muted>{Platform.OS === 'web' ? 'The file downloads in your browser.' : canSaveToFolder ? 'Save a backup file offers it to Drive, email or another app; Save to this phone writes it into a folder you choose.' : 'The file is offered to the share sheet, so you can save it to Files or Drive, or send it to yourself.'}</T>
         {busy === 'Preparing your backup…' ? <Spinner label={busy} /> : (

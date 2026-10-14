@@ -125,6 +125,12 @@ pub async fn export(State(s): State<AppState>, AuthUser(u): AuthUser) -> ApiResu
         "activity_signature": signature,
         // the reading path (docs/PATHS.md): the active one and, inside history, the ones left for it
         "path": rows(&conn, "SELECT path_id, started_at, target_date, pace_per_week, with_ministry, custom_json, history_json FROM user_paths WHERE user_id=?1", u.id)?.pop(),
+        // chapters marked read by hand (marks.rs): the reader's own, outside the signature because they earn nothing
+        // chapters part-read (readthrough.rs), kept two days: which verses went past, the time spent so far
+        "read_throughs": rows(&conn, "SELECT book, chapter, state, credited_date, updated_at, signals, covered_ms FROM read_throughs WHERE user_id=?1 ORDER BY updated_at", u.id)?,
+        // the reader's own pace (readthrough.rs), words a minute from the last chapters they read themselves
+        "reading_pace": rows(&conn, "SELECT samples FROM reading_pace WHERE user_id=?1", u.id)?.pop(),
+        "chapter_marks": rows(&conn, "SELECT book, chapter, marked_at FROM chapter_marks WHERE user_id=?1 ORDER BY marked_at, book, chapter", u.id)?,
         "bookmarks": rows(&conn, "SELECT book, chapter, verse, label, color, created_at FROM bookmarks WHERE user_id=?1 ORDER BY created_at, id", u.id)?,
         "highlights": rows(&conn, "SELECT verse_id, color, created_at FROM highlights WHERE user_id=?1 ORDER BY created_at", u.id)?,
         "outlines": outlines,
@@ -168,6 +174,9 @@ pub async fn delete_data(State(s): State<AppState>, AuthUser(u): AuthUser, Json(
                 n += tx.execute("DELETE FROM chapters_read WHERE user_id=?1", params![u.id])?;
                 n += tx.execute("DELETE FROM badges WHERE user_id=?1", params![u.id])?;
                 n += tx.execute("DELETE FROM activity_sessions WHERE user_id=?1", params![u.id])?;
+                n += tx.execute("DELETE FROM chapter_marks WHERE user_id=?1", params![u.id])?;
+                n += tx.execute("DELETE FROM read_throughs WHERE user_id=?1", params![u.id])?;
+                n += tx.execute("DELETE FROM reading_pace WHERE user_id=?1", params![u.id])?;
                 n
             }
             "bookmarks" => tx.execute("DELETE FROM bookmarks WHERE user_id=?1", params![u.id])?,

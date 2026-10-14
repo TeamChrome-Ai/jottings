@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, Easing, View } from 'react-native'
-import { useReduceMotion } from '../store/prefs'
+import { usePref, useReduceMotion } from '../store/prefs'
 import type { StreakInfo } from '@shared/types'
-import { fmtDuration } from '../lib/format'
+import { goalView } from '../lib/dailyGoal'
 import { dayLetter, dayName, weekOf } from '../lib/week'
 import { useInks } from '../hooks/useTheme'
 import Icon from './Icon'
@@ -20,9 +20,8 @@ export default function StreakCard({ streak, delay = 0 }: { streak: StreakInfo; 
   const reduce = useReduceMotion()
   const today = localDay()
   const judged = streakToday(streak, today)
-  const secs = judged.todaySeconds
-  const pct = streak.today_goal_seconds ? Math.min(1, secs / streak.today_goal_seconds) : 0
-  const met = streak.today_goal_seconds > 0 && secs >= streak.today_goal_seconds
+  // the reader's own goal moves the bar and the line under it, never the check: that is the streak's (lib/dailyGoal.ts)
+  const { pct, kept: met, left, line } = goalView(judged.todaySeconds, streak.today_goal_seconds, usePref('dailyGoal'))
   const current = useCountUp(judged.current, undefined, undefined, delay)
   const longest = useCountUp(streak.longest, undefined, undefined, delay)
   const landed = reduce ? 0 : delay + FILL_MS
@@ -37,14 +36,14 @@ export default function StreakCard({ streak, delay = 0 }: { streak: StreakInfo; 
         <T muted style={{ flex: 1 }}>day streak · longest {longest}</T>
         {met ? (
           <Grow delay={landed} style={{ alignSelf: 'center' }}>
-            <View accessibilityLabel="today's goal met" style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center' }}>
+            <View accessibilityLabel={left ? 'streak kept today' : "today's goal met"} style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="check" size={16} color={c.accentText} />
             </View>
           </Grow>
         ) : null}
       </View>
       <Progress pct={pct} delay={delay} />
-      <T small muted>{fmtDuration(secs)} of {fmtDuration(streak.today_goal_seconds)} today</T>
+      <T small muted>{line}</T>
       <WeekStrip days={streak.days} delay={delay} />
     </Card>
   )

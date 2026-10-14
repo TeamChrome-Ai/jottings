@@ -7,11 +7,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated'
 import type { Verse } from '@shared/types'
-import { chapterWords } from '@shared/reading'
 import { book as bookMeta, fetchChapter, nextChapter, prevChapter, tokenize, validRef, warmChapter, type ChapterData } from '../../../src/lib/bible'
-import { geomFromLines, geomFromTops, geomUniform, landingPage, paginate, splitParas, type Landing, type Layout, type Metrics, type Page, type Para } from '../../../src/lib/pages'
+import { geomFromLines, geomFromTops, geomUniform, landingPage, pageOfVerse, paginate, splitParas, type Landing, type Layout, type Metrics, type Page, type Para } from '../../../src/lib/pages'
+import { chapterShape } from '../../../src/lib/screenVerses'
+import type { ChapterMarks } from '../../../src/lib/tts'
 import { loadPosition, savePosition } from '../../../src/hooks/usePosition'
 import { useActivity } from '../../../src/hooks/useActivity'
+import { useCredited } from '../../../src/hooks/useReadTicks'
+import ChapterEndLine from '../../../src/components/ChapterEndLine'
 import { useColors } from '../../../src/hooks/useTheme'
 import { useAuth } from '../../../src/store/auth'
 import { usePlayer } from '../../../src/store/player'
@@ -256,8 +259,29 @@ function FlipScreenPage() {
   const shownKey = useRef(chapterKey); shownKey.current = chapterKey
   // the last page of a laid-out chapter: before its layout the one placeholder page would count as the last
   const atLastPage = useCallback((b: number, c: number) => `${b}.${c}` === shownKey.current && !!layoutRef.current && pageRef.current >= countRef.current - 1, [])
-  const words = useMemo(() => current ? chapterWords(current.verses) : undefined, [current])
-  const { mark, reachEnd } = useActivity(valid ? bookN : undefined, valid ? chapterN : undefined, { getProgress, atEnd: atLastPage, words })
+  /** The verses of the page showing, once the chapter is laid out. */
+  const pageVerses = useCallback((): [number, number] | null => {
+    const p = shownKey.current === `${bookN}.${chapterN}` ? layoutRef.current?.pages[pageRef.current] : undefined
+    return p && p.first > 0 ? [p.first, Math.max(p.first, p.last)] : null
+  }, [bookN, chapterN])
+  // the recording playing times the verses heard (`VoiceState` below reports it)
+  const [voice, setVoice] = useState<VoiceNow>(NO_VOICE)
+  const listening = useRef(false)
+  listening.current = voice.playing
+  const shape = useMemo(() => current ? chapterShape(current.verses, voice.marks) : undefined, [current, voice.marks])
+  const { mark, hear, toCredit } = useActivity(valid ? bookN : undefined, valid ? chapterN : undefined, { getProgress, atEnd: atLastPage, seen: pageVerses, listening: () => listening.current, shape })
+  const hearRef = useRef(hear)
+  hearRef.current = hear
+  const onHeard = useCallback((b: number, c: number, v: number) => hearRef.current(b, c, v), [])
+  /** The end line's "still to read" opens the page that verse is on. */
+  const goToVerse = useCallback((v: number) => {
+    const l = layoutRef.current
+    if (!l) return
+    const p = pageOfVerse(l, v)
+    pg.value = p
+    setPage(p)
+  }, [pg, setPage])
+  const credited = useCredited(bookN, chapterN)
   // a page turn that lands on the last page counts at once, not at the next beat or touch
   useEffect(() => { if (layout && page >= count - 1) mark() }, [layout, page, count, mark])
 
@@ -409,7 +433,6 @@ function FlipScreenPage() {
     if (!layout || spokenV <= 0) return
     // listening is reading: it keeps the time counting without a touch, and the voice reaching the last verse is the end
     mark()
-    if (current && spokenV === current.verses[current.verses.length - 1]?.v) reachEnd(bookN, chapterN)
     const sp = layout.startPage.get(spokenV)
     if (sp === undefined) return
     const was = follow.current.layout === layout ? follow.current.page : -1
@@ -447,6 +470,7 @@ function FlipScreenPage() {
     <View style={[styles.fill, { backgroundColor: colors.bg }]} onLayout={e => { const { width, height } = e.nativeEvent.layout; setBox(b => (b.w === width && b.h === height) ? b : { w: width, h: height }) }} onTouchStart={mark}>
       <Stack.Screen options={{ headerShown: false, title: `${meta.name} ${chapterN}` }} />
       <SpokenVerse book={bookN} chapter={chapterN} onVerse={setSpokenV} />
+      <VoiceState book={bookN} chapter={chapterN} onState={setVoice} onHeard={onHeard} />
       <GestureDetector gesture={gesture}>
         <View style={styles.fill}>
           {layerIdx.map(i => (
@@ -461,6 +485,14 @@ function FlipScreenPage() {
       {/* offscreen: every paragraph once at page width, so the packer works from real line boxes */}
       {measurable && !cached ? (
         <Measurer key={layoutKey} layoutKey={layoutKey} paras={paras} tm={tm} colors={colors} data={current!} width={pageW} height={pageH} onDone={onMeasured} />
+      ) : null}
+
+      {/* the last page: whether the chapter counts as read, and the reader's own mark, in the margin under the text
+          (22 px, which the line's capped text size keeps to) */}
+      {layout && !err && page >= count - 1 ? (
+        <View style={[styles.end, { pointerEvents: 'box-none' }, { bottom: Math.max(insets.bottom - 4, 0) + 3 }]}>
+          <ChapterEndLine bare book={bookN} chapter={chapterN} credited={credited} toCredit={toCredit} goToVerse={goToVerse} />
+        </View>
       ) : null}
 
       <View style={[styles.progress, { pointerEvents: 'none' }, { backgroundColor: colors.border, bottom: Math.max(insets.bottom - 4, 0) }]}>
@@ -484,6 +516,21 @@ function FlipScreenPage() {
 }
 
 /** Read-aloud publishes every spoken word; the page needs only the verse, so the subscription lives apart from the screen. */
+interface VoiceNow { playing: boolean; marks: ChapterMarks | null }
+const NO_VOICE: VoiceNow = { playing: false, marks: null }
+/** Whether the voice is reading this chapter and the recording it reads from, and each verse it finishes; kept out of the
+ *  page's own renders, as `SpokenVerse` is (the player's state changes on every word). */
+function VoiceState({ book, chapter, onState, onHeard }: { book: number; chapter: number; onState: (s: VoiceNow) => void; onHeard: (b: number, c: number, v: number) => void }) {
+  const { status, book: pb, chapter: pc, marksOf, onVerseHeard } = usePlayer()
+  const here = status !== 'idle' && pb === book && pc === chapter
+  const playing = here && status === 'playing'
+  // kept once the voice stops: the verses it read are timed by the recording it read them from
+  const marks = marksOf(book, chapter)
+  useEffect(() => { onState(playing || marks ? { playing, marks } : NO_VOICE) }, [playing, marks, here, onState])
+  useEffect(() => onVerseHeard(onHeard), [onVerseHeard, onHeard])
+  return null
+}
+
 function SpokenVerse({ book, chapter, onVerse }: { book: number; chapter: number; onVerse: (v: number) => void }) {
   const { spoken } = usePlayer()
   const v = spoken && spoken.book === book && spoken.chapter === chapter ? spoken.v : 0
@@ -732,5 +779,6 @@ const styles = StyleSheet.create({
   layer: { pointerEvents: 'none' },
   title: { alignItems: 'center', paddingTop: 6, paddingBottom: 18 },
   progress: { position: 'absolute', left: 0, right: 0, height: 3 },
+  end: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   hud: { position: 'absolute', left: 0, right: 0, top: 0, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingBottom: 6, borderBottomWidth: StyleSheet.hairlineWidth },
 })

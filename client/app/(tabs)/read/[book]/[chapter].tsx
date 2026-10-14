@@ -26,7 +26,7 @@ import { useReadingPrefs, type HlColor, type ParaLayout } from '../../../../src/
 import WordSheet, { fetchWordTags, type WordTags, type WordTarget } from '../../../../src/components/WordSheet'
 import { loadDictionaryIndex } from '../../../../src/lib/dictionary'
 import { matchWord, warmWordLookup } from '@shared/cbd'
-import ActionBar from '../../../../src/components/ActionBar'
+import ActionBar, { extraColoursHeight } from '../../../../src/components/ActionBar'
 import ChapterPicker from '../../../../src/components/ChapterPicker'
 import BookPane from '../../../../src/components/BookPane'
 import { useDesktop } from '../../../../src/hooks/useDesktop'
@@ -41,7 +41,8 @@ import { usePlayer } from '../../../../src/store/player'
 import { Button, ErrorText, Sheet, SwitchRow, T } from '../../../../src/components/ui'
 import { ToggleButton } from '../../../../src/components/motion/reader'
 import { edgesOf, type Edges, type PullDir } from '../../../../src/lib/edgePull'
-import { atEnd, chapterWords } from '@shared/reading'
+import { atEnd } from '@shared/reading'
+import { chapterShape, versesBetween } from '../../../../src/lib/screenVerses'
 import { AUTHORS, sectionsFor } from '@shared/companion'
 import MinistrySheet, { type MinistryScope } from '../../../../src/components/MinistrySheet'
 import { loadMinistryRefs, ministryVerses, peekMinistryVerses } from '../../../../src/lib/ministry'
@@ -51,6 +52,7 @@ import { scaleMs } from '../../../../src/lib/motionSpeed'
 import { offerTourControls, tourRef } from '../../../../src/store/tour'
 import { TOOLBAR_WIDE } from '../../../../src/lib/tour'
 import { usePathHere } from '../../../../src/lib/paths'
+import { useReadTicks } from '../../../../src/hooks/useReadTicks'
 
 type Target = { book: number; chapter: number }
 
@@ -66,7 +68,7 @@ async function tourWord(book: number, chapter: number): Promise<WordTarget | nul
   const best = (index && words.find(([w]) => matchWord(index, w, 1).length)) || words[0]
   return best ? { code: best[1], word: best[0] } : null
 }
-const SCREEN_PREFS = ['font', 'fontSize', 'lineHeight', 'reduceMotion', 'ttsAutoNext', 'ttsStopAtSelection'] as const
+const SCREEN_PREFS = ['font', 'fontSize', 'lineHeight', 'reduceMotion', 'ttsAutoNext', 'ttsStopAtSelection', 'moreColours'] as const
 const NO_VERSES: ReadonlySet<number> = new Set()
 const NO_KEYS: ReadonlySet<string> = new Set()
 const NO_TINTS: ReadonlyMap<number, string> = new Map()
@@ -132,6 +134,8 @@ function ReadScreenPage() {
   /** Every bookmark (verse, chapter, book) by `bookmarkKey`, to its id for removal. */
   const [marks, setMarks] = useState<ReadonlyMap<string, number>>(new Map())
   const [readSet, setReadSet] = useState<Set<string>>(new Set())
+  /** What is ticked as read here: the credits in `readSet` and the reader's own marks (their view only). */
+  const ticks = useReadTicks(readSet)
   const [picker, setPicker] = useState(false)
   const [addOutline, setAddOutline] = useState(false)
   const [themes, setThemes] = useState(false)
@@ -396,7 +400,6 @@ function ReadScreenPage() {
 
   /** The streak heartbeat's hands, set once it is created below. */
   const markRef = useRef(() => {})
-  const reachEndRef = useRef((_b: number, _c: number) => {})
   // read-aloud follow-along: the spoken verse stays tinted and is kept in view; a finished chapter moves on
   const spokenHere = player.spoken && player.spoken.book === bookN && player.spoken.chapter === chapterN ? player.spoken : null
   const spokenSet = useMemo(() => spokenHere && spokenHere.v > 0 ? new Set([spokenHere.v]) : new Set<number>(), [spokenHere?.v, spokenHere ? 1 : 0])
@@ -412,7 +415,6 @@ function ReadScreenPage() {
   }, [spokenHere, verseY, prefs.reduceMotion])
   useEffect(() => {
     player.onEnded((b, c) => {
-      reachEndRef.current(b, c)
       if (!prefs.ttsAutoNext || b !== bookN || c !== chapterN) return
       // the path's next portion while one is on (its chapter; the ministry `then` is read, not listened to)
       const nx = nextRef.current
@@ -445,10 +447,34 @@ function ReadScreenPage() {
     if (tourAtEnd.current || k !== liveKey.current || !pageLayouts.current.get(k)?.paras.size || viewportH.current <= 1) return false
     return atEnd(scrollY.current, viewportH.current, contentH.current)
   }, [])
-  const words = useMemo(() => data ? chapterWords(data.verses) : undefined, [data])
-  const { mark, reachEnd } = useActivity(valid ? bookN : undefined, valid ? chapterN : undefined, { getProgress, atEnd: atChapterEnd, words })
+  /** The scroll offset of the last look at the screen, per chapter: verses that moved across the screen between two looks
+   *  were on it. A jump of more than two screens (a footnote, a landing) took only its last screen in. */
+  const seenFrom = useRef<{ key: string; y: number } | null>(null)
+  const screenVerses = useCallback((): [number, number] | null => {
+    const k = liveKey.current
+    if (tourAtEnd.current || !pageLayouts.current.get(k)?.paras.size || viewportH.current <= 1) { seenFrom.current = null; return null }
+    const y = scrollY.current, h = viewportH.current
+    const was = seenFrom.current?.key === k && Math.abs(seenFrom.current.y - y) <= 2 * h ? seenFrom.current.y : y
+    seenFrom.current = { key: k, y }
+    return versesBetween(paras.current.values(), verseMarks.current, Math.min(was, y), Math.max(was, y) + h)
+  }, [])
+  // the recording playing times the verses heard; its marks arrive once the voice starts on this chapter
+  const playingHere = player.status !== 'idle' && player.book === bookN && player.chapter === chapterN
+  const listening = useRef(false)
+  listening.current = player.status === 'playing' && playingHere
+  // read again as the voice starts, loads its recording and stops: the marks are set once loading is done
+  const shape = useMemo(() => data ? chapterShape(data.verses, player.marksOf(bookN, chapterN)) : undefined, [data, bookN, chapterN, playingHere, player.status, player.marksOf])  // eslint-disable-line react-hooks/exhaustive-deps
+  const { mark, hear, toCredit } = useActivity(valid ? bookN : undefined, valid ? chapterN : undefined, { getProgress, atEnd: atChapterEnd, seen: screenVerses, listening: () => listening.current, shape })
   markRef.current = mark
-  reachEndRef.current = reachEnd
+  const hearRef = useRef(hear)
+  hearRef.current = hear
+  useEffect(() => player.onVerseHeard((b, c, v) => hearRef.current(b, c, v)), [player.onVerseHeard])
+  /** The end line's "still to read" goes to the first of those verses. */
+  const goToVerse = useCallback((v: number) => {
+    const y = verseY(v)
+    if (y !== null) scrollRef.current?.scrollTo({ y, animated: !prefs.reduceMotion })
+    flashVerse(v, v)
+  }, [verseY, prefs.reduceMotion, flashVerse])
   // a chapter left just before its credit lands is credited by the beat that closes it, with this screen on the next
   useEffect(() => onBeat(r => {
     if (r.credited) { const k = chapterKeyOf(r.credited.book, r.credited.chapter); setReadSet(s => s.has(k) ? s : new Set(s).add(k)); toast.show('Chapter credited') }
@@ -688,7 +714,7 @@ function ReadScreenPage() {
     return { key: k, index: slot.current + dir, node: (
       <ReaderPage book={t.book} chapter={t.chapter} data={neighbours.has(k) ? peekChapter(t.book, t.chapter) ?? null : null} layout={layoutOf(k)} scrollRef={pageRef(k)} padBottom={24} go={go} offscreen
         prefs={reading} selected={NO_VERSES} flash={NO_VERSES} spoken={null} highlights={NO_TINTS} bookmarked={NO_VERSES} openNotes={NO_VERSES}
-        onNavigate={pageNavigate} allNotes={allNotes} wordTags={null} tapWords={wordMode} onWord={onWord} isRead={readSet.has(k)} marked={marks.has(bookmarkKey(t))} onSelect={toggleSelect} onToggleNote={toggleNote} />
+        onNavigate={pageNavigate} allNotes={allNotes} wordTags={null} tapWords={wordMode} onWord={onWord} isRead={ticks.has(k)} credited={readSet.has(k)} marked={marks.has(bookmarkKey(t))} onSelect={toggleSelect} onToggleNote={toggleNote} />
     ) }
   }
 
@@ -704,7 +730,7 @@ function ReadScreenPage() {
   return (
     <View style={[styles.fill, styles.row, { backgroundColor: colors.bg }]} onTouchStart={mark}>
       {/* the desktop's book pane: the primary way about the Bible there; the pill still opens the picker sheet */}
-      {desktop ? <BookPane book={bookN} chapter={chapterN} readSet={readSet} marks={marks} onMark={t => { void toggleMark(t) }} onPick={(b, ch) => navigate({ book: b, chapter: ch })} /> : null}
+      {desktop ? <BookPane book={bookN} chapter={chapterN} readSet={ticks} marks={marks} onMark={t => { void toggleMark(t) }} onPick={(b, ch) => navigate({ book: b, chapter: ch })} /> : null}
       <View style={styles.fill} onLayout={desktop ? e => setColumnW(e.nativeEvent.layout.width) : undefined}>
       <View style={[styles.toolbar, { paddingTop: insets.top + 6, backgroundColor: colors.bar, borderBottomColor: colors.border }]}>
         <View>
@@ -745,10 +771,10 @@ function ReadScreenPage() {
       </Sheet>
 
       <SwipePager ref={pager} reduce={reduce} width={pageW} onTurn={onTurn} cue={cue} onPull={onPull} edges={edgesNow} prev={neighbour(prev, -1)} next={neighbour(next, 1)} page={{ key: chapterKey, index: slot.current, node: (
-        <ReaderPage book={bookN} chapter={chapterN} data={data} err={err} layout={layoutOf(chapterKey)} scrollRef={pageRef(chapterKey)} onScroll={onScroll} onDragStart={endNoteHold} onViewport={onViewport} next={next} then={thenLine}
-          padBottom={selected.size ? 140 : player.status !== 'idle' ? 120 : 24} go={go}
+        <ReaderPage book={bookN} chapter={chapterN} data={data} err={err} layout={layoutOf(chapterKey)} scrollRef={pageRef(chapterKey)} onScroll={onScroll} onDragStart={endNoteHold} onViewport={onViewport} next={next} then={thenLine} credited={readSet.has(chapterKey)} toCredit={toCredit} goToVerse={goToVerse}
+          padBottom={selected.size ? 140 + extraColoursHeight(prefs.moreColours, width, fontScale) : player.status !== 'idle' ? 120 : 24} go={go}
           prefs={reading} selected={selected} flash={tinted} spoken={spokenHere} highlights={highlights} bookmarked={bookmarked} openNotes={openNotes}
-          onNavigate={pageNavigate} allNotes={allNotes} wordTags={wordMode ? wordTags : null} tapWords={wordMode} onWord={onWord} isRead={readSet.has(chapterKey)} marked={chapterMarked} onSelect={toggleSelect} onToggleNote={toggleNote} />
+          onNavigate={pageNavigate} allNotes={allNotes} wordTags={wordMode ? wordTags : null} tapWords={wordMode} onWord={onWord} isRead={ticks.has(chapterKey)} marked={chapterMarked} onSelect={toggleSelect} onToggleNote={toggleNote} />
       ) }} />
       {/* tap zones on the screen edges: previous / next chapter */}
       {prev && <Pressable accessibilityLabel="Previous chapter" onPress={() => go(-1)} style={[styles.edge, { left: 0 }]} />}
@@ -756,7 +782,7 @@ function ReadScreenPage() {
       <FontLoading state={fontState} size={52} />
       <ActionBar open={selected.size > 0} label={selLabel} shortLabel={selList.length ? formatVerseRuns(bookN, chapterN, selList, 'abbr') : ''} bookmarked={bookmarkedAll} lift={player.status !== 'idle' ? player.barHeight : 0} onListen={() => { const v = selList[0] ?? 1; const last = selList[selList.length - 1]; setSelected(new Set()); player.seekVerse(bookN, chapterN, v, prefs.ttsStopAtSelection && last ? { stopAfter: last } : undefined) }} onHighlight={highlight} onBookmark={bookmark} onCopy={copy} onShare={share} onClose={() => setSelected(new Set())}
         onJot={() => setAddOutline(true)} onMinistry={hasMinistry ? openVerseMinistry : undefined} />
-      <ChapterPicker open={picker} book={bookN} chapter={chapterN} readSet={readSet} marks={marks} onMark={t => { void toggleMark(t) }} onClose={() => setPicker(false)} onPick={(b, c) => { setPicker(false); navigate({ book: b, chapter: c }) }} />
+      <ChapterPicker open={picker} book={bookN} chapter={chapterN} readSet={ticks} marks={marks} onMark={t => { void toggleMark(t) }} onClose={() => setPicker(false)} onPick={(b, c) => { setPicker(false); navigate({ book: b, chapter: c }) }} />
       <WordSheet target={wordTarget} onClose={() => setWordTarget(null)} />
       <MinistrySheet open={ministry.open} scope={ministry.scope} onClose={closeMinistry} />
       <PlayerBar flatTop={selected.size > 0} />

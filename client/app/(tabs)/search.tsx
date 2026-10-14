@@ -13,6 +13,7 @@ import { useReadingFont } from '../../src/hooks/useReadingFont'
 import { Button, Card, Enter, ErrorText, H, ListRow, Row, Screen, Segmented, T, Tap, TYPE } from '../../src/components/ui'
 import { FadeSwap, FocusInput, Stagger, useReduceMotion } from '../../src/components/motion/nav'
 import { SWAP_MS } from '../../src/lib/motionTiming'
+import SubjectLinks from '../../src/components/SubjectLinks'
 import { tourRef } from '../../src/store/tour'
 import WordSheet, { type WordTarget } from '../../src/components/WordSheet'
 
@@ -175,6 +176,7 @@ export default function Search() {
       {err ? <ErrorText>{err}</ErrorText> : null}
       {suggest ? <Row><T small muted>Did you mean</T><Button small title={suggest} onPress={() => { setSuggest(null); setQ(suggest); run(suggest) }} /></Row> : null}
       <FadeSwap k={status}>{status ? <T small muted>{status}</T> : null}</FadeSwap>
+      {res && !busy ? <SubjectLinks query={res.query} /> : null}
       {list}
       <View style={{ height: 24 }} />
       <WordSheet target={word} onClose={() => setWord(null)} />

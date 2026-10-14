@@ -5,7 +5,8 @@ import { registerWidgetTaskHandler, requestWidgetUpdate, type WidgetInfo, type W
 import type { StreakInfo } from '@shared/types'
 import { bundledChapter } from '../lib/bundledBible'
 import { useAuth } from '../store/auth'
-import { usePrefSelect } from '../store/prefs'
+import { usePref, usePrefSelect } from '../store/prefs'
+import { readDailyGoal, type DailyGoal } from '../lib/dailyGoal'
 import { THEME_MAP, type ThemeId } from '../theme'
 import { StreakWidget, VerseWidget } from './layouts'
 import { streakCard, verseCard, widgetThemes } from './model'
@@ -15,9 +16,10 @@ import { streakCard, verseCard, widgetThemes } from './model'
  *
  * Android asks for a drawing when a widget is added, resized or updated: after a reboot or an app update, and at each
  * local midnight or clock change (`plugins/withWidgets.js` sets that alarm). That runs the headless task below, which
- * reads what the app left on the device: the streak as of the last stats sync and the theme picks. Nothing here
- * touches the network or the sign-in token. The app itself redraws both when it opens or comes forward, when the
- * themes change, when a stats read or a heartbeat changes what the streak widget shows, and on sign-out.
+ * reads what the app left on the device: the streak as of the last stats sync, the theme picks and the daily goal.
+ * Nothing here touches the network or the sign-in token. The app itself redraws both when it opens or comes forward,
+ * when the themes or the goal change, when a stats read or a heartbeat changes what the streak widget shows, and on
+ * sign-out.
  */
 
 /** The provider class names app.json's widget config generates. */
@@ -29,34 +31,37 @@ const STREAK_KEY = 'berean_widget_streak'
 const PREFS_KEY = 'berean_prefs'
 
 type Themes = { light: ThemeId; dark: ThemeId }
-type Data = { streak: StreakInfo | null; themes: Themes }
-type ThemePrefs = { theme: string; themeLight: string; themeDark: string }
+type Data = { streak: StreakInfo | null; themes: Themes; goal: DailyGoal }
+type StoredPrefs = { theme: string; themeLight: string; themeDark: string; dailyGoal: number }
 
 // The app's own values once it has set them; a headless start reads the stored copies instead
 let streak: StreakInfo | null | undefined
 let themes: Themes | undefined
+let goal: DailyGoal | undefined
 /** What the streak widget shows now, so a heartbeat that changes nothing on it is not a redraw. */
 let shown = ''
 
 const parse = (raw: string | null): unknown => { try { return raw ? JSON.parse(raw) : null } catch { return null } }
 
 async function load(): Promise<Data> {
-  if (streak === undefined || !themes) {
+  if (streak === undefined || !themes || goal === undefined) {
     const [[, s], [, p]] = await AsyncStorage.multiGet([STREAK_KEY, PREFS_KEY])
+    const prefs = parse(p) as Partial<StoredPrefs> | null
     if (streak === undefined) streak = parse(s) as StreakInfo | null
-    themes ??= widgetThemes(parse(p) as Partial<ThemePrefs> | null)
+    themes ??= widgetThemes(prefs)
+    goal ??= readDailyGoal(prefs?.dailyGoal)
   }
-  return { streak, themes }
+  return { streak, themes, goal }
 }
 
-function draw(info: WidgetInfo, { streak: s, themes: t }: Data): WidgetRepresentation {
+function draw(info: WidgetInfo, { streak: s, themes: t, goal: g }: Data): WidgetRepresentation {
   const now = new Date()
   const size = { width: info.width, height: info.height }
   if (info.widgetName === VERSE) {
     const card = verseCard(now, bundledChapter)
     return { light: <VerseWidget card={card} c={THEME_MAP[t.light]} {...size} />, dark: <VerseWidget card={card} c={THEME_MAP[t.dark]} {...size} /> }
   }
-  const card = streakCard(s, now)
+  const card = streakCard(s, now, undefined, g)
   return { light: <StreakWidget card={card} c={THEME_MAP[t.light]} {...size} />, dark: <StreakWidget card={card} c={THEME_MAP[t.dark]} {...size} /> }
 }
 
@@ -79,7 +84,7 @@ export function registerWidgets() {
 /** Every /stats read and heartbeat (`publishStreak`): kept for the widget and drawn when what it shows changes. */
 export function noteWidgetStreak(s: StreakInfo) {
   streak = s
-  const sig = JSON.stringify(streakCard(s, new Date()))
+  const sig = JSON.stringify(streakCard(s, new Date(), undefined, goal))
   if (sig === shown) return
   shown = sig
   AsyncStorage.setItem(STREAK_KEY, JSON.stringify(s)).catch(() => {})
@@ -94,16 +99,17 @@ function clearStreak() {
   void update(STREAK)
 }
 
-/** Mounted once under the navigator: redraws on open, on coming forward and on a theme change; clears on sign-out. */
+/** Mounted once under the navigator: redraws on open, on coming forward and on a change of theme or daily goal; clears on sign-out. */
 export function useWidgets() {
   const { user, ready } = useAuth()
   const light = usePrefSelect(p => widgetThemes(p).light)
   const dark = usePrefSelect(p => widgetThemes(p).dark)
+  const dailyGoal = usePref('dailyGoal')
   useEffect(() => { if (ready && !user) clearStreak() }, [ready, user])
   useEffect(() => {
-    themes = { light, dark }
+    themes = { light, dark }; goal = dailyGoal
     void update(VERSE); void update(STREAK)
-  }, [light, dark])
+  }, [light, dark, dailyGoal])
   useEffect(() => {
     const sub = AppState.addEventListener('change', s => { if (s === 'active') { void update(VERSE); void update(STREAK) } })
     return () => sub.remove()

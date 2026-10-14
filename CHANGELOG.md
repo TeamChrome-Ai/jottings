@@ -1,5 +1,9 @@
 # Changelog
 
-## 1.0.4
+## 1.0.5, 14 October 2026
+
+The source of the app's 1.0.5 release.
+
+## 1.0.4, 13 October 2026
 
 First public release of the source code.

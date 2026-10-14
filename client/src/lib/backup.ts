@@ -2,8 +2,8 @@
  * Back up, restore and import (docs/BACKUP.md): gathering what a backup holds, saving and choosing the file, and
  * putting a file's contents back. The file's rules are `backupFile.ts`; this is the storage, network and dialog side.
  *
- * Restoring only ever adds. A bookmark, a highlight or a jotting already here is left as it is, so a file restored
- * twice changes nothing the second time. Everything goes through the same calls the reader's own taps use
+ * Restoring only ever adds. A bookmark, a highlight, a jotting or a chapter marked as read already here is left as it
+ * is, so a file restored twice changes nothing the second time. Everything goes through the same calls the reader's own taps use
  * (`library.ts`, `highlights.ts`): signed in it lands in the account and is scanned like typed text, signed out it
  * stays on this device.
  */
@@ -25,6 +25,9 @@ import {
   type BackupColor, type BackupContent, type BackupItem, type BackupPrefs, type ParsedBackup,
 } from './backupFile'
 import { NOUN } from '@shared/brand'
+import { describeMarks, withBackupMarks } from './backupMarks'
+import { addMarks, allMarks } from './readMarks'
+import type { Mark } from './readMarksCore'
 
 const appVersion = () => Constants.expoConfig?.version ?? ''
 export const backupFilename = (day: string) => `jottings-backup-${day}.json`
@@ -53,10 +56,13 @@ const toItem = (i: Partial<BackupItem> & { kind: BackupItem['kind'] }): BackupIt
  * device's reading settings added; signed out it is built here and holds no history.
  */
 export async function backupText(signedIn: boolean, prefs: Prefs): Promise<string> {
-  if (!signedIn) return buildDeviceBackup(await deviceContent(prefs), new Date().toISOString(), appVersion())
+  const now = new Date().toISOString()
+  // the chapters marked as read by hand ride beside the rest (backupMarks.ts), from the device in both cases: signed in
+  // they are the account's own plus any still waiting here
+  if (!signedIn) return JSON.stringify(withBackupMarks(JSON.parse(buildDeviceBackup(await deviceContent(prefs), now, appVersion())) as Record<string, unknown>, await allMarks(), now))
   const doc: unknown = JSON.parse(await fetchExport())
   if (doc === null || typeof doc !== 'object') throw new Error('Unexpected response from the server')
-  return JSON.stringify({ ...doc, device_settings: readPrefs(prefs), app_version: appVersion() })
+  return JSON.stringify(withBackupMarks({ ...doc, device_settings: readPrefs(prefs), app_version: appVersion() }, await allMarks(), now))
 }
 
 export type SaveOutcome = 'downloaded' | 'shared'
@@ -128,6 +134,8 @@ function pickInBrowser(): Promise<string | null> {
 // ---------------- putting one back ----------------
 export interface RestoreResult {
   bookmarks: number; highlights: number; jottings: number
+  /** Chapters marked as read that were not marked here already. */
+  marks: number
   /** Outlines the server would not take (its scan, or a limit); everything else still went in. */
   refused: number
   position: boolean; settings: boolean
@@ -139,8 +147,9 @@ export const HISTORY_NEEDS_ACCOUNT = 'Your streak and reading history were not r
 /** A refusal about this one record (scan, limit, validation) rather than the connection or the session. */
 const refusedByServer = (e: unknown) => e instanceof ApiError && e.status >= 400 && e.status < 500 && e.status !== 401 && e.status !== 408 && e.status !== 429
 
-export async function applyBackup(p: ParsedBackup, user: { id: number } | null, prefs: PrefsStore, onStep?: (label: string) => void): Promise<RestoreResult> {
-  const res: RestoreResult = { bookmarks: 0, highlights: 0, jottings: 0, refused: 0, position: false, settings: false, history: null }
+/** `marks`: the file's own "read" marks (`readBackupMarks`), which `ParsedBackup` does not carry. */
+export async function applyBackup(p: ParsedBackup, user: { id: number } | null, prefs: PrefsStore, onStep?: (label: string) => void, marks: readonly Mark[] = []): Promise<RestoreResult> {
+  const res: RestoreResult = { bookmarks: 0, highlights: 0, jottings: 0, marks: 0, refused: 0, position: false, settings: false, history: null }
   const uid = user?.id ?? null
   const { content } = p
 
@@ -202,6 +211,9 @@ export async function applyBackup(p: ParsedBackup, user: { id: number } | null, 
     }
   }
 
+  // the reader's own marks: kept on the device and, signed in, sent to the account (readMarks.ts), adding only
+  if (marks.length) res.marks = await addMarks(marks)
+
   // a device already in use keeps its place; a new one opens where the backup left off
   if (content.position && !(await localPosition())) { savePosition(content.position, uid !== null); res.position = true }
 
@@ -241,7 +253,7 @@ async function restoreHistory(h: NonNullable<ParsedBackup['history']>): Promise<
 
 /** "Added 12 bookmarks, 3 jottings." and what else happened, one sentence each. */
 export function describeRestore(r: RestoreResult, skipped: number, describe: (c: { bookmarks: number; highlights: number; jottings: number }) => string): string {
-  const added = describe(r)
+  const added = [describe(r), describeMarks(r.marks)].filter(Boolean).join(', ')
   const out = [added ? `Added ${added}.` : 'Nothing new to add: everything in this file is already here.']
   if (r.position && r.settings) out.push('Your place and reading settings are back.')
   else if (r.position) out.push('Your place is back.')

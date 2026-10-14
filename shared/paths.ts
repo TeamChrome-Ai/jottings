@@ -33,8 +33,12 @@ export type PathLike = PathId | { id: PathId | 'custom'; custom?: CustomPath | n
 export interface PathState { id: PathId | 'custom'; started_at: string; target_date: string | null; pace_per_week: number | null; with_ministry: boolean; custom?: CustomPath | null }
 /** A path left for another: coming back to it resumes from its own start. */
 export interface PathHistoryEntry { id: PathId | 'custom'; started_at: string; ended_at: string; custom?: CustomPath | null }
-/** What `GET /api/me/path` answers: the state (null: no path), the paths left behind, and the chapters credited since the start. */
-export interface PathAccount { path: PathState | null; history: PathHistoryEntry[]; read: [book: number, chapter: number][] }
+/**
+ * What `GET /api/me/path` answers: the state (null: no path), the paths left behind, the chapters credited since the
+ * start and, apart from them, the chapters the reader marked read by hand since the start (absent from a server from
+ * before marks, and signed out). Marks count on the reader's own path only; nothing shared reads them.
+ */
+export interface PathAccount { path: PathState | null; history: PathHistoryEntry[]; read: [book: number, chapter: number][]; marked?: [book: number, chapter: number][] }
 /** A group's path on `GET /api/groups/:slug`: each member's progress from their own chapters read after the group's start. */
 export interface GroupPath { id: PathId; started_at: string; target_date: string | null; members: { user_id: number; done: number; position: number }[] }
 

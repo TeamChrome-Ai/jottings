@@ -329,6 +329,8 @@ pub fn router() -> Router<AppState> {
         .route("/auth/config", get(crate::google::config))
         .route("/me", get(me).patch(patch_me).delete(delete_me))
         .route("/me/path", get(crate::paths::get_mine).put(crate::paths::put_mine).delete(crate::paths::delete_mine))
+        .route("/me/marks", get(crate::marks::list).post(crate::marks::bulk))
+        .route("/me/marks/{book}/{chapter}", put(crate::marks::set).delete(crate::marks::clear))
         .route("/me/export", get(crate::me_data::export))
         .route("/me/restore-activity", post(crate::me_data::restore_activity).layer(axum::extract::DefaultBodyLimit::max(crate::me_data::RESTORE_BODY_LIMIT)))
         .route("/me/data", axum::routing::delete(crate::me_data::delete_data))

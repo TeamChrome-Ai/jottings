@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { BRAND, withArticle } from '../shared/brand'
 import {
-  BACKUP_FORMAT, DARBY_APP_NOTES_TITLE, buildDeviceBackup, describeCounts, isEmptyBackup, jottingKey, parseBackup, readPrefs,
+  BACKUP_FORMAT, DARBY_APP_NOTES_TITLE, HL_COLORS, buildDeviceBackup, describeCounts, isEmptyBackup, jottingKey, parseBackup, readPrefs,
   type BackupContent,
 } from '../client/src/lib/backupFile'
 
@@ -71,6 +71,20 @@ describe('the app’s own backup', () => {
     expect(p.content).toEqual(content)
     expect([p.history, p.skipped, isEmptyBackup(p)]).toEqual([null, 0, false])
   })
+  it('keeps all twelve highlight colours, the extra eight whether or not they are offered', () => {
+    const highlights = HL_COLORS.map((color, i) => ({ verse_id: 43_003_001 + i, color }))
+    expect(HL_COLORS).toEqual(['yellow', 'green', 'blue', 'pink', 'orange', 'red', 'purple', 'teal', 'sky', 'lime', 'brown', 'grey'])
+    const p = parseBackup(buildDeviceBackup({ ...content, highlights }, '2026-10-13T12:00:00Z', '1.0.5'))
+    expect(p.content.highlights).toEqual(highlights)
+    expect(p.skipped).toBe(0)
+    // the account export carries them the same way
+    const own = parseBackup(JSON.stringify({ format: BACKUP_FORMAT, version: 1, highlights: highlights.map(h => ({ ...h, created_at: 'x' })) }))
+    expect([own.content.highlights, own.skipped]).toEqual([highlights, 0])
+  })
+  it('carries the daily goal and the extra colours switch with the reading settings', () => {
+    const prefs = { fontSize: 21, moreColours: true, dailyGoal: 30 } as const
+    expect(parseBackup(buildDeviceBackup({ ...content, prefs }, '2026-10-13T12:00:00Z', '1.0.5')).content.prefs).toEqual(prefs)
+  })
   it('reads the account export, its signed history untouched', () => {
     const doc = {
       format: BACKUP_FORMAT, version: 1, exported_at: '2026-10-13T12:00:00Z', user: { id: 6, handle: 'anna', settings: { friends: { discoverable: true }, fontSize: 99 } },
@@ -96,7 +110,7 @@ describe('the app’s own backup', () => {
   it('drops what is not a real verse, colour, item or link, and counts it', () => {
     const p = parseBackup(JSON.stringify({ format: BACKUP_FORMAT, version: 1,
       bookmarks: [{ book: 67, chapter: 1, verse: 1 }, { book: 43, chapter: 22, verse: 1 }, { book: 43, chapter: 3, verse: 37 }, { book: 43, chapter: 3, verse: 16 }, { book: 43, chapter: 3, verse: 16 }, { book: 43, chapter: null, verse: 4 }],
-      highlights: [{ verse_id: 43_003_016, color: 'red' }, { verse_id: 43_003_099, color: 'blue' }, { verse_id: 43_003_000, color: 'blue' }, { verse_id: '43003016', color: 'blue' }, { verse_id: 43_003_016, color: 'blue' }],
+      highlights: [{ verse_id: 43_003_016, color: 'gold' }, { verse_id: 43_003_099, color: 'blue' }, { verse_id: 43_003_000, color: 'blue' }, { verse_id: '43003016', color: 'blue' }, { verse_id: 43_003_016, color: 'blue' }],
       outlines: [{ title: '' , items: [] }, { title: 'x'.repeat(161), items: [] }, { title: 'Kept', items: [
         { kind: 'script', text: 'x' }, { kind: 'link', url: 'javascript:alert(1)', text: 'x' }, { kind: 'verse', book: 43, chapter: 3, v1: 16, v2: 2 }, { kind: 'note', text: 'x'.repeat(20_001) },
         { kind: 'note', text: 'kept', depth: 9 },
@@ -121,6 +135,9 @@ describe('the app’s own backup', () => {
 
 describe('the small rules', () => {
   it('keeps only reading settings of the right kind and range', () => {
+    expect(readPrefs({ moreColours: false, dailyGoal: 45 })).toEqual({ moreColours: false, dailyGoal: 45 })
+    expect(readPrefs({ moreColours: 'yes', dailyGoal: 25 })).toBeNull()
+    expect(readPrefs({ dailyGoal: '30' })).toBeNull()
     expect(readPrefs({ fontSize: 22, lineHeight: 9, font: 'custom:abc', theme: 'slate', onboarded: false, streakReminder: { enabled: false }, ttsPause: 'long', readerName: 'x'.repeat(60) }))
       .toEqual({ fontSize: 22, theme: 'slate', ttsPause: 'long', readerName: 'x'.repeat(40) })
     expect([readPrefs({}), readPrefs(null), readPrefs([1])]).toEqual([null, null, null])

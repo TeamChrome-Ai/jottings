@@ -9,6 +9,7 @@ import { book as bookMeta, tokenize, verseId } from '../lib/bible'
 import { wordIndexAt } from '../lib/tts'
 import { TEXT_FIT, face, fontFamily } from '../theme'
 import { lineFactor } from '../lib/lineHeight'
+import { hlKey, type HlColor } from '../lib/hlColours'
 import { usePageInks, useThemeSelect } from '../hooks/useTheme'
 import InkText from './InkText'
 import { ALIGN_SELF, READ_EM, usePrefPick, usePrefsStore, type Prefs } from '../store/prefs'
@@ -21,7 +22,7 @@ import { Tap } from './ui'
 import { tourRef, useTourNote } from '../store/tour'
 
 export interface ParaLayout { index: number; y: number; height: number; firstVerse: number; lastVerse: number }
-export type HlColor = 'yellow' | 'green' | 'blue' | 'pink'
+export type { HlColor } from '../lib/hlColours'
 
 /** The "show all" toolbar toggle expands the lettered notes; one-word symbol glosses (· El, † Eloah) stay tap-to-open. */
 export { isLettered } from '../lib/noteLetters'
@@ -372,7 +373,7 @@ const VerseSpan = memo(function VerseSpan({ verse: v, fontSize, font, wordSpacin
     return m
   }, [v, showNotes, wordCount])
   // the tint is a real colour (it is tweened), subscribed per verse: an untinted verse never re-renders for a theme
-  const tint: 'selected' | HlColor | null = selected || flashed ? 'selected' : hl && hl in HL_KEYS ? hl as HlColor : null
+  const tint: 'selected' | HlColor | null = selected || flashed ? 'selected' : hl ? hlKey(hl) : null
   const target = useThemeSelect(t => tint === null ? undefined : tint === 'selected' ? t.selected : t.hl[tint])
   // a nested span cannot carry an Animated node, so only this verse re-renders while its tint eases
   // Android: a selection tap changes colour at once; the per-frame JS tween made a run of quick taps drop
@@ -464,7 +465,6 @@ const VerseSpan = memo(function VerseSpan({ verse: v, fontSize, font, wordSpacin
 })
 
 const sansBold = face('sans', { bold: true })
-const HL_KEYS = { yellow: 1, green: 1, blue: 1, pink: 1 }
 const SPOKEN = { borderRadius: 3 }
 /** Zero-size inline view whose layout gives the verse's y within its paragraph (nested text cannot be measured). */
 const MARK = { width: 0, height: 0 } as const

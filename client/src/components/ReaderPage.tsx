@@ -2,6 +2,8 @@ import { memo, type ComponentProps, type RefObject } from 'react'
 import { ScrollView, StyleSheet, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native'
 import { book as bookMeta, nextChapter, prevChapter, type ChapterData } from '../lib/bible'
 import ChapterView, { type ParaLayout } from './ChapterView'
+import ChapterEndLine from './ChapterEndLine'
+import type { CreditWait } from '../hooks/useActivity'
 import { Button, ErrorText, Spinner, T, Tap } from './ui'
 import { InkPage } from '../hooks/useTheme'
 import { tourRef } from '../store/tour'
@@ -39,13 +41,19 @@ interface Props extends ChapterProps {
   next?: { book: number; chapter: number } | null
   /** The path portion's ministry, offered under the turn buttons and never required ("then, if you like: Darby on Matthew 1"). */
   then?: { label: string; onPress: () => void }
+  /** The account has this chapter credited (`isRead` also ticks a chapter the reader only marked): the end line tells the two apart. */
+  credited?: boolean
+  /** Current page only: useActivity's `toCredit`, which the end line counts down from. */
+  toCredit?: () => CreditWait | null
+  /** Current page only: where the end line's "still to read" takes the reader. */
+  goToVerse?: (v: number) => void
 }
 
 /**
  * One chapter in its own scroll view, the unit SwipePager carries. Memoised: a neighbour gets stable props only, so
  * selection, highlights and read-aloud on the current page never render the pages either side of it.
  */
-export default memo(function ReaderPage({ book, chapter, data, err, layout, padBottom, go, scrollRef, onScroll, onDragStart, onViewport, offscreen = false, next: nextGiven, then, ...view }: Props) {
+export default memo(function ReaderPage({ book, chapter, data, err, layout, padBottom, go, scrollRef, onScroll, onDragStart, onViewport, offscreen = false, next: nextGiven, then, credited = false, toCredit, goToVerse, ...view }: Props) {
   const prev = prevChapter(book, chapter), next = nextGiven === undefined ? nextChapter(book, chapter) : nextGiven
   return (
     // the drag and momentum ends report the resting offset too: the edge pull needs to know the text has reached an end
@@ -59,6 +67,9 @@ export default memo(function ReaderPage({ book, chapter, data, err, layout, padB
         {prev ? <Button title={`← ${bookMeta(prev.book).abbr} ${prev.chapter}`} onPress={() => go(-1)} /> : <View />}
         {next ? <Button title={`${bookMeta(next.book).abbr} ${next.chapter} →`} onPress={() => go(1)} /> : <View />}
       </View>
+      {/* one line under the turn buttons, the same height on a neighbour as on the page being read, so a page measured
+          offscreen keeps its length when it slides in */}
+      {data ? <ChapterEndLine book={book} chapter={chapter} credited={credited} toCredit={toCredit} goToVerse={goToVerse} /> : null}
       {then ? <Tap onPress={then.onPress} scaleTo={0.98} accessibilityRole="link" style={styles.then}><T small muted>{then.label}</T></Tap> : null}
     </ScrollView>
   )

@@ -2,6 +2,7 @@ import { createContext, useContext, useDeferredValue, useLayoutEffect, useSyncEx
 import { Appearance, Platform } from 'react-native'
 import { usePrefsStore, type PrefsStore } from '../store/prefs'
 import { THEME_MAP, resolveThemeId, type Colors, type ThemeDef, type ThemeId } from '../theme'
+import { HL_ALL } from '../lib/hlColours'
 
 /** Kept for callers that only need light-vs-dark (status bar, print styles). */
 export type ResolvedTheme = 'light' | 'dark'
@@ -51,10 +52,9 @@ export function useThemeSelect<T>(select: (t: ThemeDef) => T): T {
  */
 export type InkRole = Exclude<keyof Colors, 'hl'>
 const ROLES: InkRole[] = ['bg', 'card', 'text', 'muted', 'border', 'accent', 'accentText', 'selected', 'danger', 'bar', 'accentSoft']
-const HL = ['yellow', 'green', 'blue', 'pink'] as const
 const INK_VARS: Colors = {
   ...Object.fromEntries(ROLES.map(k => [k, `var(--c-${k})`])) as Record<InkRole, string>,
-  hl: Object.fromEntries(HL.map(k => [k, `var(--c-hl-${k})`])) as Colors['hl'],
+  hl: Object.fromEntries(HL_ALL.map(k => [k, `var(--c-hl-${k})`])) as Colors['hl'],
 }
 const webInks = () => INK_VARS
 export const useInks: () => Colors = Platform.OS === 'web' ? webInks : useColors
@@ -87,7 +87,7 @@ export function useInkRoot(t: ThemeDef) {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return
     const st = document.documentElement.style
     for (const k of ROLES) st.setProperty(`--c-${k}`, t[k])
-    for (const k of HL) st.setProperty(`--c-hl-${k}`, t.hl[k])
+    for (const k of HL_ALL) st.setProperty(`--c-hl-${k}`, t.hl[k])
   }, [t])
 }
 
