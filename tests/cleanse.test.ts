@@ -33,11 +33,11 @@ describe('the rules (shared/cleanse.ts, the same as rs/src/cleanse.rs)', () => {
     expect(stripBraces('Words {Christian Friend 1893.} here.\n\n{Ed.} Next')).toBe('Words here.\n\nNext')
     expect(stripBraces('Nothing to do')).toBe('Nothing to do')
   })
-  it('drops a letter\'s topics and keeps its recipient and title (Hodgett\'s list, credited)', () => {
-    const m = { title: 'To B. & S. Plymouth · Dublin, May, 1832', subtitle: 'Prayer; Union', passages: [], date: 'Dublin, May, 1832', to: 'B. & S. Plymouth' }
-    expect(cleanseLetterMeta(m)).toEqual({ title: 'To B. & S. Plymouth · Dublin, May, 1832', passages: [], date: 'Dublin, May, 1832', to: 'B. & S. Plymouth' })
+  it('drops a letter\'s topics and keeps the recipient it names and its title', () => {
+    const m = { title: 'To the Editor of the Christian Herald · Dublin, May, 1832', subtitle: 'Prayer; Union', passages: [], date: 'Dublin, May, 1832', to: 'the Editor of the Christian Herald' }
+    expect(cleanseLetterMeta(m)).toEqual({ title: 'To the Editor of the Christian Herald · Dublin, May, 1832', passages: [], date: 'Dublin, May, 1832', to: 'the Editor of the Christian Herald' })
     const c = cleanseContents({ author: 'darby', work: { id: 'letters-1', title: 'Letters 1', kind: 'letters', collection: 'letters' }, sections: [m] })
-    expect(c.sections[0].title).toBe('To B. & S. Plymouth · Dublin, May, 1832')
+    expect(c.sections[0].title).toBe('To the Editor of the Christian Herald · Dublin, May, 1832')
     expect('subtitle' in c.sections[0]).toBe(false)
   })
   it('cleanses a section by its collection', () => {

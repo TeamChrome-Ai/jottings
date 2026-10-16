@@ -10,6 +10,8 @@ import type { Verse } from '@shared/types'
 import { book as bookMeta, fetchChapter, nextChapter, prevChapter, tokenize, validRef, warmChapter, type ChapterData } from '../../../src/lib/bible'
 import { geomFromLines, geomFromTops, geomUniform, landingPage, pageOfVerse, paginate, splitParas, type Landing, type Layout, type Metrics, type Page, type Para } from '../../../src/lib/pages'
 import { chapterShape } from '../../../src/lib/screenVerses'
+import { shareChapter } from '../../../src/lib/shareChapter'
+import { useToast } from '../../../src/store/toast'
 import type { ChapterMarks } from '../../../src/lib/tts'
 import { loadPosition, savePosition } from '../../../src/hooks/usePosition'
 import { useActivity } from '../../../src/hooks/useActivity'
@@ -86,6 +88,7 @@ export default function FlipScreen() {
 function FlipScreenPage() {
   const params = useLocalSearchParams<{ book: string; chapter: string; v?: string }>()
   const router = useRouter()
+  const toast = useToast()
   const { user } = useAuth()
   const { prefs, set } = usePrefs()
   const colors = useColors()
@@ -507,6 +510,7 @@ function FlipScreenPage() {
           <Text style={{ color: colors.muted, fontSize: 12 }}>Tap the edges or swipe to turn</Text>
         </View>
         {Platform.OS === 'web' ? <Button iconName="expand" title="Toggle fullscreen" onPress={toggleFullscreen} /> : null}
+        <Button iconName="share" title="Share this chapter" onPress={() => { void shareChapter(bookN, chapterN).then(r => { if (r === 'copied') toast.show('Link copied') }) }} />
         <Button iconName="sliders" title="Reading settings" onPress={() => { showHud(false); setSettings(true) }} />
       </DockedBar>
 

@@ -3,7 +3,7 @@ use crate::badges::check_badges;
 use crate::db::now_iso;
 use crate::error::{ApiError, ApiResult};
 use crate::AppState;
-use axum::{extract::{Path, State}, routing::{get, post}, Json, Router};
+use axum::{extract::{Path, Query, State}, routing::{get, post}, Json, Router};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -62,6 +62,52 @@ async fn list_mine(State(s): State<AppState>, AuthUser(u): AuthUser) -> ApiResul
     let rows = st.query_map(params![u.id], |r| { let mut o = row(r)?; o.verse_count = Some(r.get(NEXT)?); Ok(o) })?.collect::<Result<Vec<_>, _>>()?;
     Ok(Json(rows))
 }
+#[derive(Deserialize)] struct SearchQ { q: Option<String>, limit: Option<i64> }
+#[derive(Serialize)] struct Found { id: i64, title: String, snippet: String, updated_at: String }
+
+/// The reader's own jottings that hold every word of `q` (case aside): in the title, the description, a note, a link's
+/// words, or a passage named by its book. Newest first. Nobody else's, ever.
+async fn search_mine(State(s): State<AppState>, AuthUser(u): AuthUser, Query(q): Query<SearchQ>) -> ApiResult<Json<Vec<Found>>> {
+    let words: Vec<String> = q.q.unwrap_or_default().to_lowercase().split(|c: char| !(c.is_alphanumeric() || c == '\'' || c == ':')).filter(|w| !w.is_empty()).take(8).map(String::from).collect();
+    if words.is_empty() { return Ok(Json(vec![])) }
+    let limit = q.limit.unwrap_or(20).clamp(1, 50) as usize;
+    let found = s.db(move |conn| {
+        let mut st = conn.prepare_cached("SELECT o.id, o.title, coalesce(o.description,''), o.updated_at FROM outlines o WHERE o.user_id=?1 ORDER BY o.updated_at DESC")?;
+        let outlines: Vec<(i64, String, String, String)> = st.query_map(params![u.id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<Result<_, _>>()?;
+        let mut its = conn.prepare_cached("SELECT kind, book, chapter, v1, coalesce(text,'') FROM outline_items WHERE outline_id=?1 ORDER BY position")?;
+        let mut out = Vec::new();
+        for (id, title, description, updated_at) in outlines {
+            let items: Vec<(String, Option<i64>, Option<i64>, Option<i64>, String)> = its.query_map(params![id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?.collect::<Result<_, _>>()?;
+            // what the jotting says, a line each: its title, description, notes and links, and its passages by name
+            let mut lines = vec![title.clone(), description];
+            for (kind, book, chapter, v1, text) in items {
+                if kind == "verse" {
+                    if let (Some(b), Some(c)) = (book.and_then(crate::books::book), chapter) { lines.push(match v1 { Some(v) => format!("{} {c}:{v}", b.name), None => format!("{} {c}", b.name) }); }
+                } else if !text.trim().is_empty() { lines.push(text); }
+            }
+            let all = lines.join("\n").to_lowercase();
+            if !words.iter().all(|w| all.contains(w.as_str())) { continue }
+            // the line to show: the first after the title with the first word, else the title's own
+            let snippet = lines.iter().skip(1).find(|l| l.to_lowercase().contains(words[0].as_str())).map(|l| clip(l, &words[0])).unwrap_or_default();
+            out.push(Found { id, title, snippet, updated_at });
+            if out.len() >= limit { break }
+        }
+        Ok(out)
+    }).await?;
+    Ok(Json(found))
+}
+/// About 120 characters of `line` around the first `word`, on character boundaries.
+fn clip(line: &str, word: &str) -> String {
+    let chars: Vec<char> = line.split_whitespace().collect::<Vec<_>>().join(" ").chars().collect();
+    let lower: String = chars.iter().collect::<String>().to_lowercase();
+    let at = lower.find(word).map(|b| lower[..b].chars().count()).unwrap_or(0);
+    // start on a word: back from 50 characters before the word to the space before it
+    let mut a = at.saturating_sub(50);
+    while a > 0 && chars[a - 1] != ' ' { a -= 1; }
+    let b = (a + 120).min(chars.len());
+    format!("{}{}{}", if a > 0 { "…" } else { "" }, chars[a..b].iter().collect::<String>(), if b < chars.len() { "…" } else { "" })
+}
+
 async fn for_verse(State(s): State<AppState>, MaybeUser(u): MaybeUser, Path((book, chapter)): Path<(i64, i64)>) -> ApiResult<Json<Vec<Value>>> {
     let conn = s.pool.get()?;
     let uid = u.map(|u| u.id).unwrap_or(-1);
@@ -182,6 +228,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_mine).post(create))
         .route("/for-verse/{book}/{chapter}", get(for_verse))
+        .route("/search", get(search_mine))
         .route("/shared/{code}", get(by_code))
         .route("/public", get(list_public))
         .route("/{id}/publish", post(publish))
@@ -240,5 +287,27 @@ mod tests {
         // hidden by moderation: not even by link
         pool.get().unwrap().execute("UPDATE outlines SET hidden=1 WHERE user_id=?1", rusqlite::params![anna_id]).unwrap();
         assert_eq!(call(&app, "GET", &format!("/outlines/shared/{code}"), Some(&ben), NULL).await.0, 403);
+    }
+
+    #[tokio::test]
+    async fn a_reader_searches_their_own_jottings_and_no_one_elses() {
+        let (app, pool) = app();
+        let (_, anna) = user(&pool, "anna");
+        let (_, ben) = user(&pool, "ben");
+        outline(&app, &anna, "Love", "God so loved the world, and the Son came").await;
+        outline(&app, &anna, "Morning", "Grace upon grace this morning").await;
+        outline(&app, &ben, "Ben's love", "The love of God, as Ben has it").await;
+        let find = |t: &str, q: &str| { let (app, t, q) = (app.clone(), t.to_string(), q.to_string()); async move { call(&app, "GET", &format!("/outlines/search?q={}", q.replace(' ', "%20")), Some(&t), NULL).await } };
+        let (st, r) = find(&anna, "loved world").await;
+        assert_eq!(st, 200);
+        assert_eq!(r.as_array().unwrap().len(), 1);
+        assert_eq!(r[0]["title"], "Love");
+        assert!(r[0]["snippet"].as_str().unwrap().contains("loved the world"));
+        // a passage is found by its book's name; every jotting of hers holds John 3:16
+        assert_eq!(find(&anna, "john").await.1.as_array().unwrap().len(), 2);
+        // Ben's own words are his alone
+        assert_eq!(find(&anna, "ben").await.1.as_array().unwrap().len(), 0);
+        assert_eq!(find(&ben, "love").await.1.as_array().unwrap().len(), 1);
+        assert_eq!(call(&app, "GET", "/outlines/search?q=love", None, NULL).await.0, 401);
     }
 }

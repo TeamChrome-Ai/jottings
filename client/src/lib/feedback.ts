@@ -17,7 +17,7 @@ export function feedbackBody(message: string, email: string, appVersion: string,
   return { message: m, ...(e ? { email: e } : {}), ...(appVersion ? { app_version: appVersion } : {}), platform }
 }
 
-/** "1.0.0 (25)": the app version and Android versionCode, as the Settings footer shows them. */
+/** "1.0.0 (25)": the app version and Android versionCode, for the report (the Settings footer shows the version alone). */
 export function appVersionLabel(version: string | undefined, versionCode: number | undefined): string {
   return `${version ?? ''}${versionCode ? ` (${versionCode})` : ''}`.trim()
 }

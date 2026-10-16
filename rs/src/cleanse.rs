@@ -1,7 +1,7 @@
 //! The cleanse (docs/EDITION.md, "Cleanse"): `berean cleanse` sets the 1890 edition and, on top of it, takes out of the
 //! ministry what is not Mr. Darby's own: the collections `other` and `misc` whole, the footnotes of the Collected
-//! Writings and the Notes (with their "[n]" callers), the Letters' topic lines (Bible Truth Publishers'; the recipients
-//! stay, credited, by L. J. L. Hodgett's leave), the Synopsis's italic-only sub-headings and the "{…}" editorial notes. shared/cleanse.ts is the same rule for
+//! Writings and the Notes (with their "[n]" callers), the Letters' topic lines (Bible Truth Publishers'; a recipient the
+//! letter names itself stays), the Synopsis's italic-only sub-headings and the "{…}" editorial notes. shared/cleanse.ts is the same rule for
 //! a pack a phone holds; the two are kept in step by hand. Two rows of `meta` carry it: `cleanse` ("1" while on) and
 //! `cleanse_prior_edition` (what `cleanse undo` restores). Nothing stored is rewritten: every function here filters a
 //! copy, so `cleanse undo` serves everything whole again.
@@ -85,8 +85,8 @@ pub fn text(collection: &str, text: &str) -> String {
 
 // ---------- a section's listing ----------
 
-/// A letter's entry without the topics (Bible Truth Publishers' lines). The recipient and the title naming it stay:
-/// L. J. L. Hodgett, whose list they come from, allows them with a credit (data/ministry/SOURCE.md, 2026-10-08).
+/// A letter's entry without the topics (Bible Truth Publishers' lines). The recipient and the title naming it stay: the
+/// converter takes a recipient only from the letter's own words ("To the Editor of …", data/ministry/SOURCE.md).
 pub fn letter_meta(m: &Value) -> Value {
     let mut v = m.clone();
     if let Some(o) = v.as_object_mut() { o.remove("subtitle"); }
@@ -151,7 +151,7 @@ mod tests {
         for uri in ["/ministry/darby/other-x", "/ministry/darby/other-x/1", "/ministry/offline/darby/other-x", "/ministry/coates/romans"] {
             assert_eq!(get(uri).await.0, 404, "{uri}");
         }
-        // letters: no topic line; the recipient and the title naming them stay (Hodgett's list, credited); the text as it is
+        // letters: no topic line; the recipient the letter names and the title naming them stay; the text as it is
         let (_, w) = get("/ministry/darby/letters-1").await;
         assert_eq!(w["sections"][0], json!({ "title": "To G. V. Wigram · Pau, 1876", "passages": [], "date": "Pau, 1876", "to": "G. V. Wigram" }));
         assert_eq!(w["sections"][1]["title"], "Letter 2");

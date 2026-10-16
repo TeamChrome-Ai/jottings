@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Animated, Easing, Text, View } from 'react-native'
+import { Animated, Easing, Text, TextInput, View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { BOOKS, findBookFuzzy } from '@shared/books'
 import { strongsCode } from '@shared/concordance'
@@ -10,10 +10,16 @@ import { offlineKeys, readLocalChapter } from '../../src/lib/bible'
 import { searchLocal, warmLocalSearch } from '../../src/lib/localSearch'
 import { useInks } from '../../src/hooks/useTheme'
 import { useReadingFont } from '../../src/hooks/useReadingFont'
-import { Button, Card, Enter, ErrorText, H, ListRow, Row, Screen, Segmented, T, Tap, TYPE } from '../../src/components/ui'
+import { Button, Card, Chip, Enter, ErrorText, H, ListRow, Row, Screen, Segmented, T, Tap, TYPE } from '../../src/components/ui'
 import { FadeSwap, FocusInput, Stagger, useReduceMotion } from '../../src/components/motion/nav'
 import { SWAP_MS } from '../../src/lib/motionTiming'
 import SubjectLinks from '../../src/components/SubjectLinks'
+import BookGroupCard from '../../src/components/BookGroupCard'
+import OwnOutlineMatches from '../../src/components/OwnOutlineMatches'
+import RecentSearches from '../../src/components/RecentSearches'
+import Icon from '../../src/components/Icon'
+import { dropRecent, loadRecent, pushRecent, saveRecent } from '../../src/lib/recentSearches'
+import { inScopeRanges, splitScope } from '@shared/bookGroups'
 import { tourRef } from '../../src/store/tour'
 import WordSheet, { type WordTarget } from '../../src/components/WordSheet'
 
@@ -23,7 +29,7 @@ const MAX_OFFLINE_HITS = 200
 const SLOW_MS = 180
 /** The order the reader last picked, kept until the app is closed; null leaves each search to the default for its query. */
 let pickedOrder: SearchOrder | null = null
-type Shown = { hits: SearchHit[]; total: number; offline: boolean; took: number; query: string; order: SearchOrder | null; /** the query is also this book's name: offered above the hits */ book: number | null; /** the first `exact` hits hold the word itself, the rest a longer word it begins (0: one group) */ exact: number }
+type Shown = { hits: SearchHit[]; total: number; offline: boolean; took: number; /** the words searched */ query: string; /** what was typed ("love in the gospels") */ asked: string; /** the books the words were searched in, when the query named them */ within: { label: string; words: string } | null; order: SearchOrder | null; /** the query is also this book's name: offered above the hits */ book: number | null; /** the first `exact` hits hold the word itself, the rest a longer word it begins (0: one group) */ exact: number }
 
 /**
  * A Strong's number ("G1320", "h430") opens that word in the word sheet. A reference with a chapter or verse resolves
@@ -76,6 +82,14 @@ export default function Search() {
     Animated.timing(listOut, { toValue: 0, duration: 140, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(({ finished }) => { if (finished) dropRes() })
   }
   const onChange = (t: string) => { setQ(t); if (!t.trim()) clearResults() }
+  /** The ✕ in the field: the last search gone in one tap, ready for the next. */
+  const field = useRef<TextInput>(null)
+  const clearField = () => { setQ(''); setSuggest(null); clearResults(); field.current?.focus() }
+  // the last searches, on this device only
+  const [recent, setRecent] = useState<string[]>([])
+  useEffect(() => { void loadRecent().then(setRecent) }, [])
+  const remember = (query: string) => setRecent(r => { const next = pushRecent(r, query); void saveRecent(next); return next })
+  const forget = (query: string) => setRecent(r => { const next = dropRecent(r, query); void saveRecent(next); return next })
 
   const openRef = (book: number, chapter: number, verse?: number, end?: number) => router.push({ pathname: '/read/[book]/[chapter]', params: { book: String(book), chapter: String(chapter), v: verse ? String(verse) : '', v2: end && verse && end > verse ? String(end) : '' } })
 
@@ -90,6 +104,7 @@ export default function Search() {
   const run = async (override?: string) => {
     const query = (override ?? q).trim()
     if (!query) return
+    remember(query)
     const code = strongsCode(query)
     if (code) { setWord({ code, word: '', label: code }); return }
     // "jn 3:16", "1 cor 13" open; a book's name alone ("song", "1 kings") is searched as a word below
@@ -101,28 +116,33 @@ export default function Search() {
     if (bookOnly) { /* a real name: nothing to guess */ }
     else if (/\d/.test(query)) { const near = parseRef(query, { fuzzy: true }); if (near) { openRef(near.book, near.chapter, near.v1, near.v2); return } }
     else { const near = findBookFuzzy(query); if (near) setSuggest(near.name) }
+    // "love in the gospels", "comfort in Isaiah": the words, searched in those books only
+    const within = splitScope(query)
+    const words = within?.query ?? query
+    const where = within?.scope ?? scope
+    const w = within ? { label: within.label, words } : null
     setBusy(true); setErr('')
     const t0 = Date.now()
     const slowTimer = setTimeout(() => setSlow(true), SLOW_MS)
     try {
       const order = pickedOrder ?? undefined
-      const local = await searchLocal(query, scope, 100, order).catch(() => null)
-      const r = local ?? await get<SearchResponse>(`/search?q=${encodeURIComponent(query)}&scope=${scope}&limit=100${order ? `&order=${order}` : ''}`)
+      const local = await searchLocal(words, where, 100, order).catch(() => null)
+      const r = local ?? await get<SearchResponse>(`/search?q=${encodeURIComponent(words)}&scope=${encodeURIComponent(where)}&limit=100${order ? `&order=${order}` : ''}`)
       if (r.kind === 'ref' && r.ref) { openRef(r.ref.book, r.ref.chapter, r.ref.v1); return }
-      showRes({ hits: r.hits, total: r.total, offline: false, took: local ? Date.now() - t0 : r.took_ms, query, order: r.order ?? null, book: r.book?.book ?? null, exact: r.exact ?? 0 })
+      showRes({ hits: r.hits, total: r.total, offline: false, took: local ? Date.now() - t0 : r.took_ms, query: words, asked: query, within: w, order: r.order ?? null, book: r.book?.book ?? null, exact: r.exact ?? 0 })
     } catch (e) {
       if (!isNetworkError(e)) { dropRes(); setErr((e as Error).message); return }
       try {
-        const hits = await offlineScan(query, scope)
+        const hits = await offlineScan(words, where)
         if (!hits.length && bookOnly) { openRef(bookOnly.n, 1); return }
-        showRes({ hits, total: hits.length, offline: true, took: Date.now() - t0, query, order: null, book: bookOnly?.n ?? null, exact: 0 })
+        showRes({ hits, total: hits.length, offline: true, took: Date.now() - t0, query: words, asked: query, within: w, order: null, book: bookOnly?.n ?? null, exact: 0 })
       } catch (e2) { dropRes(); setErr((e2 as Error).message) }
     } finally { clearTimeout(slowTimer); setSlow(false); setBusy(false) }
   }
 
   runRef.current = (query?: string) => { run(query) }
   // a testament picked after a search re-runs that search in the new scope (the first render has nothing to re-run)
-  const shownQuery = res?.query
+  const shownQuery = res?.asked
   const scopeSeen = useRef(scope)
   useEffect(() => {
     if (scopeSeen.current === scope) return
@@ -166,17 +186,30 @@ export default function Search() {
     <Screen safeTop>
       <H>Search</H>
       <Row ref={tourRef('search-field')}>
-        <FocusInput wrapStyle={{ flex: 1 }} placeholder="jn 3:16, words, or G1320" value={q} onChangeText={onChange} onSubmitEditing={() => run()} returnKeyType="search" autoCapitalize="none" autoCorrect={false} clearButtonMode="while-editing" />
+        <View style={{ flex: 1 }}>
+          <FocusInput inputRef={field} placeholder="jn 3:16, words, or G1320" value={q} onChangeText={onChange} onSubmitEditing={() => run()} returnKeyType="search" autoCapitalize="none" autoCorrect={false} style={{ paddingRight: q ? 44 : 14 }} />
+          {q ? (
+            <Tap onPress={clearField} hitSlop={8} scaleTo={0.86} accessibilityRole="button" accessibilityLabel="Clear the search" style={{ position: 'absolute', right: 6, top: 0, bottom: 0, width: 36, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="x" size={18} color={c.muted} />
+            </Tap>
+          ) : null}
+        </View>
         <Button primary title="Go" onPress={() => run()} disabled={busy} />
       </Row>
       <View ref={tourRef('search-scope')}><Segmented value={scope} onChange={setScope} options={[{ value: 'all', label: 'All' }, { value: 'OT', label: 'Old Testament' }, { value: 'NT', label: 'New Testament' }]} /></View>
       {res?.order && res.hits.length > 0 ? (
         <Enter rise={4}><Segmented value={res.order} onChange={pickOrder} options={[{ value: 'bible', label: 'Bible order' }, { value: 'match', label: 'Best match' }]} /></Enter>
       ) : null}
+      {!q.trim() && !res && !busy ? <RecentSearches items={recent} onPick={x => { setQ(x); run(x) }} onRemove={forget} /> : null}
       {err ? <ErrorText>{err}</ErrorText> : null}
       {suggest ? <Row><T small muted>Did you mean</T><Button small title={suggest} onPress={() => { setSuggest(null); setQ(suggest); run(suggest) }} /></Row> : null}
       <FadeSwap k={status}>{status ? <T small muted>{status}</T> : null}</FadeSwap>
+      {res?.within ? (
+        <Row><Chip label={`In ${res.within.label.replace(/^The /, 'the ')}  ✕`} accessibilityLabel={`Searching ${res.within.label} only. Search every book`} on onPress={() => { const words = res.within!.words; setQ(words); run(words) }} /></Row>
+      ) : null}
+      {res && !busy ? <BookGroupCard query={res.asked} /> : null}
       {res && !busy ? <SubjectLinks query={res.query} /> : null}
+      {res && !busy ? <OwnOutlineMatches query={res.query} /> : null}
       {list}
       <View style={{ height: 24 }} />
       <WordSheet target={word} onClose={() => setWord(null)} />
@@ -203,9 +236,9 @@ function Snippet({ html }: { html: string }) {
   )
 }
 
-async function offlineScan(query: string, scope: Scope): Promise<SearchHit[]> {
+async function offlineScan(query: string, scope: string): Promise<SearchHit[]> {
   const needle = query.toLowerCase()
-  const keys = (await offlineKeys()).map(k => k.split('.').map(Number) as [number, number]).filter(([b]) => scope === 'all' || (scope === 'OT' ? b <= 39 : b >= 40)).sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  const keys = (await offlineKeys()).map(k => k.split('.').map(Number) as [number, number]).filter(([b]) => inScopeRanges(b, scope)).sort((a, b) => a[0] - b[0] || a[1] - b[1])
   const hits: SearchHit[] = []
   for (const [b, ch] of keys) {
     const data = await readLocalChapter(b, ch)

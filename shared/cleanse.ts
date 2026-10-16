@@ -4,12 +4,12 @@
  * the two are kept in step by hand (tests/cleanse.test.ts pins this side). Nothing here rewrites what is stored:
  * every function returns a filtered copy, so `cleanse undo` shows the stored files whole again.
  *
- * - collections `other` (STEM's magazine transcriptions) and `misc` (BTP's Miscellaneous 4 and 5) are hidden whole;
+ * - collections `other` (BTP's other writings) and `misc` (BTP's Miscellaneous 4 and 5) are hidden whole;
  * - the footnotes of `cw`, `notes-comments` and `notes-jottings` go, with their "[n]" callers;
  * - a letter keeps its text, date, recipient and title: only the topics (`subtitle`, Bible Truth Publishers' lines) go
- *   (the recipients are L. J. L. Hodgett's list, used with his permission and credited);
+ *   (a recipient is only ever one the letter names itself);
  * - the Synopsis's italic-only paragraphs (a later editor's sub-headings) go; its own notes stay;
- * - "{…}" editorial notes in the text go (STEM's, in the other writings).
+ * - "{…}" editorial notes in the text go.
  */
 import type { CollectionSummary, LibraryAuthor, MinistrySection, MinistrySectionMeta, WorkContents } from './ministry.js'
 

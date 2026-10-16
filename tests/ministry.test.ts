@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { existsSync } from 'node:fs'
-import { MINISTRY_AUTHORS, enabledAuthors, ministryAuthor } from '../shared/ministry'
+import { MINISTRY_AUTHORS, authorNames, enabledAuthors, ministryAuthor } from '../shared/ministry'
 import { bibleWords, LIST_REFS, mentionOfRank, onPassage, paragraphHits, plainOf, rankOf, RANGE_CAP, sectionHits, snippetOf, verseId, verseOf } from '../shared/ministryIndex'
 import { paragraphsOf } from '../shared/companion'
 
@@ -21,12 +21,19 @@ const J316 = verseId(43, 3, 16), J317 = verseId(43, 3, 17), R828 = verseId(45, 8
 const hitsOf = (text: string, home?: { book: number; chapter?: number }) => Object.fromEntries(paragraphHits(text, bible, home).hits.map(h => [h.verse, h.mention]))
 
 describe('registry', () => {
-  it('lists Darby and Coates enabled, the rest as placeholders', () => {
-    expect(enabledAuthors().map(a => a.id)).toEqual(['darby', 'coates'])
-    expect(MINISTRY_AUTHORS.filter(a => !a.enabled).map(a => a.id)).toEqual(['kelly', 'bellett', 'mackintosh', 'raven', 'taylor'])
+  it('lists Darby, Raven, then the rest by when they published, the rest as placeholders', () => {
+    expect(enabledAuthors().map(a => a.id)).toEqual(['darby', 'raven', 'bellett', 'wigram', 'stoney', 'coates'])
+    expect(authorNames()).toBe('Darby, Raven, Bellett, Wigram, Stoney and Coates')
+    expect(authorNames(['coates', 'stoney', 'raven'])).toBe('Darby, Bellett and Wigram')
+    expect(MINISTRY_AUTHORS.filter(a => !a.enabled).map(a => a.id)).toEqual(['kelly', 'mackintosh', 'taylor'])
     expect(ministryAuthor('kelly')).toBeUndefined()
     expect(new Set(MINISTRY_AUTHORS.map(a => a.id)).size).toBe(MINISTRY_AUTHORS.length)
     for (const a of enabledAuthors()) expect(a.source && a.licence && a.corpus).toBeTruthy()
+  })
+  it('credits Bible Truth Publishers for Bellett and Wigram, and the author alone for Stoney and Raven', () => {
+    for (const id of ['bellett', 'wigram']) expect(ministryAuthor(id)!.source).toMatch(/Bible Truth Publishers/)
+    for (const id of ['stoney', 'raven']) expect(ministryAuthor(id)!.source).toMatch(/^[A-Z]\. [A-Z]\. \w+ \(\d{4}–\d{4}\); public domain\.$/)
+    for (const id of ['bellett', 'wigram', 'stoney', 'raven']) expect(existsSync(`data/ministry/${id}/index.json`)).toBe(true)
   })
   it('has no data for a disabled author', () => {
     for (const a of MINISTRY_AUTHORS.filter(x => !x.enabled)) expect(existsSync(`data/ministry/${a.id}`)).toBe(false)

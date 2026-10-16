@@ -65,6 +65,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const loading = useRef<string | null>(null) // "book-chapter" while start() fetches, to swallow repeated taps
   const endedCb = useRef<((b: number, c: number) => void) | null>(null)
   const paused = useRef(false)
+  /** The pause came from outside (a call, another app's sound, the notification's or a headset's pause button), not
+   *  from the reader's own Pause: the player picking up again by itself resumes the reading. */
+  const outsidePause = useRef(false)
   /** Started with `cue`: loaded and paused; Play starts the reading loop rather than resuming it. */
   const cued = useRef(false)
   const current = useRef<Current>({ book: 0, chapter: 0, verses: [], marks: null, index: 0, heading: false, stopAfter: null })
@@ -106,9 +109,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const rate = Math.max(0.5, prefs.get().ttsSpeed || 1)
       const lead = opts.keepPlaying ? 0 : (Platform.OS === 'web' ? 45 : 130) * rate
       const stopAt = Math.max(startMs, endMs - lead)
+      // how long the player has stood still by itself, once it was playing this span
+      let stillSince: number | null = null
       const tick = () => {
         if (run.current !== token) return reject(new Error(STOPPED))
-        if (paused.current) return setTimeout(tick, POLL_MS)   // paused: hold position, keep polling
+        if (paused.current) {
+          // paused from outside, and the system has let the player go on (the call ended): the reading goes on too
+          if (outsidePause.current && p.playing) { paused.current = false; outsidePause.current = false; setState(s => (s.status === 'paused' ? { ...s, status: 'playing' } : s)) }
+          else return setTimeout(tick, POLL_MS)   // paused: hold position, keep polling
+        }
+        // Android, or the lock screen's own buttons, can pause the player without a word to this loop: the bar went on
+        // saying "playing" over silence. After 2 s of a stopped, unbuffering player it says paused, and Play resumes it.
+        if (landed && !p.playing && !p.isBuffering) {
+          if (stillSince === null) stillSince = Date.now()
+          else if (Date.now() - stillSince > 2000) { paused.current = true; outsidePause.current = true; stillSince = null; setState(s => (s.status === 'playing' ? { ...s, status: 'paused' } : s)); return setTimeout(tick, POLL_MS) }
+        } else stillSince = null
+        // the reading is never silent on purpose: a volume or mute left behind (an interruption's duck) is put right
+        if (p.playing && (p.muted || p.volume < 0.99)) { p.muted = false; p.volume = 1 }
         const t = p.currentTime * 1000
         if (!landed) {
           if (Math.abs(t - startMs) < 1200 || Date.now() - t0 > 1500) landed = true
@@ -247,6 +264,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     loading.current = key
     const token = ++run.current
     paused.current = false
+    outsidePause.current = false
     cued.current = false
     Speech.stop(); player.current?.pause(); numbers.current?.pause()
     setState({ status: 'loading', spoken: null, source: null, error: null, book, chapter })
@@ -277,6 +295,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const stop = useCallback(() => {
     run.current++
     paused.current = false
+    outsidePause.current = false
     cued.current = false
     player.current?.pause(); numbers.current?.pause(); Speech.stop()
     if (Platform.OS !== 'web') player.current?.clearLockScreenControls()
@@ -286,11 +305,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const toggle = useCallback(() => {
     if (state.status === 'playing') {
       paused.current = true
+      outsidePause.current = false
       player.current?.pause(); numbers.current?.pause()
       if (current.current.marks === null) Speech.stop()     // device voice cannot pause: the verse restarts on resume
       setState(s => ({ ...s, status: 'paused' }))
     } else if (state.status === 'paused') {
       paused.current = false
+      outsidePause.current = false
       if (cued.current) { cued.current = false; const token = ++run.current; loop(token) }
       else if (current.current.marks) player.current?.play()
       else { const token = ++run.current; loop(token) }
@@ -303,6 +324,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const c = current.current
     const token = ++run.current
     paused.current = false
+    outsidePause.current = false
     cued.current = false
     player.current?.pause(); numbers.current?.pause(); Speech.stop()
     current.current = { ...c, index: target, heading: false, stopAfter: null }

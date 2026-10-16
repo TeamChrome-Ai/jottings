@@ -222,7 +222,7 @@ export default function Settings() {
       </Card>
 
       <View style={{ alignItems: 'center', gap: 10, marginTop: 8 }}>
-        <T small muted>{BRAND.fullName} {Constants.expoConfig?.version ?? ''}{Constants.expoConfig?.android?.versionCode ? ` (${Constants.expoConfig.android.versionCode})` : ''}</T>
+        <T small muted>{BRAND.fullName} {Constants.expoConfig?.version ?? ''}</T>
         <Row style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
           <Button small title="Privacy policy" onPress={() => Linking.openURL(`${siteBase()}/privacy`)} />
           <Button small title="Terms" onPress={() => Linking.openURL(`${siteBase()}/terms`)} />

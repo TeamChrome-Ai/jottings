@@ -98,6 +98,12 @@ export async function localOutlines(): Promise<(Outline & { verse_count: number 
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
 }
 
+/** Every outline kept on the device with its items, newest first: what a search of the reader's own jottings reads. */
+export async function localOutlinesFull(): Promise<Outline[]> {
+  const rows = (await read<LocalOutline>(OUTLINES_KEY)).rows
+  return rows.map(({ uploaded_as: _up, ...o }) => ({ ...o, items: [...(o.items ?? [])] })).sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+}
+
 export async function localOutline(id: number): Promise<Outline | null> {
   const o = (await read<LocalOutline>(OUTLINES_KEY)).rows.find(r => r.id === id)
   if (!o) return null

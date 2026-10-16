@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Animated, Easing, LayoutAnimation, Platform, StyleSheet, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
+import { Animated, Easing, LayoutAnimation, Platform, StyleSheet, View, type StyleProp, type TextInput, type TextInputProps, type ViewStyle } from 'react-native'
 import * as Haptics from 'expo-haptics'
 import { useInks } from '../../hooks/useTheme'
 import { usePrefsStore, useReduceMotion } from '../../store/prefs'
@@ -77,7 +77,7 @@ export function FadeSwap({ k, children, style, dx = 0 }: { k: string | number; c
  * `Input` whose accent ring fades in with focus and out with blur. The field's own instant border is held transparent
  * so only this ring shows, drawn at the field's radius and width.
  */
-export function FocusInput({ wrapStyle, onFocus, onBlur, style, ...props }: TextInputProps & { wrapStyle?: StyleProp<ViewStyle> }) {
+export function FocusInput({ wrapStyle, onFocus, onBlur, style, ...props }: TextInputProps & { wrapStyle?: StyleProp<ViewStyle>; inputRef?: Ref<TextInput> }) {
   const c = useInks()
   const prefs = usePrefsStore()
   const v = useRef(new Animated.Value(0)).current

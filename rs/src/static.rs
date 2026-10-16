@@ -27,6 +27,8 @@ pub async fn serve(State(s): State<AppState>, req: Request) -> Response {
     let query = req.uri().query();
     if path == "index.html" { return shell(&s, served.edition, path, query, accepts_br, h).await; }
     if let Some(res) = lookup(path, accepts_br, h) { return res; }
+    // a page still open from the version before an update asks for that version's code: kept on disk by the release
+    if let Some(res) = previous(path, h) { return res; }
     // expo static export writes one html per route; a deep link to a dynamic route ([book]/[chapter]) falls back to the shell
     if !path.contains('.') {
         if let Some(res) = lookup(&format!("{path}.html"), accepts_br, h) { return res; }
@@ -57,6 +59,19 @@ fn edition_path(path: &str, ed: Edition) -> Option<String> {
     if ed != Edition::E1890 { return None }
     if let Some(rest) = path.strip_prefix("bible/") { return Some(format!("bible1890/{rest}")) }
     matches!(path, "credits.html" | "credits").then(|| "credits-1890.html".to_string())
+}
+
+/// Where the release keeps the previous version's code (tools/release-*.sh `keep_previous`): an update replaces every
+/// hashed file, and a page left open from before it would otherwise find the screens it has not loaded yet gone. The
+/// client reloads into the new version when one is missing all the same (client/src/lib/staleBuild.ts).
+pub fn previous_dir() -> std::path::PathBuf { std::path::PathBuf::from(std::env::var("BEREAN_DATA").unwrap_or_else(|_| "data".into())).join("web-previous") }
+
+/// The previous version's copy of a hashed file under _expo/static/, when the release kept one.
+fn previous(path: &str, h: &HeaderMap) -> Option<Response> {
+    if !path.starts_with("_expo/static/") || path.split('/').any(|p| p == ".." || p.is_empty()) { return None }
+    let bytes = std::fs::read(previous_dir().join(path)).ok()?;
+    let hash = Sha256::digest(&bytes);
+    Some(respond(path, Body::from(bytes), &hash, true, false, h))
 }
 
 fn lookup(path: &str, accepts_br: bool, h: &HeaderMap) -> Option<Response> {
@@ -235,6 +250,22 @@ mod tests {
         assert_eq!((st, String::from_utf8(body).unwrap()), (200, generic));
     }
 
+    #[test]
+    fn a_file_of_the_previous_version_is_served_from_where_the_release_kept_it() {
+        // BEREAN_DATA is the process's; the file is put where previous_dir() points and removed after
+        let dir = previous_dir().join("_expo/static/js/web");
+        std::fs::create_dir_all(&dir).unwrap();
+        let name = format!("old-{}.js", crate::auth::random_token(6));
+        std::fs::write(dir.join(&name), b"old code").unwrap();
+        let h = HeaderMap::new();
+        let res = previous(&format!("_expo/static/js/web/{name}"), &h).expect("kept file served");
+        assert_eq!(res.status(), StatusCode::OK);
+        assert!(res.headers()[header::CACHE_CONTROL].to_str().unwrap().contains("immutable"));
+        assert!(previous("_expo/static/js/web/none-here.js", &h).is_none());
+        assert!(previous("_expo/static/../../secret", &h).is_none(), "nothing outside the folder");
+        assert!(previous("index.html", &h).is_none(), "only the hashed code");
+        std::fs::remove_file(dir.join(&name)).unwrap();
+    }
     #[tokio::test]
     async fn the_shell_keeps_its_cache_rules_and_other_pages_are_untouched() {
         let (app, pool) = site();

@@ -31,6 +31,7 @@ import { pathTitle } from '@shared/paths'
 import { countWords } from '../../src/lib/pathWords'
 import { useEdition } from '../../src/lib/edition'
 import { authorShown, hasChronology } from '../../src/lib/editionCore'
+import { authorNames, enabledAuthors } from '@shared/ministry'
 import { BRAND, NOUN } from '@shared/brand'
 
 /**
@@ -165,7 +166,7 @@ export default function Home() {
           <ListRow icon="list" label={NOUN.Many} detail="Your studies" onPress={() => router.push('/outlines')} />
           {hasChronology(edition) ? <ListRow ref={tourRef('home-chronology')} icon="clock" label="Chronological table" detail="Kings and prophets of Judah and Israel" onPress={() => router.push('/chronology')} /> : null}
           <ListRow ref={tourRef('home-dictionary')} icon="dictionary" label="Dictionary and concordance" detail="Morrish’s dictionary, Strong’s concordance" onPress={() => router.push('/dictionary')} />
-          <ListRow ref={tourRef('home-ministry')} icon="companion" label="Ministry" detail={authorShown('coates', edition) ? 'Darby and Coates' : 'Darby'} onPress={() => router.push('/companion')} />
+          <ListRow ref={tourRef('home-ministry')} icon="companion" label="Ministry" detail={authorNames(enabledAuthors().filter(a => !authorShown(a.id, edition)).map(a => a.id))} onPress={() => router.push('/companion')} />
           <ListRow icon="stack" label="Paths" detail={pathOn && path.state && path.progress ? `${pathTitle(path.state)} · ${countWords(path.progress)}` : 'Reading plans, no dates unless you set one'} onPress={() => router.push('/paths')} />
         </Card>
         {/* before the first finished chapter the sign-in card sits under the Library column (rule above) */}

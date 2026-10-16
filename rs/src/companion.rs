@@ -182,8 +182,8 @@ mod tests {
         assert!(kinds.first() == Some(&"outline") && kinds.contains(&"addresses"), "{kinds:?}");
         assert!(kinds.windows(2).all(|k| !(k[0] == "addresses" && k[1] != "addresses")));
         // a chapter an author does not treat is an empty list, not an error
-        let (st, none) = call(&app, "GET", "/companion/coates/passage/18/3", None, Value::Null).await;
-        assert_eq!((st, none), (200, serde_json::json!([])), "Coates has no reading of Job 3");
+        let (st, none) = call(&app, "GET", "/companion/coates/passage/21/1", None, Value::Null).await;
+        assert_eq!((st, none), (200, serde_json::json!([])), "Coates has no reading of Ecclesiastes 1");
 
         // the 1890 edition leaves Coates out: every route of his answers as for an author never had; Darby stays; 1961 again restores him
         let (app2, pool) = crate::testkit::app();

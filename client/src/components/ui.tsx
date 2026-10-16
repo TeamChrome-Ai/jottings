@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
-import { Animated, Easing, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type LayoutRectangle, type PressableProps, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native'
+import { Animated, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type LayoutRectangle, type PressableProps, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBottomInset } from '../hooks/useBottomInset'
 import { useDesktop } from '../hooks/useDesktop'
@@ -98,22 +98,65 @@ export function Screen({ children, scroll = true, style, padded = true, safeTop 
     : { paddingTop: safeTop ? insets.top : 0, paddingBottom: bottom }
   const width = usePref('width'), align = usePref('align')
   const cap: ViewStyle = { width: '100%', maxWidth: WIDTH_PX[width] ?? undefined, alignSelf: ALIGN_SELF[align] }
+  const keyboard = useKeyboardRoom(scroll)
   const body = animate ? <Enter style={[{ gap: pad ? SPACE.l : 0 }, scroll ? null : { flex: 1 }]}>{children}</Enter> : children
   // the screen's own ref, and the guided tour's (it scrolls a target into view)
   const refs = useCallback((el: ScrollView | null) => {
     const put = (v: ScrollView | null) => { if (typeof scrollRef === 'function') scrollRef(v); else if (scrollRef) (scrollRef as { current: ScrollView | null }).current = v }
     put(el)
+    keyboard.scroller.current = el
     const off = tourScroller(el)
     return () => { off?.(); put(null) }
   }, [scrollRef])
   return (
     <SurfaceContext.Provider value="bg">
+      <KeyboardRevealContext.Provider value={keyboard.reveal}>
       {scroll
-        ? <ScrollView ref={refs} style={{ flex: 1, backgroundColor: c.bg }} contentContainerStyle={[cap, pad, style]} keyboardShouldPersistTaps="handled">{body}</ScrollView>
+        ? <ScrollView ref={refs} style={{ flex: 1, backgroundColor: c.bg }} contentContainerStyle={[cap, pad, style, keyboard.room ? { paddingBottom: (pad?.paddingBottom as number ?? 0) + keyboard.room } : null]}
+            keyboardShouldPersistTaps="handled" onScroll={keyboard.onScroll} scrollEventThrottle={32}>{body}</ScrollView>
         : <View style={{ flex: 1, backgroundColor: c.bg }}><View style={[cap, { flex: 1 }, pad, style]}>{body}</View></View>}
+      </KeyboardRevealContext.Provider>
     </SurfaceContext.Provider>
   )
 }
+
+/**
+ * A screen's room for the keyboard. The app draws edge to edge, so Android no longer shrinks the window when the
+ * keyboard opens and a field low on a screen (the editor's "Add a passage") sat under it. While the keyboard is up the
+ * screen's scroll gains its height at the bottom, and the focused field is scrolled to just above it.
+ */
+type Measurable = { measureInWindow?: (cb: (x: number, y: number, w: number, h: number) => void) => void }
+function useKeyboardRoom(scroll: boolean) {
+  const scroller = useRef<ScrollView | null>(null)
+  const offset = useRef(0)
+  const top = useRef(0)  // the keyboard's top on screen while it is up, else 0
+  const [room, setRoom] = useState(0)
+  // a view brought above the keyboard, with a margin, when the keyboard is up and covers it
+  const reveal = useCallback((el: Measurable | null | undefined) => {
+    if (!top.current) return
+    el?.measureInWindow?.((_x, y, _w, h) => {
+      const over = y + h + 16 - top.current
+      if (over > 0) scroller.current?.scrollTo({ y: offset.current + over, animated: true })
+    })
+  }, [])
+  useEffect(() => {
+    if (Platform.OS === 'web' || !scroll) return
+    const shown = Keyboard.addListener('keyboardDidShow', e => {
+      top.current = e.endCoordinates.screenY
+      setRoom(e.endCoordinates.height)
+      // the room is laid out first; then the field, wherever it is, is brought above the keyboard
+      setTimeout(() => reveal(TextInput.State.currentlyFocusedInput() as unknown as Measurable | null), 60)
+    })
+    const hidden = Keyboard.addListener('keyboardDidHide', () => { top.current = 0; setRoom(0) })
+    return () => { shown.remove(); hidden.remove() }
+  }, [scroll, reveal])
+  const onScroll = useCallback((e: { nativeEvent: { contentOffset: { y: number } } }) => { offset.current = e.nativeEvent.contentOffset.y }, [])
+  return { scroller, room, onScroll, reveal }
+}
+/** Brings a view above the keyboard on the screen it is in, when the keyboard covers it (what a field shows under
+ *  itself as the reader types: the editor's verse preview). Does nothing off a scrolling Screen or with no keyboard. */
+const KeyboardRevealContext = createContext<(el: Measurable | null | undefined) => void>(() => {})
+export const useKeyboardReveal = () => useContext(KeyboardRevealContext)
 
 /** Interface text in the system sans. `serif` switches to the reading face (scripture quotes, display lines). */
 export function T({ children, muted, small, bold, serif, accent, style, ...rest }: { children: ReactNode; muted?: boolean; small?: boolean; bold?: boolean; serif?: boolean; accent?: boolean; style?: StyleProp<TextStyle> } & Omit<React.ComponentProps<typeof Text>, 'style'>) {
@@ -215,12 +258,13 @@ export function Button({ title, primary, soft, small, danger, icon, iconName, le
 }
 
 /** Text field: filled with the opposite tone of its surface; the outline appears in the accent while focused. */
-export function Input(props: TextInputProps) {
+export function Input({ inputRef, ...props }: TextInputProps & { /** the field itself, to focus it from outside */ inputRef?: Ref<TextInput> }) {
   const c = useInks()
   const fill = useInkFill()
   const [focused, setFocused] = useState(false)
   return (
     <TextInput
+      ref={inputRef}
       placeholderTextColor={c.muted}
       selectionColor={c.accent}
       {...props}

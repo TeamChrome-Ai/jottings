@@ -12,6 +12,7 @@ import ThemeVeil from '../src/components/ThemeVeil'
 import { Tour, Welcome } from '../src/components/FirstRun'
 import { OverlayHost } from '../src/store/overlay'
 import CrashScreen from '../src/components/CrashScreen'
+import { reloadForNewVersion } from '../src/lib/staleBuild'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { loadApiBase } from '../src/lib/api'
 import { loadEdition, useEditionLoaded, watchEdition } from '../src/lib/edition'
@@ -45,8 +46,12 @@ const titleFace = { fontFamily: titleFamily, fontWeight: titleWeight }
 const ALIAS = { headerShown: false, animation: 'none' } as const
 
 /** expo-router's root boundary: a render error anywhere below shows a calm screen with retry and a report,
- *  instead of closing the app (a release build treats an uncaught render error as fatal). */
+ *  instead of closing the app (a release build treats an uncaught render error as fatal). On the web, a screen whose
+ *  code cannot be loaded because the site has moved on to a new version (the old page's files are gone from the server
+ *  and the offline cache: lib/staleBuild.ts) reloads into the new version instead, at most once a minute. */
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Promise<void> }) {
+  const [reloading] = useState(() => reloadForNewVersion(error))
+  if (reloading) return null
   return <CrashScreen error={error} retry={retry} />
 }
 
@@ -96,6 +101,13 @@ function Shell() {
   // read by every motion as it starts; a plain assignment, so it is in force before this render's children animate
   setMotionSpeed(motionSpeed)
   useEffect(() => { loadApiBase().catch(() => {}) }, [])
+  // web: code loaded later (the tour, print, a sheet) that fails because the site has moved on reloads the page too
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return
+    const on = (e: PromiseRejectionEvent) => { if (reloadForNewVersion(e.reason)) e.preventDefault() }
+    window.addEventListener('unhandledrejection', on)
+    return () => window.removeEventListener('unhandledrejection', on)
+  }, [])
   // web: register the offline service worker only once the page is idle, so its precache never competes with the first chapter
   useEffect(() => {
     if (Platform.OS !== 'web' || __DEV__ || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return

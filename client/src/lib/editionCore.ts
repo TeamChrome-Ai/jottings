@@ -38,10 +38,11 @@ export function onEditionChange(l: (e: Edition) => void): () => void { listeners
 
 // ---------- what an edition leaves out ----------
 
-/** Authors the edition leaves out everywhere (the companion, the library, Ministry on a verse, downloads):
- *  C. A. Coates is the Kingston Bible Trust's edition; the cleanse (and a neutered build) leaves him out too.
- *  rs/src/edition.rs hides_author is the same rule. */
-export const hiddenAuthors = (e: Edition): readonly string[] => (e === '1890' || peekCleanse() ? ['coates'] : [])
+/** Authors the edition leaves out everywhere (the companion, the library, Ministry on a verse, downloads): C. A.
+ *  Coates, J. B. Stoney and F. E. Raven are texts of a publisher's edition; the cleanse (and a neutered build) leaves
+ *  them out too. rs/src/edition.rs hides_author is the same rule. */
+export const EDITION_AUTHORS = ['coates', 'stoney', 'raven'] as const
+export const hiddenAuthors = (e: Edition): readonly string[] => (e === '1890' || peekCleanse() ? EDITION_AUTHORS : [])
 export const authorShown = (id: string, e: Edition = current): boolean => !hiddenAuthors(e).includes(id)
 /** The 1961 edition's chronological table (and the order of the prophets with it); never in a neutered build. */
 export const hasChronology = (e: Edition = current): boolean => e === '1961' && !peekCleanse()

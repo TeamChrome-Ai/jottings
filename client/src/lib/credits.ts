@@ -2,7 +2,7 @@
  * Everything in the app that is not our own work, with its licence. Rendered by app/credits.tsx and, for the web,
  * by scripts/credits-html.mjs into public/credits.html (and credits-1890.html, which the server serves in its place
  * while the 1890 edition is on). Keep them in sync by editing only this file. Two sets: the 1961 edition's (CREDITS)
- * and the 1890 edition's (docs/EDITION.md), which has no 1961, CCEL, Kingston Bible Trust or Coates entry.
+ * and the 1890 edition's (docs/EDITION.md), which has no 1961, CCEL or Coates entry.
  * Its imports are type-only but for the brand (shared/brand.ts): scripts/credits-html.mjs runs this file in node,
  * with scripts/brand.mjs resolving that one. The font licences ship as text too:
  * client/assets/fonts/Literata-OFL.txt and OpenDyslexic-OFL.txt (the same OFL 1.1 body under each face's own notice).
@@ -30,7 +30,7 @@ export const CREDITS: CreditSection[] = [
   { title: 'Scripture and notes', items: [
     { name: 'J. N. Darby, The Holy Scriptures: A New Translation from the Original Languages', what: 'The Bible text: the 1890 edition’s wording (New Testament 1884, Old Testament 1890).', licence: 'Public domain', note: 'Taken from a published digital copy of the text and checked verse by verse against a second copy; words split across lines are rejoined and four verse divisions follow the usual numbering.' },
     { name: 'ebible.org, engDBY', what: 'The Strong’s numbers on the words, moved onto the words of this edition when the data is built.', licence: 'Public domain', url: 'https://ebible.org/find/details.php?id=engDBY' },
-    { name: 'The 1961 edition (Kingston Bible Trust and Bible Truth Publishers): footnotes', what: FOOTNOTES, licence: 'Darby’s notes are public domain; the rights in the 1961 editors’ revisions and additions are the edition’s', url: 'https://web.archive.org/web/19980514181543/http://bf.org/etexts/bibles/darbybib.zip', note: 'The 8,834 lettered notes, from the Bible Foundation (bf.org) electronic text of 1998, acknowledged with thanks.' },
+    { name: 'The 1961 edition: footnotes', what: FOOTNOTES, licence: 'Darby’s notes are public domain; the rights in the 1961 editors’ revisions and additions are the edition’s', url: 'https://web.archive.org/web/19980514181543/http://bf.org/etexts/bibles/darbybib.zip', note: 'The 8,834 lettered notes, from the Bible Foundation (bf.org) electronic text of 1998, acknowledged with thanks.' },
     { name: 'The 1961 edition: introductory notice and chronological table, via the Christian Classics Ethereal Library (CCEL)', what: 'The 1961 edition’s own introductory notice, its chronological table of the kings and prophets, and its order of the prophets, as published by CCEL.', licence: 'Text of the 1961 edition; CCEL’s edition acknowledged with thanks', url: 'https://www.ccel.org/bible/jnd/darby.htm' },
     NOTICES,
     { name: 'George Morrish, A New and Concise Bible Dictionary (1897)', what: 'Text from Bible Truth Publishers’ online edition; public domain.', licence: 'Public domain', url: 'https://bibletruthpublishers.com/concise-bible-dictionary/lrcl16000' },
@@ -38,8 +38,9 @@ export const CREDITS: CreditSection[] = [
     { name: 'Open Scriptures, Strong’s dictionaries in XML', what: 'The digital text of Strong’s entries: the Hebrew edited by David Troidl and David Instone-Brewer, the Greek by Ulrik Petersen.', licence: 'Strong’s text public domain; the app’s file shared alike under CC BY-SA 4.0', url: 'https://github.com/openscriptures/strongs', note: 'Only Strong’s own fields are taken (data/strongs.json in the source); the Hebrew file’s Brown-Driver-Briggs outlines and TWOT numbers are not.' },
     { name: 'J. N. Darby, Synopsis of the Books of the Bible', what: 'Ministry on a chapter and a verse, and in the library. Text from Bible Truth Publishers’ online edition.', licence: 'Public domain', url: 'https://bibletruthpublishers.com/darby-synopsis-1-genesis-to-2-chronicles/lbd15307' },
     { name: 'J. N. Darby (1800–1882), Collected Writings (ed. W. Kelly), Notes and Comments, Notes and Jottings, Letters, Miscellaneous Writings and other papers', what: 'Ministry on a verse, and the library. Text from Bible Truth Publishers’ online library, acknowledged with thanks.', licence: 'Public domain', url: 'https://bibletruthpublishers.com/collected-writings-of-j-n-darby-ecclesiastical-1/lbd15226' },
-    { name: 'L. J. L. Hodgett, the correspondents of J. N. Darby (1995)', what: 'The recipient named on each of J. N. Darby’s letters, from the list of his correspondents L. J. L. Hodgett compiled.', licence: 'Used by kind permission of L. J. L. Hodgett' },
-    { name: 'C. A. Coates (1862–1945), the Outlines of the books of the Bible and his addresses (Kingston Bible Trust edition)', what: 'Ministry on a chapter and a verse, and in the library. Text of the Kingston Bible Trust edition, acknowledged with thanks.', licence: 'Public domain' , url: 'https://archive.org/search?query=creator%3A%22C.+A.+Coates%22'},
+    { name: 'J. B. Stoney (1814–1897) and F. E. Raven (1837–1903), their ministry', what: 'Ministry on a verse, and the library.', licence: 'Public domain' },
+    { name: 'G. V. Wigram (1805–1879) and J. G. Bellett (1795–1864), their writings', what: 'Ministry on a verse, and the library: their books and papers. Text from Bible Truth Publishers’ online library, acknowledged with thanks.', licence: 'Public domain', url: 'https://bibletruthpublishers.com/memorials-of-the-ministry-of-g-v-wigram-1-volume-1/g-v-wigram/lbd15145' },
+    { name: 'C. A. Coates (1862–1945), the Outlines of the books of the Bible and his addresses', what: 'Ministry on a chapter and a verse, and in the library.', licence: 'Public domain', url: 'https://archive.org/search?query=creator%3A%22C.+A.+Coates%22'},
   ] },
   { title: 'Voices', items: [
     { name: 'Speechify', what: `Voices powered by Speechify: the three voices (Alec, Beatrice, Dominic) and their word timings. Synthesized through Speechify’s text-to-speech; the recordings are made and served by ${BRAND.name}.`, licence: 'Commercial API', url: 'https://speechify.com' },
@@ -72,7 +73,7 @@ export const CREDITS: CreditSection[] = [
 
 /** The 1890 edition's Scripture and notes. */
 function scripture1890(ownText: boolean): Credit[] {
-  const keep = CREDITS[0].items.filter(i => i !== NOTICES && !/1961|CCEL|Kingston|Coates|^J\. N\. Darby, The Holy Scriptures/.test(`${i.name} ${i.what} ${i.licence} ${i.note ?? ''}`))
+  const keep = CREDITS[0].items.filter(i => i !== NOTICES && !/1961|CCEL|Coates|Stoney|Raven|^J\. N\. Darby, The Holy Scriptures/.test(`${i.name} ${i.what} ${i.licence} ${i.note ?? ''}`))
   return [
     { name: 'J. N. Darby, The Holy Scriptures, New Testament 1884, Old Testament 1890', what: ownText ? 'The Bible text, from the 1884 and 1890 printings.' : 'The Bible text, from a published digital copy of the text, checked against the 1884 and 1890 printings.', licence: 'Public domain' },
     { name: 'J. N. Darby’s notes', what: 'Mr. Darby’s own notes, from the 1884 and 1890 printings.', licence: 'Public domain' },

@@ -13,6 +13,7 @@ import { ApiError, get, getApiBase } from './api'
 import { fetchChapter } from './bible'
 import { NotOnDevice, getOwnOutline, isLocalId, saveOutlineItems } from './library'
 import { BRAND, NOUN } from '@shared/brand'
+import { scanMinistry, scanTypedRefs, type MinistryAuthor, type MinistryTarget } from './noteLinks'
 
 export type OutlineItemInput = Omit<OutlineItem, 'id' | 'outline_id' | 'position'>
 export const strip = (i: OutlineItem): OutlineItemInput => ({ kind: i.kind, book: i.book ?? null, chapter: i.chapter ?? null, v1: i.v1 ?? null, v2: i.v2 ?? null, text: i.text ?? null, url: i.url ?? null, depth: i.depth })
@@ -187,13 +188,18 @@ export type NoteSegment =
   | { kind: 'text'; text: string }
   | { kind: 'ref'; text: string; ref: Ref }
   | { kind: 'url'; text: string; href: string }
+  /** Ministry named in the note: "JND on John 3", "Mr. Coates" (lib/noteLinks.ts). */
+  | { kind: 'ministry'; text: string; target: MinistryTarget }
 
 const URL_RE = /\bhttps?:\/\/[^\s<>"'`]+/g
 
-/** Split note text into plain runs, scripture references and bare URLs (in source order, never overlapping). */
-export function segmentNote(text: string): NoteSegment[] {
+/** Split note text into plain runs, scripture references (typed in lower case too), the ministry it names and bare URLs
+ *  (in source order, never overlapping). `shown`: an author the edition hides is left as plain text. */
+export function segmentNote(text: string, shown?: (a: MinistryAuthor) => boolean): NoteSegment[] {
   type Span = { start: number; end: number; seg: NoteSegment }
-  const spans: Span[] = scanRefs(text).map(r => ({ start: r.start, end: r.end, seg: { kind: 'ref', text: text.slice(r.start, r.end), ref: r.ref } }))
+  const refs = scanTypedRefs(text)
+  const spans: Span[] = refs.map(r => ({ start: r.start, end: r.end, seg: { kind: 'ref', text: text.slice(r.start, r.end), ref: r.ref } }))
+  for (const m of scanMinistry(text, refs, shown)) spans.push({ start: m.start, end: m.end, seg: { kind: 'ministry', text: text.slice(m.start, m.end), target: m.target } })
   for (const m of text.matchAll(URL_RE)) {
     let raw = m[0]
     while (/[.,;:!?)\]]$/.test(raw)) raw = raw.slice(0, -1)
@@ -295,6 +301,7 @@ function noteHtml(text: string): string {
       case 'text': return esc(s.text)
       case 'ref': return `<span class="ref">${esc(s.text)}</span>`
       case 'url': return `<a href="${esc(s.href)}">${esc(s.text)}</a>`
+      case 'ministry': return esc(s.text)
       default: { const _x: never = s; return _x }
     }
   }).join('')

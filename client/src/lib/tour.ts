@@ -2,8 +2,9 @@
  * The guided tour as plain data and geometry: the steps and their words, where the spotlight goes around a measured
  * element, where the label sits, how long a glide takes and the veil's path. No React Native here (tests/tour.test.ts).
  */
-import type { Edition } from './editionCore'
+import { EDITION_AUTHORS, type Edition } from './editionCore'
 import { NOUN } from '@shared/brand'
+import { authorNames } from '@shared/ministry'
 
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Hole extends Rect { r: number }
@@ -114,7 +115,7 @@ export const EXTENDED: Step[] = [
   { id: 'player', targets: ['player-transport'], scene: { route: 'reader', player: true }, text: 'While it reads: the verse before or after, pause and play.', ...CARD, fixed: true },
   { id: 'listening', targets: ['listening-sheet'], scene: { route: 'reader', player: true, sheet: 'listening' }, text: 'The voice, the speed and the pauses, while it reads.', ...CARD, maxShare: 0.5 },
   { id: 'word', targets: ['word-sheet'], scene: { route: 'reader', sheet: 'word' }, text: 'A word looked up: its Strong’s concordance entry, and its subject one tap away.', ...CARD, maxShare: 0.5 },
-  { id: 'ministry', targets: ['ministry-sheet'], scene: { route: 'reader', select: true, sheet: 'ministry' }, text: 'Ministry on a verse: what Darby and Coates wrote on it, best first.', ...CARD, maxShare: 0.5 },
+  { id: 'ministry', targets: ['ministry-sheet'], scene: { route: 'reader', select: true, sheet: 'ministry' }, text: 'Ministry on a verse: what Darby, Raven and the others wrote on it, best first.', ...CARD, maxShare: 0.5 },
   // a work of the ministry library, as a tap in that sheet opens it
   { id: 'library', targets: ['library-heading'], scene: { route: 'library' }, text: 'A Ministry work reads like the Bible: swipe or pull on for the next section.', ...CARD, maxShare: 0.4 },
   { id: 'library-back', targets: ['library-back'], scene: { route: 'library' }, text: 'Back returns to the verse.', ...PILL },
@@ -125,7 +126,7 @@ export const EXTENDED: Step[] = [
   { id: 'bookmarks', targets: ['home-bookmarks'], scene: HOME, text: 'Bookmarks, grouped as books, chapters and verses.', ...CARD },
   { id: 'chronology', targets: ['home-chronology'], scene: HOME, text: 'Darby’s table of the kings and prophets, every reference a link.', ...CARD },
   { id: 'dictionary', targets: ['home-dictionary'], scene: HOME, text: 'Morrish’s dictionary A to Z, and Strong’s concordance through Word lookup.', ...CARD },
-  { id: 'ministry-library', targets: ['home-ministry'], scene: HOME, text: 'Darby and Coates, searchable by passage or title.', ...CARD },
+  { id: 'ministry-library', targets: ['home-ministry'], scene: HOME, text: `${authorNames()}, searchable by passage or title.`, ...CARD },
   { id: 'together', targets: ['home-together'], scene: HOME, account: true, text: 'Together: your friends and reading groups.', ...CARD, maxShare: 0.5 },
   { id: 'together-out', targets: ['home-together'], scene: HOME, account: false, text: 'Together: reading groups, and friends once you sign in.', ...CARD },
   // Outlines, on a sample the tour makes and removes
@@ -172,13 +173,14 @@ export type TourMode = 'short' | 'full'
  * More. The tour picks its steps by the same line. */
 export const TOOLBAR_WIDE = 720
 
-/** The 1890 edition (docs/EDITION.md) has no chronological table and no Coates: that step goes, these say less. */
+/** The 1890 edition (docs/EDITION.md) has no chronological table and no Coates, Stoney or Raven: that step goes, these
+ *  say less. */
 const ONLY_1961: ReadonlySet<string> = new Set(['chronology'])
 const TEXT_1890: Readonly<Record<string, string>> = {
   'more-ministry': 'Ministry on this chapter: Darby going through it.',
   'chapter-ministry': 'Ministry on this chapter: Darby going through it.',
-  'ministry': 'Ministry on a verse: what Darby wrote on it, best first.',
-  'ministry-library': 'Darby’s ministry, searchable by passage or title.',
+  'ministry': `Ministry on a verse: what ${authorNames(EDITION_AUTHORS)} wrote on it, best first.`,
+  'ministry-library': `${authorNames(EDITION_AUTHORS)}, searchable by passage or title.`,
 }
 
 /** Who is touring: a tablet (the toolbar holds everything) or a phone, signed in or out, in a group, with a friend, and

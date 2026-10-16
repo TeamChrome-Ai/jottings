@@ -22,8 +22,8 @@ import { tourRef } from '../store/tour'
  * for `verse`, the one selected or at the top of the screen.
  */
 export type MinistryScope =
-  | { kind: 'verse'; book: number; chapter: number; verses: readonly number[] }
-  | { kind: 'chapter'; book: number; chapter: number; verse: number; text?: ChapterText['verses']; authors: readonly AuthorId[] }
+  | { kind: 'verse'; book: number; chapter: number; verses: readonly number[]; author?: string }
+  | { kind: 'chapter'; book: number; chapter: number; verse: number; text?: ChapterText['verses']; authors: readonly AuthorId[]; author?: string }
 
 /** The sheet stands at its full 80% from the first frame, so a list arriving (or another author's) never resizes it:
  * the window's share less the grab bar and title above it, the authors' segments when there are two, the inset and
@@ -103,13 +103,17 @@ function Lists({ scope, onClose }: { scope: MinistryScope; onClose: () => void }
   const [busy, setBusy] = useState(false)
   // 0 until the reader turns something: the first list enters once the sheet is up, later ones lead in from their side
   const [dir, setDir] = useState(0)
+  // the authors' segments take a second row when they do not fit one (six authors on a phone); the list gives way
+  const [segmentsPx, setSegmentsPx] = useState(SEGMENTS_PX)
   useEffect(() => {
     let on = true
     const load = scope.kind === 'verse' ? loadMinistryRefs(scope.book, scope.chapter, scope.verses).then(r => r?.groups ?? null) : chapterGroups(scope)
     void load.then(g => {
       if (!on) return
       setGroups(g)
-      if (g?.length) setAuthor(lastAuthor && g.some(x => x.author === lastAuthor) ? lastAuthor : g[0].author)
+      // the author asked for (a jotting's "JND on John 3"), else the one last chosen, else the first
+      const want = [scope.author, lastAuthor].find(a => a && g?.some(x => x.author === a))
+      if (g?.length) setAuthor(want ?? g[0].author)
     })
     return () => { on = false }
   }, [scope])
@@ -161,11 +165,11 @@ function Lists({ scope, onClose }: { scope: MinistryScope; onClose: () => void }
     <View ref={tourRef('ministry-sheet')}>
       {/* the authors stay in view above the list, however far it has scrolled */}
       {two ? (
-        <View style={{ paddingHorizontal: 16, paddingTop: 8, height: SEGMENTS_PX }}>
+        <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8, minHeight: SEGMENTS_PX }} onLayout={e => setSegmentsPx(Math.max(SEGMENTS_PX, Math.round(e.nativeEvent.layout.height)))}>
           <Segmented value={author ?? groups[0].author} options={groups.map(g => ({ value: g.author, label: g.short }))} onChange={pick} />
         </View>
       ) : null}
-      <ScrollView ref={scroll} style={{ height: Math.round(height * SHEET_SHARE) - HEADER_PX - (two ? SEGMENTS_PX : 0) - FOOT_PX - insets.bottom }} contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 14 }}>
+      <ScrollView ref={scroll} style={{ height: Math.round(height * SHEET_SHARE) - HEADER_PX - (two ? segmentsPx : 0) - FOOT_PX - insets.bottom }} contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 14 }}>
         {body}
       </ScrollView>
     </View>

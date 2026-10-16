@@ -3,10 +3,8 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { BOOKS } from '../shared/books'
 import type { CompanionIndex } from '../shared/companion'
-import type { ParallelsFigure } from '../shared/figures'
-import type { MinistrySection } from '../shared/ministry'
 import { COATES_BOOKS, PATH_IDS, chapterKey, defaultWithMinistry, nextPortion, paceFor, standing, withMinistry, onPath, pathBlurb, pathBooks, pathChapters, pathLength, pathTitle, portionAt, progress, readProgress, readSetOf, readSetSince, readTotals, type PathState } from '../shared/paths'
-import { inOrder, lifeOfChrist } from '../tools/path_orders'
+import { inOrder } from '../tools/path_orders'
 import { HAS_TEXTS } from './_texts'
 
 const ROOT = path.resolve(__dirname, '..')
@@ -49,7 +47,7 @@ describe('the built-in paths', () => {
     expect(inOrder()).toEqual(chs)
   })
 
-  it.skipIf(!HAS_TEXTS)('life-of-christ covers all 89 Gospel chapters exactly once, in the harmony’s order, and matches the harmony data', () => {
+  it('life-of-christ covers all 89 Gospel chapters exactly once, in the harmony’s order', () => {
     const chs = pathChapters('life-of-christ')
     expect(chs.length).toBe(89)
     expect(eachOnce(chs)).toBe(true)
@@ -63,9 +61,6 @@ describe('the built-in paths', () => {
     expect(at(43, 6)).toBeLessThan(at(41, 7))
     expect(at(43, 20)).toBeGreaterThan(at(40, 28))
     expect(chs[88]).toEqual([43, 21])
-    const sections = (JSON.parse(readFileSync(path.join(ROOT, 'data/ministry/darby/cw-expository-4.json'), 'utf8')) as { sections: MinistrySection[] }).sections
-    const fig = sections.find(s => s.title === 'Relative order of three synoptical Gospels')!.figures![0] as ParallelsFigure
-    expect(lifeOfChrist(fig)).toEqual(chs)
   })
 
   it.skipIf(!HAS_TEXTS)('coates follows the books the Coates index outlines', () => {

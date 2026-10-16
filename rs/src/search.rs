@@ -30,11 +30,29 @@ impl Order {
 /// that has them all: best match first. shared/search.ts `defaultOrder` is the same rule.
 pub fn default_order(q: &str) -> Order { if fts_parts(q, true).len() <= 1 { Order::Bible } else { Order::Match } }
 
+/// "all", "OT", "NT", a book ("43"), or books and ranges of books ("40-43", "23-39,66": a group of books,
+/// shared/bookGroups.ts). Anything else searches every book.
+pub fn scope_ranges(scope: &str) -> Option<Vec<(i64, i64)>> {
+    match scope.trim() {
+        "" | "all" => None,
+        "OT" => Some(vec![(1, 39)]),
+        "NT" => Some(vec![(40, 66)]),
+        s => {
+            let mut out = Vec::new();
+            for part in s.split(',').take(20) {
+                let (a, b) = match part.split_once('-') { Some((a, b)) => (a.trim().parse::<i64>().ok()?, b.trim().parse::<i64>().ok()?), None => { let n = part.trim().parse::<i64>().ok()?; (n, n) } };
+                if a < 1 || b > 66 || a > b { return None }
+                out.push((a, b));
+            }
+            (!out.is_empty()).then_some(out)
+        }
+    }
+}
 fn scope_sql(scope: &str) -> (String, Vec<i64>) {
-    match scope {
-        "OT" => (" AND v.book <= 39".into(), vec![]),
-        "NT" => (" AND v.book >= 40".into(), vec![]),
-        s => match s.parse::<i64>() { Ok(n) if (1..=66).contains(&n) => (" AND v.book = ?".into(), vec![n]), _ => (String::new(), vec![]) },
+    match scope_ranges(scope) {
+        None => (String::new(), vec![]),
+        Some(r) if r.len() == 1 && r[0].0 == r[0].1 => (" AND v.book = ?".into(), vec![r[0].0]),
+        Some(r) => (format!(" AND ({})", vec!["v.book BETWEEN ? AND ?"; r.len()].join(" OR ")), r.iter().flat_map(|(a, b)| [*a, *b]).collect()),
     }
 }
 
@@ -82,7 +100,7 @@ fn whole_forms(q: &str) -> Option<String> {
 }
 
 /// The hits, their count, and (with `whole`) how many of them hold the word itself. Parameters are bound in the order
-/// the statement names them: the match, a one-book scope's book, the whole-word match, limit and offset.
+/// the statement names them: the match, the scope's books, the whole-word match, limit and offset.
 fn run(conn: &rusqlite::Connection, verses: &str, table: &str, m: &str, scope: &(String, Vec<i64>), order: Order, whole: Option<&str>, limit: i64, offset: i64) -> rusqlite::Result<(Vec<Hit>, i64, i64)> {
     use rusqlite::types::Value as V;
     let lead = if whole.is_some() { format!("({table}.rowid IN (SELECT rowid FROM {table} WHERE {table} MATCH ?)) DESC, ") } else { String::new() };
@@ -173,6 +191,18 @@ pub fn search(conn: &rusqlite::Connection, t: &Tables, q_raw: &str, limit: i64, 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_scope_is_a_testament_a_book_or_groups_of_books() {
+        assert_eq!(scope_ranges("all"), None);
+        assert_eq!(scope_ranges("NT"), Some(vec![(40, 66)]));
+        assert_eq!(scope_ranges("43"), Some(vec![(43, 43)]));
+        assert_eq!(scope_ranges("23-39,66"), Some(vec![(23, 39), (66, 66)]));
+        assert_eq!(scope_ranges("40-99"), None);
+        assert_eq!(scope_ranges("x"), None);
+        assert_eq!(scope_sql("43"), (" AND v.book = ?".to_string(), vec![43]));
+        assert_eq!(scope_sql("23-39,66"), (" AND (v.book BETWEEN ? AND ? OR v.book BETWEEN ? AND ?)".to_string(), vec![23, 39, 66, 66]));
+    }
+
     use super::*;
     fn conn() -> rusqlite::Connection {
         let c = rusqlite::Connection::open_with_flags(crate::testkit::seed(), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).expect("data/scripture.db");

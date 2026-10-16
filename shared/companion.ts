@@ -24,7 +24,7 @@ export interface Author {
 /** Darby first: the sheet's first segment and the library's first author. */
 export const AUTHORS: readonly Author[] = [
   { id: 'darby', name: 'J. N. Darby', short: 'Darby', unit: 'section', series: 'Synopsis', source: 'J. N. Darby (1800–1882), Synopsis of the Books of the Bible. Text from Bible Truth Publishers’ online edition; public domain.' },
-  { id: 'coates', name: 'C. A. Coates', short: 'Coates', unit: 'reading', source: 'C. A. Coates (1862–1945). Text of the Kingston Bible Trust edition; public domain.' },
+  { id: 'coates', name: 'C. A. Coates', short: 'Coates', unit: 'reading', source: 'C. A. Coates (1862–1945); public domain.' },
 ]
 export const authorOf = (id: string): Author | undefined => AUTHORS.find(a => a.id === id)
 

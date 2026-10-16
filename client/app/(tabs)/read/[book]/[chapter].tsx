@@ -1,4 +1,5 @@
 import { shareText } from '../../../../src/lib/share'
+import { shareChapter } from '../../../../src/lib/shareChapter'
 import { useEdition } from '../../../../src/lib/edition'
 import { siteOrigin } from '../../../../src/lib/outlines'
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -82,7 +83,7 @@ export default function ReadScreen() {
 }
 
 function ReadScreenPage() {
-  const params = useLocalSearchParams<{ book: string; chapter: string; v?: string; v2?: string; listen?: string }>()
+  const params = useLocalSearchParams<{ book: string; chapter: string; v?: string; v2?: string; listen?: string; ministry?: string }>()
   const player = usePlayer()
   const router = useRouter()
   const { user, ready } = useAuth()
@@ -612,6 +613,23 @@ function ReadScreenPage() {
   const companionAuthors = useMemo(() => valid ? AUTHORS.filter(a => { const i = indexes[a.id]; return !!i && sectionsFor(i, bookN, chapterN).length > 0 }).map(a => a.id) : [], [valid, indexes, bookN, chapterN])
   const chapterMinistry = companionAuthors.length ? 'Ministry on this chapter' : ''
   const closeMinistry = useCallback(() => setMinistry(m => ({ ...m, open: false })), [])
+  // a link with `ministry` (a jotting's "JND on John 3:16") opens the ministry on arrival, at that author: on the
+  // verses when the link names them, else on the chapter; once per link
+  const ministryAsked = useRef('')
+  useEffect(() => {
+    const who = typeof params.ministry === 'string' ? params.ministry : ''
+    if (!who || !data || !valid) return
+    const v1 = Number(params.v) || 0, v2 = Math.max(v1, Number(params.v2) || 0)
+    const key = `${bookN}.${chapterN}.${v1}.${v2}.${who}`
+    if (ministryAsked.current === key) return
+    ministryAsked.current = key
+    const author = who === '1' ? undefined : who
+    // the chapter's ministry is the companion's (the Synopsis, Coates); another author is found on the chapter's verses
+    const verses = !v1 && author && !AUTHORS.some(a => a.id === author) ? Array.from({ length: data.verses.length }, (_, i) => i + 1) : null
+    if (verses) { setMinistry({ open: true, scope: { kind: 'verse', book: bookN, chapter: chapterN, verses, author } }); return }
+    setMinistry({ open: true, scope: v1 ? { kind: 'verse', book: bookN, chapter: chapterN, verses: Array.from({ length: v2 - v1 + 1 }, (_, i) => v1 + i), author }
+      : { kind: 'chapter', book: bookN, chapter: chapterN, verse: 1, text: data.verses, authors: companionAuthors, author } })
+  }, [params.ministry, params.v, params.v2, data, valid, bookN, chapterN])  // eslint-disable-line react-hooks/exhaustive-deps
   const openChapterMinistry = (fromMore: boolean) => {
     const scope: MinistryScope = { kind: 'chapter', book: bookN, chapter: chapterN, verse: selList[0] ?? currentVerse(), text: data?.verses, authors: companionAuthors }
     // from the More sheet: that sheet leaves before this one rises, as one sheet at a time
@@ -766,6 +784,7 @@ function ReadScreenPage() {
           {compact ? <Button ref={tourRef('more-bookmark')} lead="bookmark" title={chapterMarked ? 'Remove chapter bookmark' : 'Bookmark this chapter'} onPress={() => { setMore(false); void toggleMark({ book: bookN, chapter: chapterN }) }} /> : null}
           {compact && chapterMinistry ? <Button ref={tourRef('more-ministry')} lead="companion" title={chapterMinistry} onPress={() => openChapterMinistry(true)} /> : null}
           {compact ? <Button ref={tourRef('more-paged')} lead="pages" title="Paged mode" onPress={() => { setMore(false); openFlip() }} /> : null}
+          <Button lead="share" title="Share this chapter" onPress={() => { setMore(false); void shareChapter(bookN, chapterN).then(r => { if (r === 'copied') toast.show('Link copied') }) }} />
           <Button lead="sliders" title="Reading settings" onPress={() => { setMore(false); router.push('/settings') }} />
         </View>
       </Sheet>

@@ -8,6 +8,7 @@
  */
 import { bareBook, looksLikeRef, parseRef, type Ref } from './ref.js'
 import type { SearchHit, SearchOrder, SearchResponse } from './types.js'
+import { inScopeRanges } from './bookGroups.js'
 
 export interface VerseRow { book: number; chapter: number; verse: number; text: string }
 
@@ -310,12 +311,8 @@ function bm25(nRows: number, avgdl: number, phrases: PhraseMatch[], r: number, d
   return -score
 }
 
-function inScope(book: number, scope: string): boolean {
-  if (scope === 'OT') return book <= 39
-  if (scope === 'NT') return book >= 40
-  const n = Number(scope)
-  return Number.isInteger(n) && n >= 1 && n <= 66 ? book === n : true
-}
+/** "all", "OT", "NT", a book, or books and ranges ("40-43", "23-39,66"), as rs/src/search.rs `scope_ranges` reads them. */
+const inScope = inScopeRanges
 
 /** The best `k` rows by rank, fed in ascending row order so equal ranks keep canonical order (the server's rowid order). */
 class Top {

@@ -10,7 +10,8 @@
  *                                                     `noteSources` and `filled` (where its notes and filled paragraphs
  *                                                     came from) go into sections.meta, not into the work's contents
  *   data/synopsis/                                     Darby's Synopsis, the companion's (collection "synopsis", first)
- *   data/coates/                                       Coates, the companion's (collections by kind: Outlines, Addresses)
+ *   data/coates/                                       Coates, the companion's (collections by kind: Outlines, Addresses; a work's
+ *                                                     own `collection`: Miscellaneous Ministry)
  * Work ids are the companion's for the Synopsis and Coates, so a companion place is a library place.
  */
 import { DatabaseSync } from 'node:sqlite'
@@ -50,6 +51,7 @@ function libraryOf(author: MinistryAuthor): Collection[] {
     const all = worksIn(dir, idx.works.map(w => w.id), w => w.kind === 'outline' ? 'outlines' : 'addresses')
     add('outlines', 'Outlines', all.filter(w => w.collection === 'outlines'))
     add('addresses', 'Addresses', all.filter(w => w.collection === 'addresses'))
+    add('miscellaneous', 'Miscellaneous Ministry', all.filter(w => w.collection === 'miscellaneous'))
   }
   const dir = join(data, 'ministry', author.id)
   if (existsSync(join(dir, 'index.json'))) {

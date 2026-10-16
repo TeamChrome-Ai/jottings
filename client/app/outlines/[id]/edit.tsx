@@ -10,7 +10,7 @@ import {
 } from '../../../src/lib/outlines'
 import { useAuth } from '../../../src/store/auth'
 import { useColors } from '../../../src/hooks/useTheme'
-import { Button, Card, Enter, ErrorText, H2, Input, Row, Screen, Segmented, Spinner, T } from '../../../src/components/ui'
+import { Button, Card, Enter, ErrorText, H2, Input, Row, Screen, Segmented, Spinner, T, useKeyboardReveal } from '../../../src/components/ui'
 import { MotionItem, useArrivals, useReduceMotion, type Nudge } from '../../../src/components/motion/community'
 import { useSettled } from '../../../src/components/motion/nav'
 import OutlineVerseText from '../../../src/components/OutlineVerseText'
@@ -358,6 +358,10 @@ function AddBar({ onAdd }: { onAdd: (partial: Pick<OutlineItem, 'kind'> & Partia
   const c = useColors()
   const [text, setText] = useState('')
   const settled = useSettled(text, 600)
+  // the preview opens under the field as the reader types: with the keyboard up it would sit under the keyboard
+  const card = useRef<View>(null)
+  const revealIn = useKeyboardReveal()
+  const reveal = () => { setTimeout(() => revealIn(card.current as unknown as Parameters<typeof revealIn>[0]), 30) }
   const [preview, setPreview] = useState<{ key: string; rows: VerseRow[] } | null>(null)
   const [previewErr, setPreviewErr] = useState('')
   const parsed = useMemo(() => (text.trim() ? parseRef(text) : null), [text])
@@ -384,7 +388,7 @@ function AddBar({ onAdd }: { onAdd: (partial: Pick<OutlineItem, 'kind'> & Partia
   const addKind = (kind: Exclude<OutlineItemKind, 'verse'>) => onAdd({ kind })
 
   return (
-    <Card ref={tourRef('editor-add')}>
+    <Card ref={el => { tourRef('editor-add')(el); card.current = el }}>
       <Row style={{ flexWrap: 'nowrap' }}>
         <Input placeholder="Add a passage, e.g. jn 3:16-18 or ps 23" value={text} onChangeText={setText} onSubmitEditing={submit} returnKeyType="done" submitBehavior="submit"
           autoCorrect={false} autoCapitalize="none" style={{ flex: 1, minWidth: 0 }} />
@@ -392,7 +396,7 @@ function AddBar({ onAdd }: { onAdd: (partial: Pick<OutlineItem, 'kind'> & Partia
       </Row>
       {text.trim() && !parsed && settled === text ? <Enter rise={4}><T small muted>Not a reference yet: try “Rom 8:28” or “1 cor 13:4-7”</T></Enter> : null}
       {parsed ? (
-        <Enter rise={4} style={[styles.preview, { borderColor: c.border, backgroundColor: c.bg }]}>
+        <Enter rise={4} style={[styles.preview, { borderColor: c.border, backgroundColor: c.bg }]} onLayout={reveal}>
           <T small style={{ color: c.accent, fontWeight: '700' }}>{formatRef(parsed)}</T>
           {previewErr ? <ErrorText>{previewErr}</ErrorText> : <OutlineVerseText rows={preview?.rows} loading numberOfLines={6} style={preview && preview.key !== key ? { opacity: 0.5 } : undefined} />}
         </Enter>

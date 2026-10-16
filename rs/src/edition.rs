@@ -55,8 +55,9 @@ impl AppState {
 }
 
 /// An author the edition leaves out everywhere: the companion, the library, its search, Ministry on a verse and the
-/// offline packs. C. A. Coates is the Kingston Bible Trust's edition.
-pub fn hides_author(ed: Edition, author: &str) -> bool { ed == Edition::E1890 && author == "coates" }
+/// offline packs. C. A. Coates, J. B. Stoney and F. E. Raven are texts of a publisher's edition
+/// (client/src/lib/editionCore.ts EDITION_AUTHORS).
+pub fn hides_author(ed: Edition, author: &str) -> bool { ed == Edition::E1890 && matches!(author, "coates" | "stoney" | "raven") }
 /// The path a reader or a group on `id` is shown: the Coates path reads as the Synopsis path while Coates is hidden.
 /// Only what is shown changes; the stored id stays.
 pub fn shown_path(ed: Edition, id: &str) -> &str { if ed == Edition::E1890 && id == "coates" { "synopsis" } else { id } }
