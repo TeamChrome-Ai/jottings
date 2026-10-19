@@ -33,6 +33,16 @@ describe('a reading that stopped by itself', () => {
     }
   })
 
+  it('is decided by the first exit after the reading, not a later one: Android lists them newest first', () => {
+    // report #19 (1.2.0, Pixel 8): swiped away 5 s into Matthew 19, then the app's process, started again in the
+    // background, killed twice for memory while cached; the newest exit was blamed and the reader told Android did it
+    const exits = [{ ...exit(140, 3, 'lmkd'), importance: 400 }, { ...exit(60, 3), importance: 400 }, exit(5.1, 13, 'remove task')]
+    expect(troubles([...reading, ...log([370, 'launch'])], exits, T0 + 371 * min)).toEqual([])
+    // and the other way round: Android's kill first, the reader's swipe on a later process
+    const t = troubles([...reading, ...log([370, 'launch'])], [exit(140, 13, 'remove task'), { ...exit(5.5, 3, 'lmkd'), importance: 125 }], T0 + 371 * min)
+    expect(t.map(x => [x.kind, x.t, x.what])).toEqual([['closed', T0 + 5.5 * min, 'Android closed the app while it read (low memory (lmkd) · playing)']])
+  })
+
   it('needs Android’s record: without one (before Android 11) a launch says nothing', () => {
     expect(troubles([...reading, ...log([90, 'launch'])], [], T0 + 91 * min)).toEqual([])
   })

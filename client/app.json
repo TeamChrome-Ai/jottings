@@ -1,6 +1,6 @@
 {
   "expo": {
-    "version": "1.2.1",
+    "version": "1.2.2",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -26,7 +26,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "versionCode": 58,
+      "versionCode": 59,
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.WRITE_CONTACTS"

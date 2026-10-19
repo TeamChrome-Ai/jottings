@@ -52,7 +52,11 @@ const EXIT_REASONS: Record<number, string> = {
   7: 'failed to start', 8: 'a permission changed', 9: 'too much battery or memory', 10: 'stopped by the user', 11: 'stopped by the user',
   12: 'a dependency died', 13: 'other', 14: 'frozen', 15: 'the app was disabled', 16: 'the app was updated',
 }
-export const exitWords = (x: ExitInfo) => `${EXIT_REASONS[x.reason] ?? `reason ${x.reason}`}${x.description ? ` (${x.description})` : ''}`
+/** What the app was to Android when it ended it (RunningAppProcessInfo importance): playing means a foreground service. */
+const IMPORTANCE: Record<number, string> = {
+  100: 'on screen', 125: 'playing', 200: 'visible', 230: 'perceptible', 300: 'a background service', 325: 'asleep on screen', 350: 'heavy', 400: 'cached', 1000: 'gone',
+}
+export const exitWords = (x: ExitInfo) => `${EXIT_REASONS[x.reason] ?? `reason ${x.reason}`}${x.description ? ` (${x.description})` : ''}${x.importance && IMPORTANCE[x.importance] ? ` · ${IMPORTANCE[x.importance]}` : ''}`
 /** Closed on purpose: force-stopped, swiped away from the recent apps ("remove task"), or updated. */
 export const exitByUser = (x: ExitInfo) => x.reason === 10 || x.reason === 11 || x.reason === 16 || /remove task/i.test(x.description ?? '')
 
@@ -137,8 +141,12 @@ export function troubles(events: LogEvent[], exits: ExitInfo[], now: number): Tr
       case 'launch': {
         const before = last
         // reading, or between a chapter's end and the next one starting: Android's record says whether it closed the app
-        // (a hand-over it did not close and nobody else did either is lost)
-        const exit = before && (reading || handoff) ? exits.find(z => z.t >= before.t - 5000 && z.t <= x.t) : undefined
+        // (a hand-over it did not close and nobody else did either is lost). The FIRST exit after the reading's last sign
+        // is the one that ended it: Android lists them newest first, and a process started later in the background (a
+        // car's Bluetooth asking for the media app, a reminder) and killed while cached is not the reading
+        const exit = before && (reading || handoff)
+          ? exits.filter(z => z.t >= before.t - 5000 && z.t <= x.t).sort((a, b) => a.t - b.t)[0]
+          : undefined
         if (exit && !exitByUser(exit)) out.push({ t: exit.t, kind: 'closed', w: where, what: `Android closed the app while it read (${exitWords(exit)})` })
         else if (!exit && handoff && x.t - handoff.t > NEXT_MS) lostHandoff()
         cut = null; handoff = null; reading = false
