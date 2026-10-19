@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1, 19 October 2026
+
+The source of the app's 1.2.1 release.
+
 ## 1.2.0, 18 October 2026
 
 The source of the app's 1.2.0 release.

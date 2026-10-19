@@ -191,16 +191,21 @@ export function CustomPathSheet({ open, onClose, initial, onStart }: { open: boo
               <View key={t} style={{ gap: SPACE.s }}>
                 <T small muted style={pickerStyles.group}>{t === 'OT' ? 'Old Testament' : 'New Testament'}</T>
                 <View style={pickerStyles.wrap}>
-                  {BOOKS.map((bk, i) => bk.testament === t ? (
-                    <PopIn key={bk.n} index={i} cap={66} step={4} base={wait}>
-                      <Choice label={bk.abbr} name={bk.name} selected={books.includes(bk.n)} fillDelay={0} onPress={() => toggle(bk.n)} style={pickerStyles.chip} fontSize={14} bg={c.card} />
-                    </PopIn>
-                  ) : null)}
+                  {BOOKS.map((bk, i) => {
+                    if (bk.testament !== t) return null
+                    const at = books.indexOf(bk.n) + 1
+                    return (
+                      <PopIn key={bk.n} index={i} cap={66} step={4} base={wait}>
+                        <Choice label={bk.abbr} name={at ? `${bk.name}, ${at} of ${books.length}` : bk.name} selected={at > 0} order={at || undefined} fillDelay={0} onPress={() => toggle(bk.n)} style={pickerStyles.chip} fontSize={14} bg={c.card} />
+                      </PopIn>
+                    )
+                  })}
                 </View>
               </View>
             ))}
           </View>
         )}</Grid>
+        {books.length > 1 ? <T small muted>In this order: {books.map(n => BOOKS[n - 1]?.name).join(', ')}</T> : null}
         <Row style={{ justifyContent: 'flex-end' }}>
           <Button title="Cancel" onPress={onClose} disabled={busy} />
           <Button title="Start" primary onPress={go} disabled={busy || books.length === 0} />

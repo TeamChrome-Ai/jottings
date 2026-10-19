@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { Animated, Easing, Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native'
-import { Tabs, useIsFocused } from 'expo-router'
+import { Tabs, useIsFocused, useNavigation } from 'expo-router'
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Icon, { type IconName } from '../../src/components/Icon'
@@ -190,8 +190,13 @@ export default function TabsLayout() {
   const reduce = usePref('reduceMotion')
   const desktop = useDesktop()
   usePref('motionSpeed')
+  // A verse opened from a screen outside the tabs (the ministry, Bookmarks, a path) pushes a second set of tabs over
+  // that screen. Back there retraces the tabs visited in it and then returns to that screen; the default, the first
+  // tab, sent it to Home first. The app's own tabs, at the bottom of the stack, keep Back to Home.
+  const navigation = useNavigation()
+  const [over] = useState(() => navigation.canGoBack())
   return (
-    <Tabs tabBar={desktop ? renderRail : undefined} screenLayout={sceneLayout} screenOptions={{
+    <Tabs backBehavior={over ? 'history' : 'firstRoute'} tabBar={desktop ? renderRail : undefined} screenLayout={sceneLayout} screenOptions={{
       headerShown: false,
       // from 1024 px the bar stands on the left (Rail); the navigator lays the screens out beside it
       tabBarPosition: desktop ? 'left' : 'bottom',
