@@ -19,6 +19,8 @@ use std::time::{Duration, Instant};
 
 pub const MESSAGE_MAX: usize = 2000;
 pub const REPLY_MAX: usize = 1000;
+/// The read-aloud log a reader chose to add (client/src/lib/readAloudLog.ts): longer ones are cut, not refused.
+pub const DIAGNOSTICS_MAX: usize = 24_000;
 /// The one-tap answer in the admin's inbox, and what `berean feedback-thank` sends.
 pub const THANKS: &str = "Thank you for this. The fix will be in the next update.";
 const EMAIL_MAX: usize = 254;
@@ -62,13 +64,14 @@ fn clean_email(e: Option<&str>) -> ApiResult<Option<String>> {
 }
 fn short(s: Option<String>, n: usize) -> Option<String> { s.map(|s| s.trim().chars().take(n).collect::<String>()).filter(|s| !s.is_empty()) }
 
-#[derive(Deserialize)] struct FeedbackIn { message: String, email: Option<String>, app_version: Option<String>, platform: Option<String> }
+#[derive(Deserialize)] struct FeedbackIn { message: String, email: Option<String>, app_version: Option<String>, platform: Option<String>, diagnostics: Option<String> }
 async fn submit(State(s): State<AppState>, MaybeUser(u): MaybeUser, ClientAddr(addr): ClientAddr, Json(b): Json<FeedbackIn>) -> ApiResult<Json<Value>> {
     let message = b.message.trim().to_string();
     let len = message.chars().count();
     if len == 0 || len > MESSAGE_MAX { return Err(ApiError::bad(format!("message: 1-{MESSAGE_MAX} characters"))); }
     let email = clean_email(b.email.as_deref())?;
     let (version, platform) = (short(b.app_version, 32), short(b.platform, 16));
+    let diagnostics = short(b.diagnostics, DIAGNOSTICS_MAX);
     let mut keys = vec![format!("a:{addr}")];
     if let Some(u) = &u { keys.push(format!("u:{}", u.id)); }
     if !admit(&keys, Instant::now()) { return Err(ApiError::new(429, "That is a lot of messages at once. Please try again in a few minutes.")); }
@@ -76,7 +79,7 @@ async fn submit(State(s): State<AppState>, MaybeUser(u): MaybeUser, ClientAddr(a
     let id = s.db(move |conn| {
         let hour: i64 = conn.query_row("SELECT count(*) FROM feedback WHERE created_at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 hour')", [], |r| r.get(0))?;
         if hour >= GLOBAL_PER_HOUR { return Err(ApiError::new(429, "Feedback is busy right now. Please try again in an hour.")); }
-        conn.execute("INSERT INTO feedback (user_id, message, email, app_version, platform) VALUES (?1,?2,?3,?4,?5)", params![uid, message, email, version, platform])?;
+        conn.execute("INSERT INTO feedback (user_id, message, email, app_version, platform, diagnostics) VALUES (?1,?2,?3,?4,?5,?6)", params![uid, message, email, version, platform, diagnostics])?;
         Ok(conn.last_insert_rowid())
     }).await?;
     Ok(Json(json!({ "ok": true, "id": id })))
@@ -85,11 +88,11 @@ async fn submit(State(s): State<AppState>, MaybeUser(u): MaybeUser, ClientAddr(a
 async fn admin_list(State(s): State<AppState>, AuthUser(u): AuthUser) -> ApiResult<Json<Vec<Value>>> {
     require_admin(&u)?;
     Ok(Json(s.db(|conn| {
-        let mut st = conn.prepare_cached("SELECT f.id, f.message, f.email, f.app_version, f.platform, f.created_at, u.id, u.handle, f.reply, f.replied_at, f.reply_seen_at FROM feedback f LEFT JOIN users u ON u.id=f.user_id ORDER BY f.id DESC LIMIT 500")?;
+        let mut st = conn.prepare_cached("SELECT f.id, f.message, f.email, f.app_version, f.platform, f.created_at, u.id, u.handle, f.reply, f.replied_at, f.reply_seen_at, f.diagnostics FROM feedback f LEFT JOIN users u ON u.id=f.user_id ORDER BY f.id DESC LIMIT 500")?;
         let v: Vec<Value> = st.query_map([], |r| {
             let user = match r.get::<_, Option<i64>>(6)? { Some(id) => json!({ "id": id, "handle": r.get::<_, String>(7)? }), None => Value::Null };
             Ok(json!({ "id": r.get::<_, i64>(0)?, "message": r.get::<_, String>(1)?, "email": r.get::<_, Option<String>>(2)?, "app_version": r.get::<_, Option<String>>(3)?, "platform": r.get::<_, Option<String>>(4)?, "created_at": r.get::<_, String>(5)?, "user": user,
-                "reply": r.get::<_, Option<String>>(8)?, "replied_at": r.get::<_, Option<String>>(9)?, "reply_seen": r.get::<_, Option<String>>(10)?.is_some() }))
+                "reply": r.get::<_, Option<String>>(8)?, "replied_at": r.get::<_, Option<String>>(9)?, "reply_seen": r.get::<_, Option<String>>(10)?.is_some(), "diagnostics": r.get::<_, Option<String>>(11)? }))
         })?.collect::<Result<_, _>>()?;
         Ok(v)
     }).await?))
@@ -128,12 +131,21 @@ async fn mine_seen(State(s): State<AppState>, AuthUser(u): AuthUser) -> ApiResul
 }
 /// `berean feedback`: the inbox, newest first.
 pub fn report(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
-    let mut st = conn.prepare("SELECT f.id, substr(f.created_at,1,16), coalesce('@'||u.handle, f.email, 'anonymous'), coalesce(f.app_version,''), f.reply IS NOT NULL, replace(substr(f.message,1,110), char(10), ' ') FROM feedback f LEFT JOIN users u ON u.id=f.user_id ORDER BY f.id DESC LIMIT 200")?;
-    for row in st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, bool>(4)?, r.get::<_, String>(5)?)))? {
-        let (id, at, who, ver, answered, msg) = row?;
-        println!("{id:>4}  {at}  {who:<22} {ver:<12} {}  {msg}", if answered { "answered" } else { "        " });
+    let mut st = conn.prepare("SELECT f.id, substr(f.created_at,1,16), coalesce('@'||u.handle, f.email, 'anonymous'), coalesce(f.app_version,''), f.reply IS NOT NULL, replace(substr(f.message,1,110), char(10), ' '), f.diagnostics IS NOT NULL FROM feedback f LEFT JOIN users u ON u.id=f.user_id ORDER BY f.id DESC LIMIT 200")?;
+    for row in st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, bool>(4)?, r.get::<_, String>(5)?, r.get::<_, bool>(6)?)))? {
+        let (id, at, who, ver, answered, msg, log) = row?;
+        println!("{id:>4}  {at}  {who:<22} {ver:<12} {} {}  {msg}", if answered { "answered" } else { "        " }, if log { "log" } else { "   " });
     }
     Ok(())
+}
+/// `berean feedback-show <message number>`: one message whole, with the read-aloud log its sender added.
+pub fn show(conn: &rusqlite::Connection, id: i64) -> rusqlite::Result<bool> {
+    let row = conn.query_row("SELECT f.created_at, coalesce('@'||u.handle, f.email, 'anonymous'), coalesce(f.app_version,''), coalesce(f.platform,''), f.message, f.diagnostics FROM feedback f LEFT JOIN users u ON u.id=f.user_id WHERE f.id=?1", params![id],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, Option<String>>(5)?))).optional()?;
+    let Some((at, who, ver, platform, message, diagnostics)) = row else { return Ok(false) };
+    println!("#{id}  {at}  {who}  {ver} {platform}\n\n{message}");
+    if let Some(d) = diagnostics { println!("\n{d}"); }
+    Ok(true)
 }
 /// `berean feedback-thank <handle | message number>`: the standard thank-you on every message of that reader not yet
 /// answered, or on the one message of that number (as `berean feedback` lists them) if it has an account behind it.
@@ -246,6 +258,23 @@ mod tests {
         assert_eq!(st, 200);
         let (_, list) = call(&app, "GET", "/admin/feedback", Some(&admin), "203.0.113.1", Value::Null).await;
         assert_eq!(list.as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_read_aloud_log_rides_with_the_message_and_is_cut_not_refused() {
+        let (app, pool) = app();
+        let (_, admin) = user(&pool, "admin", true);
+        let log = format!("Read-aloud log\n{}", "10-18 21:40:12 still Psalm 118:12\n".repeat(1000));
+        let (st, v) = call(&app, "POST", "/feedback", None, "203.0.113.6", json!({ "message": "The voice stopped on the drive", "diagnostics": log })).await;
+        assert_eq!(st, 200, "{v}");
+        call(&app, "POST", "/feedback", None, "203.0.113.6", json!({ "message": "No log with this one", "diagnostics": "   " })).await;
+        let (_, list) = call(&app, "GET", "/admin/feedback", Some(&admin), "203.0.113.6", Value::Null).await;
+        assert!(list[0]["diagnostics"].is_null());
+        let kept = list[1]["diagnostics"].as_str().unwrap();
+        assert_eq!(kept.chars().count(), DIAGNOSTICS_MAX);
+        assert!(kept.starts_with("Read-aloud log\n"));
+        assert!(show(&pool.get().unwrap(), list[1]["id"].as_i64().unwrap()).unwrap());
+        assert!(!show(&pool.get().unwrap(), 9999).unwrap());
     }
 
     #[tokio::test]

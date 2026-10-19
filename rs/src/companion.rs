@@ -94,12 +94,16 @@ pub async fn index(State(s): State<AppState>, Path(author): Path<String>) -> Api
     Ok(day(([(header::CONTENT_TYPE, "application/json")], shown(&s, &author).await?.index.as_str()).into_response()))
 }
 
-/// Darby's Synopsis under the cleanse (cleanse.rs): its italic-only sub-headings gone from a section's text.
-fn cleansed(author: &str, section: &Value, cleanse: bool) -> Value {
-    if !cleanse || author != "darby" { return section.clone() }
-    let mut s = section.clone();
-    if let Some(t) = s["text"].as_str() { s["text"] = json!(crate::cleanse::text("synopsis", t)) }
-    s
+/// A section as served: Darby's Synopsis under the cleanse (cleanse.rs) without its italic-only sub-headings, and its
+/// quotations of Scripture from the ministry's verse index (ministry.rs `quotes_of`; the texts are the same) when the
+/// server has the index.
+fn served(s: &AppState, author: &str, work: &str, n: i64, section: &Value, cleanse: bool) -> Value {
+    let mut sec = section.clone();
+    if cleanse && author == "darby" {
+        if let Some(t) = sec["text"].as_str() { sec["text"] = json!(crate::cleanse::text("synopsis", t)) }
+    }
+    if let Some(q) = s.ministry.as_ref().and_then(|m| m.quotes_of(author, work, n, cleanse)) { sec["quotes"] = q }
+    sec
 }
 
 /// One section with its text: `{ author, work: { id, title, kind }, n, count, section }`; 404 for an unknown author,
@@ -107,7 +111,7 @@ fn cleansed(author: &str, section: &Value, cleanse: bool) -> Value {
 pub async fn section(State(s): State<AppState>, Path((author, work, n)): Path<(String, String, usize)>) -> ApiResult<Response> {
     let w = shown(&s, &author).await?.works.get(&work).ok_or_else(|| ApiError::not_found("no such work"))?;
     let sec = n.checked_sub(1).and_then(|i| w.sections.get(i)).ok_or_else(|| ApiError::not_found("no such section"))?;
-    let sec = cleansed(&author, sec, s.cleanse().await);
+    let sec = served(&s, &author, &work, n as i64, sec, s.cleanse().await);
     Ok(day(Json(json!({ "author": author, "work": w.meta, "n": n, "count": w.sections.len(), "section": sec })).into_response()))
 }
 
@@ -119,7 +123,10 @@ pub async fn passage(State(s): State<AppState>, Path((author, book, chapter)): P
     if chapter < 1 || chapter > b.chapters as i64 { return Err(ApiError::not_found("no such chapter")) }
     let cleanse = s.cleanse().await;
     let mut places = sections_for(&author, lib, book, chapter);
-    if cleanse { for p in &mut places { p["section"] = cleansed(&author, &p["section"], true) } }
+    for p in &mut places {
+        let (work, n) = (p["work"]["id"].as_str().unwrap_or("").to_string(), p["n"].as_i64().unwrap_or(0));
+        p["section"] = served(&s, &author, &work, n, &p["section"], cleanse);
+    }
     Ok(day(Json(places).into_response()))
 }
 

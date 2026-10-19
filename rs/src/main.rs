@@ -74,8 +74,13 @@ async fn main() -> anyhow::Result<()> {
     }
     // `berean store-clicks`: how many followed the site's /get to the store
     if argv.get(1).map(|s| s.as_str()) == Some("store-clicks") { let conn = pool.get()?; store::report(&conn)?; return Ok(()); }
-    // `berean feedback`: the inbox; `berean feedback-thank <handle>`: the standard thank-you on that reader's messages
+    // `berean feedback`: the inbox; `berean feedback-show <n>`: one message with its read-aloud log;
+    // `berean feedback-thank <handle>`: the standard thank-you on that reader's messages
     if argv.get(1).map(|s| s.as_str()) == Some("feedback") { let conn = pool.get()?; feedback::report(&conn)?; return Ok(()); }
+    if argv.get(1).map(|s| s.as_str()) == Some("feedback-show") {
+        let Some(id) = argv.get(2).and_then(|s| s.trim_start_matches('#').parse::<i64>().ok()) else { anyhow::bail!("feedback-show <message number>") };
+        let conn = pool.get()?; if !feedback::show(&conn, id)? { anyhow::bail!("no message #{id}") } return Ok(());
+    }
     if argv.get(1).map(|s| s.as_str()) == Some("feedback-thank") {
         let Some(who) = argv.get(2) else { anyhow::bail!("feedback-thank <handle | message number>") };
         let conn = pool.get()?; println!("{} message(s) answered for {who}", feedback::thank(&conn, who)?); return Ok(());

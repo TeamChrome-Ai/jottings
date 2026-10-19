@@ -392,6 +392,8 @@ pub fn open_pool(path: &str, key: Option<String>) -> Result<DbPool> {
         ("group_posts", "notice", "INTEGER NOT NULL DEFAULT 0"),
         // the admin's answer to a piece of feedback (feedback.rs), read by its sender in the app; seen_at once they have
         ("feedback", "reply", "TEXT"), ("feedback", "replied_at", "TEXT"), ("feedback", "reply_seen_at", "TEXT"),
+        // the read-aloud log a sender chose to add (feedback.rs, 1.2.0)
+        ("feedback", "diagnostics", "TEXT"),
         // the admin took this account's name away (feedback.rs admin_rename): the app asks for a new name and handle
         ("users", "must_rename", "INTEGER NOT NULL DEFAULT 0")] {
         let has: i64 = conn.query_row(&format!("SELECT count(*) FROM pragma_table_info('{table}') WHERE name='{col}'"), [], |r| r.get(0))?;

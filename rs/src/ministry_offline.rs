@@ -46,11 +46,14 @@ pub struct PackInfo {
     pub works: Vec<WorkEntry>,
 }
 
-/// The pack's version: the database file's mtime and size, hex, or "0" when they cannot be read.
+/// What a pack holds beyond the data, raised when it changes so a phone holding an older pack sees an update: 2, its
+/// sections carry their quotations of Scripture (`quotes`).
+const FORMAT: u32 = 2;
+/// The pack's version: the database file's mtime and size, hex, and the pack's FORMAT; "0" when they cannot be read.
 pub fn version_of(db_path: &str) -> String {
     std::fs::metadata(db_path).ok().map(|m| {
         let t = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
-        format!("{t:x}-{:x}", m.len())
+        format!("{t:x}-{:x}-{FORMAT}", m.len())
     }).unwrap_or_else(|| "0".into())
 }
 
@@ -118,6 +121,7 @@ fn build(m: &Ministry, author: &str, cleanse: bool) -> anyhow::Result<PackInfo> 
                     if let Some(ns) = notes.as_ref().filter(|_| !(cleanse && cleanse::notes_hidden(&w.collection))) { s["notes"] = serde_json::from_str(ns)? }
                     if let Some(fs) = figs { s["figures"] = serde_json::from_str(fs)? }
                 }
+                if let Some(q) = m.quotes_of(author, &id, n, cleanse) { s["quotes"] = q }
                 sections.push(s);
             }
             let head = json!({ "id": id, "title": w.title, "kind": w.kind, "collection": w.collection });

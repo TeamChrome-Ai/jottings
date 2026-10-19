@@ -138,7 +138,7 @@ pub async fn export(State(s): State<AppState>, AuthUser(u): AuthUser) -> ApiResu
         "group_posts": rows(&conn, "SELECT p.id, g.slug AS group_slug, p.body, p.outline_id, p.hidden, p.created_at FROM group_posts p JOIN groups g ON g.id=p.group_id WHERE p.user_id=?1 ORDER BY p.created_at", u.id)?,
         "reports_filed": rows(&conn, "SELECT kind, target_id, reason, details, status, created_at FROM reports WHERE reporter_id=?1 ORDER BY created_at", u.id)?,
         "blocks": rows(&conn, "SELECT u.handle, b.created_at FROM blocks b JOIN users u ON u.id=b.blocked_id WHERE b.user_id=?1 ORDER BY b.created_at", u.id)?,
-        "feedback": rows(&conn, "SELECT message, email, app_version, platform, created_at FROM feedback WHERE user_id=?1 ORDER BY created_at", u.id)?,
+        "feedback": rows(&conn, "SELECT message, email, app_version, platform, diagnostics, created_at FROM feedback WHERE user_id=?1 ORDER BY created_at", u.id)?,
         // bans.rs: fingerprints of the networks and devices the account was seen on (the hash itself says nothing)
         "sign_in_fingerprints": rows(&conn, "SELECT kind, first_seen, last_seen FROM user_marks WHERE user_id=?1 ORDER BY first_seen", u.id)?,
         // friends (settings ride in user.settings.friends). Sent invites carry only what the sender saw: the handle as

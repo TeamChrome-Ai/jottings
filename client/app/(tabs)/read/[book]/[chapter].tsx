@@ -12,6 +12,8 @@ import * as Clipboard from 'expo-clipboard'
 import type { Outline } from '@shared/types'
 import { formatVerseRuns, type Ref } from '@shared/ref'
 import { book as bookMeta, chapterIndex, fetchChapter, key as chapterKeyOf, nextChapter, peekChapter, prevChapter, validRef, verseId, warmAround, type ChapterData } from '../../../../src/lib/bible'
+import { note } from '../../../../src/lib/readAloudLog'
+import { place } from '../../../../src/lib/readAloudLogCore'
 import { get, getApiBase, isNetworkError } from '../../../../src/lib/api'
 import { addBookmark, listBookmarks, removeBookmark } from '../../../../src/lib/library'
 import { bookmarkIds, bookmarkKey, bookmarkTitle, markedVerses, type BookmarkTarget } from '../../../../src/lib/bookmarks'
@@ -416,13 +418,18 @@ function ReadScreenPage() {
   }, [spokenHere, verseY, prefs.reduceMotion])
   useEffect(() => {
     player.onEnded((b, c) => {
-      if (!prefs.ttsAutoNext || b !== bookN || c !== chapterN) return
+      if (!prefs.ttsAutoNext) return note('no-next', 'continue into the next chapter is off')
+      if (b !== bookN || c !== chapterN) return note('no-next', `the reader shows ${place(bookN, chapterN)}`)
       // the path's next portion while one is on (its chapter; the ministry `then` is read, not listened to)
       const nx = nextRef.current
-      if (nx) router.replace({ pathname: '/read/[book]/[chapter]', params: { book: String(nx.book), chapter: String(nx.chapter), listen: '1' } })
+      if (!nx) return note('no-next', 'the end of the path or of the Bible')
+      note('next', undefined, place(nx.book, nx.chapter))
+      router.replace({ pathname: '/read/[book]/[chapter]', params: { book: String(nx.book), chapter: String(nx.chapter), listen: '1' } })
     })
     return () => player.onEnded(null)
   }, [player, prefs.ttsAutoNext, bookN, chapterN, router])
+  const readingHere = player.status === 'playing' && player.book === bookN && player.chapter === chapterN
+  useEffect(() => { if (readingHere && prefs.ttsAutoNext && next) player.warm(next.book, next.chapter) }, [readingHere, prefs.ttsAutoNext, next?.book, next?.chapter])  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (params.listen === '1' && data) player.start(bookN, chapterN, 1) }, [params.listen, data, bookN, chapterN])  // eslint-disable-line react-hooks/exhaustive-deps
   const listen = () => { if (player.status === 'loading') return; if (player.status !== 'idle' && player.book === bookN && player.chapter === chapterN) player.toggle(); else player.start(bookN, chapterN, selList[0] ?? 1, prefs.ttsStopAtSelection && selList.length ? { stopAfter: selList[selList.length - 1] } : undefined) }
 

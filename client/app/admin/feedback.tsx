@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Linking, View } from 'react-native'
+import { Linking, ScrollView, View } from 'react-native'
 import { Redirect, Stack } from 'expo-router'
 import { Tag, UserLink } from '../../src/components/CommunityBits'
 import { Button, Card, ErrorText, Input, Row, Screen, Sheet, Spinner, T } from '../../src/components/ui'
@@ -7,6 +7,7 @@ import { SheetBody } from '../../src/components/CommunityBits'
 import { BusyDots, MotionItem, useArrivals } from '../../src/components/motion/community'
 import { confirmAsync, errMsg, fmtWhen, useLoad } from '../../src/lib/community'
 import { REPLY_MAX, THANKS, adminFeedback, deleteFeedback, replyFeedback, type FeedbackRow } from '../../src/lib/feedback'
+import { copyText } from '../../src/lib/outlines'
 import { useAuth } from '../../src/store/auth'
 import { useToast } from '../../src/store/toast'
 import { BRAND } from '@shared/brand'
@@ -36,6 +37,7 @@ function Inbox() {
     setLeaving(s => { const n = new Set(s); n.delete(id); return n })
   }
   const [writing, setWriting] = useState<FeedbackRow | null>(null)
+  const [log, setLog] = useState<string | null>(null)
   const [text, setText] = useState('')
   // the answer waits in the sender's app (an account), told to them on their next visit; without one there is only email
   const answer = async (r: FeedbackRow, body: { thanks: true } | { text: string }) => {
@@ -73,6 +75,7 @@ function Inbox() {
               <T small muted>{fmtWhen(r.created_at)}</T>
             </Row>
             <T selectable>{r.message}</T>
+            {r.diagnostics ? <Button small title="Read-aloud log" lead="headphones" onPress={() => setLog(r.diagnostics ?? null)} style={{ alignSelf: 'flex-start' }} /> : null}
             {r.reply ? <T small muted>You answered: “{r.reply}” {r.reply_seen ? '(seen)' : '(not seen yet)'}</T> : null}
             {r.user ? (
               <Row>
@@ -89,6 +92,17 @@ function Inbox() {
           </Card>
         </MotionItem>
       ))}
+      <Sheet open={log !== null} onClose={() => setLog(null)} title="Read-aloud log" maxHeight="88%">
+        <SheetBody>
+          <Row style={{ justifyContent: 'flex-end' }}>
+            <Button small title="Copy" onPress={() => { if (log) void copyText(log).then(ok => toast.show(ok ? 'Copied' : 'Not copied')) }} />
+            <Button small primary title="Close" onPress={() => setLog(null)} />
+          </Row>
+          <ScrollView horizontal>
+            <T selectable small style={{ fontFamily: 'monospace' }}>{log}</T>
+          </ScrollView>
+        </SheetBody>
+      </Sheet>
       <Sheet open={writing !== null} onClose={() => setWriting(null)} title={writing?.user ? `Answer @${writing.user.handle}` : undefined}>
         <SheetBody>
           <Input placeholder={`Your answer; they see it the next time they open ${BRAND.name}`} value={text} onChangeText={setText} maxLength={REPLY_MAX} multiline style={{ minHeight: 90, textAlignVertical: 'top' }} />

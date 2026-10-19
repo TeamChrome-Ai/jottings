@@ -28,6 +28,7 @@ import { useStreakReminder } from '../src/hooks/useStreakReminder'
 import { useVerseNotify } from '../src/hooks/useVerseNotify'
 import { useInviteNotice } from '../src/hooks/useInviteNotice'
 import FeedbackReplies from '../src/components/FeedbackReplies'
+import ReadAloudReport from '../src/components/ReadAloudReport'
 import ForcedRename from '../src/components/ForcedRename'
 import { THEME_FADE_MS } from '../src/lib/themeFade'
 import { setMotionSpeed } from '../src/lib/motionSpeed'
@@ -128,6 +129,7 @@ function Shell() {
       <StreakReminder />
       <InviteNotice />
       <FeedbackReplies />
+      <ReadAloudReport />
       <ForcedRename />
       <LibraryMerge />
       <Widgets />

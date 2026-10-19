@@ -6,8 +6,10 @@ import { del, get, patch, post } from './api'
 
 /** Same cap as rs/src/feedback.rs MESSAGE_MAX. */
 export const MESSAGE_MAX = 2000
+/** Same cap as rs/src/feedback.rs DIAGNOSTICS_MAX: the read-aloud log a reader chose to add. */
+export const DIAGNOSTICS_MAX = 24_000
 
-export interface FeedbackIn { message: string; email?: string; app_version?: string; platform?: string }
+export interface FeedbackIn { message: string; email?: string; app_version?: string; platform?: string; diagnostics?: string }
 
 /** The request body: text trimmed, a blank email left out. Null when there is nothing to send. */
 export function feedbackBody(message: string, email: string, appVersion: string, platform: string): FeedbackIn | null {
@@ -26,6 +28,8 @@ export const sendFeedback = (body: FeedbackIn) => post<{ ok: true; id: number }>
 
 export interface FeedbackRow {
   id: number; message: string; email: string | null; app_version: string | null; platform: string | null; created_at: string
+  /** The read-aloud log the sender chose to add (lib/readAloudLog.ts). */
+  diagnostics?: string | null
   user: { id: number; handle: string } | null
   /** The admin's answer, and whether its sender has been shown it. */
   reply?: string | null; replied_at?: string | null; reply_seen?: boolean

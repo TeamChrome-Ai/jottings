@@ -37,7 +37,13 @@ export type Passage = [book: number, fromChapter: number, fromVerse: number, toC
  */
 export type WorkKind = 'outline' | 'addresses' | 'introduction' | 'papers' | 'notes' | 'letters'
 export interface SectionMeta { title: string; part?: string; passages: Passage[] }
-export interface Section extends SectionMeta { text: string; notes?: string[] }
+/**
+ * A section's quotation of Scripture in the verse's own words, as the ministry's verse index found it (rs/src/ministry.rs
+ * `quotes_of`): the paragraph (as paragraphsOf counts them), the verse (`book * 1e6 + chapter * 1e3 + verse`) and the
+ * quoted words as the index read them. The reader finds the words again in the text it shows and links them.
+ */
+export type Quote = [para: number, verse: number, words: string]
+export interface Section extends SectionMeta { text: string; notes?: string[]; quotes?: Quote[] }
 export interface WorkMeta { id: string; title: string; kind: WorkKind; sections: SectionMeta[] }
 /** Where a work sits, as a heading's small line: "Synopsis · Genesis", "An Outline of Genesis · …". */
 export function workLine(place: Pick<Place, 'author' | 'work' | 'section'>): string {

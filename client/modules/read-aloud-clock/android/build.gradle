@@ -1,0 +1,20 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.readaloudclock'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.readaloudclock"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // HeadlessJsTaskContext: the app's own React Native, not a copy
+  compileOnly 'com.facebook.react:react-android'
+}

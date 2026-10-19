@@ -22,6 +22,8 @@ pub const PER_PAGE: i64 = 20;
 const SNIPPET_CHARS: usize = 200;
 /// A selection longer than this is refused: the sheet asks for what is selected in one chapter.
 const MAX_VERSES: usize = 200;
+/// Ranks below this are the quote class (shared/ministryIndex.ts rankOf: quote 0, verse 1e7, range 2e7, list 3e7).
+const QUOTE_RANKS: i64 = 10_000_000;
 
 pub(crate) struct Author { pub id: String, ord: i64, name: String, short: String, born: i64, died: i64, source: String }
 pub(crate) struct Work { pub title: String, pub kind: String, pub collection: String, pub count: i64, pub contents: Value, pub raw: String,
@@ -50,6 +52,9 @@ pub struct Ministry {
     /// what the cleanse takes out of the text and the index.
     heads: HashMap<(String, i64), Vec<i64>>,
     pub(crate) head_ids: String,
+    /// What each section quotes of Scripture in the verse's own words (the index's quote class, paragraphs only), by
+    /// (author, work, n): the paragraph, the verse and the quoted words, in reading order. Read once: some 46,000.
+    quotes: HashMap<(String, String, i64), Vec<(i64, i64, String)>>,
     /// Every section of every enabled author in library order (author, collection, work, n): the title search's index.
     titles: Vec<Title>,
     /** The database has `sections.figures` (built after figures were added); an older one is served without them. */
@@ -112,6 +117,20 @@ impl Ministry {
                 if cleanse::is_subheading(&text) { heads.entry((work.clone(), n)).or_default().push(i); head_ids.push(id); }
             }
         }
+        // the quotations: the paragraph's plain text (as the index read it) cut at the index's UTF-16 offsets
+        let mut quotes: HashMap<(String, String, i64), Vec<(i64, i64, String)>> = HashMap::new();
+        let mut st = conn.prepare("SELECT p.author, p.work, p.n, p.i, r.verse, r.start, r.end, p.id, p.text FROM refs r JOIN paras p ON p.id = r.para \
+            WHERE r.note = 0 AND r.rank < ?1 ORDER BY p.author, p.work, p.n, p.i, r.start")?;
+        let mut last: (i64, Vec<u16>) = (-1, Vec::new());
+        for r in st.query_map([QUOTE_RANKS], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?, r.get::<_, i64>(4)?, r.get::<_, i64>(5)?, r.get::<_, i64>(6)?, r.get::<_, i64>(7)?, r.get::<_, String>(8)?)))? {
+            let (author, work, n, i, verse, start, end, id, text) = r?;
+            if last.0 != id { last = (id, plain(&text).encode_utf16().collect()) }
+            let u = &last.1;
+            let (a, b) = ((start.max(0) as usize).min(u.len()), (end.max(0) as usize).min(u.len()));
+            let words = String::from_utf16_lossy(&u[a..b.max(a)]).trim().to_string();
+            if !words.is_empty() { quotes.entry((author, work, n)).or_default().push((i, verse, words)) }
+        }
+        drop(st);
         drop(conn);
         let shown_1890: Vec<&Value> = lib.iter().filter(|a| !crate::edition::hides_author(Edition::E1890, a["id"].as_str().unwrap_or(""))).collect();
         let library_1890 = json!({ "authors": shown_1890 }).to_string();
@@ -123,12 +142,24 @@ impl Ministry {
         let library = json!({ "authors": lib }).to_string();
         let version = crate::ministry_offline::version_of(path);
         let offline_dir = crate::ministry_offline::cache_dir(path, &version);
-        Ok(Some(Arc::new(Ministry { pool, authors, works, library, library_1890, library_cleansed, heads, head_ids: json!(head_ids).to_string(), titles, figures, version, offline_dir, packs: Default::default() })))
+        Ok(Some(Arc::new(Ministry { pool, authors, works, library, library_1890, library_cleansed, heads, head_ids: json!(head_ids).to_string(), quotes, titles, figures, version, offline_dir, packs: Default::default() })))
     }
     /// The library as served: every enabled author; without Coates in 1890; without the hidden collections under the cleanse.
     pub(crate) fn library_for(&self, s: Served) -> &str { if s.cleanse { &self.library_cleansed } else if s.edition == Edition::E1890 { &self.library_1890 } else { &self.library } }
     /// The Synopsis's sub-heading indices of a section, when it has any.
     pub(crate) fn heads_of(&self, work: &str, n: i64) -> Option<&Vec<i64>> { self.heads.get(&(work.to_string(), n)) }
+    /// A section's quotations of Scripture as the app links them, `[[paragraph, verse, words], …]` in reading order, the
+    /// paragraph counted as the served text counts them (the cleanse takes the Synopsis's sub-headings out); None when it
+    /// quotes none. The words are the plain text the index matched; the app finds them again in the text it shows.
+    pub(crate) fn quotes_of(&self, author: &str, work: &str, n: i64, cleanse: bool) -> Option<Value> {
+        let qs = self.quotes.get(&(author.to_string(), work.to_string(), n))?;
+        let heads = if cleanse { self.heads_of(work, n) } else { None };
+        let out: Vec<Value> = qs.iter().filter_map(|(i, verse, words)| {
+            let i = match heads { Some(h) => cleanse::remap_para(*i, h)?, None => *i };
+            Some(json!([i, verse, words]))
+        }).collect();
+        (!out.is_empty()).then_some(Value::Array(out))
+    }
     /// A work the state leaves out: one of a hidden collection under the cleanse, as absent as a work never loaded.
     pub(crate) fn work_hidden(&self, w: &Work, s: Served) -> bool { s.cleanse && cleanse::collection_hidden(&w.collection) }
     /// The enabled authors the edition shows, in the registry's order.
@@ -262,6 +293,7 @@ pub async fn section(State(s): State<AppState>, Path((author, work, n)): Path<(S
     section["text"] = json!(if served.cleanse { cleanse::text(&collection, &text) } else { text });
     if let Some(ns) = notes.filter(|_| !(served.cleanse && cleanse::notes_hidden(&collection))) { section["notes"] = serde_json::from_str(&ns).map_err(|_| ApiError::internal("bad notes"))? }
     if let Some(fs) = figures { section["figures"] = serde_json::from_str(&fs).map_err(|_| ApiError::internal("bad figures"))? }
+    if let Some(q) = m.quotes_of(&author, &work, n, served.cleanse) { section["quotes"] = q }
     Ok(day(Json(json!({ "author": author, "work": head, "n": n, "count": count, "section": section })).into_response()))
 }
 
@@ -685,6 +717,24 @@ pub mod tests {
         // within a class, a better rank first: the extra paragraphs run from para 145 (rank …001) back to 100
         let order: Vec<i64> = p1["groups"][0]["items"].as_array().unwrap().iter().skip(3).take(3).map(|i| i["para"].as_i64().unwrap()).collect();
         assert_eq!(order, [45, 44, 43]);
+    }
+
+    #[tokio::test]
+    async fn sections_carry_their_quotations() {
+        let path = cleanse_fixture();
+        // a quotation in the Synopsis after its two sub-headings: under the cleanse its paragraph is two further up
+        rusqlite::Connection::open(&path).unwrap().execute_batch("INSERT INTO refs VALUES (1001003, 0, 1001000, 203, 0, 0, 12)").unwrap();
+        let m = Ministry::open(&path).unwrap().unwrap();
+        assert_eq!(m.quotes_of("darby", "cw-doctrinal-1", 1, false), Some(json!([[0, 43003016, "God so loved the world (John 3:16)"]])));
+        // a reference by name is a link already; only the quote class is a quotation
+        assert_eq!(m.quotes_of("darby", "cw-doctrinal-1", 2, false), None);
+        assert_eq!(m.quotes_of("coates", "romans", 1, false), None);
+        assert_eq!(m.quotes_of("darby", "genesis", 1, false), Some(json!([[3, 1001003, "And God said"]])));
+        assert_eq!(m.quotes_of("darby", "genesis", 1, true), Some(json!([[1, 1001003, "And God said"]])));
+        let (app, _) = app_with_ministry(&path);
+        let (_, s) = call(&app, "GET", "/ministry/darby/cw-doctrinal-1/1", None, Value::Null).await;
+        assert_eq!(s["section"]["quotes"], json!([[0, 43003016, "God so loved the world (John 3:16)"]]));
+        assert!(call(&app, "GET", "/ministry/darby/cw-doctrinal-1/2", None, Value::Null).await.1["section"].get("quotes").is_none());
     }
 
     #[tokio::test]

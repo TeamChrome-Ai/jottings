@@ -1,12 +1,13 @@
-import { memo, useCallback, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, memo, useCallback, useMemo, useState, type ReactNode } from 'react'
 import { Platform, Text, View, type TextStyle } from 'react-native'
 import { formatPassages, paragraphsOf, passageStart, titleIsPassage, workLine, type Place, type Section } from '@shared/companion'
 import type { MinistrySectionMeta } from '@shared/ministry'
-import type { Ref, RefHome } from '@shared/ref'
+import { formatRef, type Ref, type RefHome } from '@shared/ref'
 import { isLookupWord } from '@shared/cbd'
 import { proseWords, wordTapAt, type WordTap } from '@shared/wordTap'
 import { wordAtPoint } from '../lib/wordAtPoint'
 import { inlineSpans, superscript, type Span } from '../lib/intro'
+import { quoteLinks, type QuoteLink } from '../lib/quoteLinks'
 import { useReadingFont } from '../hooks/useReadingFont'
 import { usePageInks } from '../hooks/useTheme'
 import InkText from './InkText'
@@ -56,8 +57,9 @@ const LINK: TextStyle = { textDecorationLine: 'underline' }
  *  colours are leaves (InkText): a theme change never walks a section's paragraphs. With `onWord` on the phone, every
  *  word that could name an article is its own Text (the Bible reader's pattern under its switch): the cost of a node
  *  per word is paid only by a reader who turned Word lookup on. The web finds the word from the click point instead
- *  (Paragraph), so its spans stay whole. */
-function Spans({ spans, ink, onWord }: { spans: Span[]; ink: Ink; onWord?: (t: WordTap) => void }) {
+ *  (Paragraph), so its spans stay whole. `links`: the line's quotations of Scripture (lib/quoteLinks.ts), set in the
+ *  accent without the reference's underline; a tap opens the verse quoted, ahead of Word lookup, as a reference does. */
+function Spans({ spans, ink, onWord, links }: { spans: Span[]; ink: Ink; onWord?: (t: WordTap) => void; links?: readonly QuoteLink[] }) {
   const words = onWord && Platform.OS !== 'web' ? lineWords(spans) : null
   let at = 0
   return spans.map((s, i) => {
@@ -72,7 +74,20 @@ function Spans({ spans, ink, onWord }: { spans: Span[]; ink: Ink; onWord?: (t: W
       const ref = s.ref
       return <InkText key={i} ink="accent" accessibilityRole="link" onPress={() => ink.onRef(ref)} style={[style, LINK]}>{s.text}</InkText>
     }
-    return <Text key={i} style={style}>{words ? tappable(s.text, start, words, onWord!) : s.text}</Text>
+    const prose = (from: number, to: number) => { const t = s.text.slice(from - start, to - start); return words ? tappable(t, from, words, onWord!) : t }
+    const end = at
+    const quoted = links?.filter(l => l.a < end && start < l.b)
+    if (!quoted?.length) return <Text key={i} style={style}>{prose(start, end)}</Text>
+    const parts: ReactNode[] = []
+    let pos = start
+    quoted.forEach((l, k) => {
+      const a = Math.max(l.a, start), b = Math.min(l.b, end)
+      if (a > pos) parts.push(<Fragment key={`p${k}`}>{prose(pos, a)}</Fragment>)
+      parts.push(<InkText key={`q${k}`} ink="accent" accessibilityRole="link" accessibilityHint={`Opens ${formatRef(l.ref)}`} onPress={() => ink.onRef(l.ref)}>{s.text.slice(a - start, b - start)}</InkText>)
+      pos = b
+    })
+    if (pos < end) parts.push(<Fragment key="p">{prose(pos, end)}</Fragment>)
+    return <Text key={i} style={style}>{parts}</Text>
   })
 }
 
@@ -104,9 +119,11 @@ interface ParagraphProps {
   open: string | null; noteText: (id: string) => string
   onPara?: (i: number, y: number) => void; washed: boolean; washDelay: number; size: number; home?: RefHome
   onWord?: (t: WordTap) => void
+  /** its quotations of Scripture, by line */
+  links: readonly QuoteLink[]
 }
 /** One paragraph, memoised: a footnote opening under another, or a theme change, lays out none of the others again. */
-const Paragraph = memo(function Paragraph({ i, lines, quote, f, q, ink, open, noteText, onPara, washed, washDelay, size, home, onWord }: ParagraphProps) {
+const Paragraph = memo(function Paragraph({ i, lines, quote, f, q, ink, open, noteText, onPara, washed, washDelay, size, home, onWord, links }: ParagraphProps) {
   // web: one click handler on the paragraph; the word comes from the caret at the point (no node per word)
   const onClick = onWord && Platform.OS === 'web'
     ? (e: { currentTarget: unknown; target: unknown; clientX: number; clientY: number }) => { const t = wordAtPoint(e.currentTarget as Element, e.target as EventTarget, e.clientX, e.clientY); if (t) onWord(t) }
@@ -115,7 +132,7 @@ const Paragraph = memo(function Paragraph({ i, lines, quote, f, q, ink, open, no
     <View testID={`para-${i}`} onLayout={onPara ? e => onPara(i, e.nativeEvent.layout.y) : undefined}>
       {washed ? <View pointerEvents="none" style={{ position: 'absolute', left: -10, right: -10, top: -6, bottom: -6 }}><PulseOnce delay={washDelay} radius={RADIUS.control} strength={0.16} /></View> : null}
       <InkText ink="text" style={[quote ? q.body : f.body, quote ? QUOTE : null]} {...(onClick ? { onClick } as object : null)}>
-        {lines.map((l, j) => <Text key={j}>{j ? '\n' : ''}<Spans spans={l} ink={ink} onWord={onWord} /></Text>)}
+        {lines.map((l, j) => <Text key={j}>{j ? '\n' : ''}<Spans spans={l} ink={ink} onWord={onWord} links={links.length ? links.filter(x => x.line === j) : undefined} /></Text>)}
       </InkText>
       {open ? <SectionNote marker={open} text={noteText(open)} size={size} font={f.font} home={home} ink={ink} /> : null}
     </View>
@@ -123,6 +140,7 @@ const Paragraph = memo(function Paragraph({ i, lines, quote, f, q, ink, open, no
 })
 
 const NO_NOTES: string[] = []
+const NO_LINKS: QuoteLink[] = []
 /**
  * A section's text, typeset like the About notices: paragraphs in the reader's font, block quotations (hymns, a long
  * verse) set in from the left with their lines kept, scripture references linked through `onRef` (`home`, the book the
@@ -131,6 +149,8 @@ const NO_NOTES: string[] = []
  * (for opening at the verse in view); `wash` is the paragraph that was opened at, washed once in the accent. `size` and
  * `line` set the reading size and line height (the library reads at the reader's own; the sheet at READING_SIZE).
  * `onWord`: Word lookup is on; a tap on a word of the prose reports it with its neighbours (references stay links).
+ * The section's quotations of Scripture (`section.quotes`, from the ministry's verse index) are links to the verse
+ * they quote, through `onRef` like a reference: from the companion sheet that is back to the chapter being read.
  */
 export const CompanionText = memo(function CompanionText({ section, home, from = 0, to, onRef, onPara, wash = -1, washDelay = 0, size = READING_SIZE, line = 1.6, onWord }: {
   section: Section; home?: RefHome; from?: number; to?: number; onRef: (r: Ref) => void
@@ -142,6 +162,11 @@ export const CompanionText = memo(function CompanionText({ section, home, from =
   const notes = section.notes ?? NO_NOTES
   const paras = useMemo(() => paragraphsOf(section.text), [section.text])
   const spans = useMemo(() => paras.map(p => p.lines.map(l => inlineSpans(l, notes.length > 0, home))), [paras, notes.length, home?.book, home?.chapter])  // eslint-disable-line react-hooks/exhaustive-deps
+  const links = useMemo(() => {
+    const quoted = new Map<number, { verse: number; words: string }[]>()
+    for (const [i, verse, words] of section.quotes ?? []) quoted.set(i, [...(quoted.get(i) ?? []), { verse, words }])
+    return spans.map((lines, i) => { const qs = quoted.get(i); return qs ? quoteLinks(lines.map(l => l.map(s => s.text).join('')), qs) : NO_LINKS })
+  }, [spans, section.quotes])
   const [openNote, setOpenNote] = useState<string | null>(null)
   const onNote = useCallback((id: string) => { easeNextLayout(reduce); setOpenNote(o => o === id ? null : id) }, [reduce])
   const ink = useMemo<Ink>(() => ({ italic: f.italic, onRef, onNote }), [f.italic, onRef, onNote])
@@ -152,7 +177,7 @@ export const CompanionText = memo(function CompanionText({ section, home, from =
         const i = from + k
         const lines = spans[i]
         const open = openNote !== null && lines.some(l => l.some(s => s.note === openNote)) ? openNote : null
-        return <Paragraph key={i} i={i} lines={lines} quote={p.quote} f={f} q={q} ink={ink} open={open} noteText={noteText} onPara={onPara} washed={wash === i} washDelay={washDelay} size={size} home={home} onWord={onWord} />
+        return <Paragraph key={i} i={i} lines={lines} quote={p.quote} f={f} q={q} ink={ink} open={open} noteText={noteText} onPara={onPara} washed={wash === i} washDelay={washDelay} size={size} home={home} onWord={onWord} links={links[i]} />
       })}
     </View>
   )
