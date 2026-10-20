@@ -81,6 +81,13 @@ describe('a reading that stopped by itself', () => {
     expect(t.map(x => x.kind)).toEqual(['error', 'stalled'])
     expect(t[1].what).toContain('75 s')
   })
+
+  it('is not the timers standing still while paused: the reader paused for an appointment', () => {
+    const paused = [...reading, ...log([6, 'pause', undefined, 'John 1:18'], [6, 'status', 'paused'], [7, 'app', 'background'], [136, 'stall', '7766'])]
+    expect(troubles(paused, [], T0 + 140 * min)).toEqual([])
+    // played again, the timers standing still count once more
+    expect(troubles([...paused, ...log([150, 'play'], [150, 'status', 'playing'], [160, 'stall', '90'])], [], T0 + 161 * min).map(x => x.kind)).toEqual(['stalled'])
+  })
 })
 
 describe('what else is sounding', () => {

@@ -5,7 +5,7 @@ import { CUE_H, PULL_FAR, PULL_GAP, WHEEL_GAP_MS, createTouchPull, createWheelPu
 // the release of a turn (the slide, the snap back) plays at the turns' own tempo; the finger is followed 1:1
 import { TURN_TEMPO } from '../lib/motionSpeed'
 import { atTempo } from './motion/speed'
-import { CueChevron, DRAG_SLOP, EDGE_PULL, FLICK_PX_S, PullCueFace, SCROLL_SLOP, SETTLE_SPRING, TURN_FAR, TURN_MS, turnMs } from './motion/reader'
+import { CueChevron, DRAG_SLOP, EDGE_PULL, FLICK_PX_S, PullCueFace, SCROLL_SLOP, SETTLE_SPRING, TURN_FAR, TURN_MIN_MS, TURN_MS, turnMs } from './motion/reader'
 import { useInks } from '../hooks/useTheme'
 
 const OUT = Easing.out(Easing.cubic)
@@ -20,6 +20,8 @@ const SwipePager = forwardRef<SwipePagerHandle, SwipePagerProps>(function SwipeP
   /** 0: pages side by side; 1: stacked for an edge pull, PULL_GAP apart. Only ever switched while `pos` is at rest. */
   const axis = useRef(new Animated.Value(0)).current
   const at = useRef(index)
+  /** Swipes released while a turn was under way, signed: each turns one more page once the last has landed. */
+  const queued = useRef(0)
   const shown = useRef(index)
   const [height, setHeight] = useState(0)
   const latest = useRef({ index, hasNext: !!next, hasPrev: !!prev, reduce, width, height, onTurn, onPull, edges })
@@ -27,7 +29,7 @@ const SwipePager = forwardRef<SwipePagerHandle, SwipePagerProps>(function SwipeP
   // idle neighbours are laid out but not painted, and stay out of find-in-page; they show from the first move
   const [moving, setMoving] = useState(false)
   useLayoutEffect(() => {
-    if (at.current !== index) { at.current = index; pos.stopAnimation(); pos.setValue(index); shown.current = index }
+    if (at.current !== index) { at.current = index; pos.stopAnimation(); pos.setValue(index); shown.current = index; queued.current = 0 }
     setMoving(false)
   }, [index, pos])
   useEffect(() => { const id = pos.addListener(({ value }) => { shown.current = value }); return () => pos.removeListener(id) }, [pos])
@@ -50,6 +52,19 @@ const SwipePager = forwardRef<SwipePagerHandle, SwipePagerProps>(function SwipeP
     turn(dir, TURN_MS, false)
   }, [turn, axis])
   useImperativeHandle(ref, () => ({ go, setEdges: () => {} }), [go])
+  /** The next queued swipe, once the page the last turn brought in is the current one. */
+  const drain = useCallback(() => {
+    const q = queued.current
+    const { index, hasNext, hasPrev } = latest.current
+    if (!q || at.current !== index) return
+    const dir: 1 | -1 = q > 0 ? 1 : -1
+    if (!(dir > 0 ? hasNext : hasPrev)) { queued.current = 0; return }
+    queued.current = q - dir
+    axis.setValue(0)
+    setMoving(true)
+    turn(dir, TURN_MIN_MS, false)
+  }, [turn, axis])
+  useEffect(drain, [index, drain])
 
   // ---- the edge pull: `pull` follows it, `release` turns or eases back ----
   const pulling = useRef<{ dir: PullDir; px: number } | null>(null)
@@ -134,12 +149,19 @@ const SwipePager = forwardRef<SwipePagerHandle, SwipePagerProps>(function SwipeP
     }
   }, [pull, release])
 
+  /** The swipe in flight began while a turn was under way (sliding, or its page not yet the current one): it moves
+   *  nothing, and released far enough it is queued. */
+  const late = useRef(false)
   const pan = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > DRAG_SLOP && Math.abs(g.dy) < SCROLL_SLOP && at.current === latest.current.index && !pulling.current,
-    onPanResponderGrant: () => { pos.stopAnimation(); axis.setValue(0); setMoving(true) },
+    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > DRAG_SLOP && Math.abs(g.dy) < SCROLL_SLOP && !pulling.current,
+    onPanResponderGrant: () => {
+      late.current = at.current !== latest.current.index
+      if (late.current) return
+      pos.stopAnimation(); axis.setValue(0); setMoving(true)
+    },
     onPanResponderMove: (_, g) => {
       const { index, hasNext, hasPrev, reduce, width } = latest.current
-      if (reduce) return
+      if (reduce || late.current) return
       let dx = g.dx
       if ((dx < 0 && !hasNext) || (dx > 0 && !hasPrev)) dx *= EDGE_PULL
       pos.setValue(index - dx / width)
@@ -148,11 +170,14 @@ const SwipePager = forwardRef<SwipePagerHandle, SwipePagerProps>(function SwipeP
       const { index, hasNext, hasPrev, reduce, width } = latest.current
       const dir: 1 | -1 = g.dx < 0 ? 1 : -1
       const far = Math.abs(g.vx) * 1000 > FLICK_PX_S || Math.abs(g.dx) > width * TURN_FAR
+      // a swipe while a turn is under way counts all the same: it turns once that one has landed
+      if (late.current) { if (far) { queued.current += dir; drain() } return }
       if (far && (dir > 0 ? hasNext : hasPrev)) { turn(dir, turnMs(Math.abs(index + dir - shown.current)), false); return }
       if (reduce) { pos.setValue(index); setMoving(false); return }
       Animated.spring(pos, atTempo(TURN_TEMPO, { toValue: index, ...SETTLE_SPRING, useNativeDriver: false })).start(({ finished }) => { if (finished) setMoving(false) })
     },
     onPanResponderTerminate: () => {
+      if (late.current) return
       Animated.spring(pos, atTempo(TURN_TEMPO, { toValue: latest.current.index, ...SETTLE_SPRING, useNativeDriver: false })).start(({ finished }) => { if (finished) setMoving(false) })
     },
   })).current

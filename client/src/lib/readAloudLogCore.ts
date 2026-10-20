@@ -114,7 +114,7 @@ export function phoneWords(p: Phone): string {
  * The times the reading stopped and nobody in the app had asked it to, oldest first:
  * - `closed` Android ended the app while it read (its own record says why; a swipe or a force stop is not counted)
  * - `error` the reading failed
- * - `stalled` the app's timers stood still for a minute or more while it read
+ * - `stalled` the app's timers stood still for a minute or more while it read (loading or playing; not while paused)
  * - `interrupted` a call or another voice took the sound, and the reading did not go on by itself afterwards
  * - `no-next` a chapter ended, the next was asked for, and it never started
  * A pause from the lock screen or the car looks the same to the app as a stop by itself, so a `still` alone is logged and
@@ -158,7 +158,9 @@ export function troubles(events: LogEvent[], exits: ExitInfo[], now: number): Tr
       case 'play': case 'stop': case 'start': case 'jump': cutStays(); break
       case 'next': handoff = x; break
       case 'error': out.push({ t: x.t, kind: 'error', w: x.w ?? where, what: `read aloud failed (${x.d ?? 'no reason given'})` }); break
-      case 'stall': if (Number(x.d) * 1000 >= STALL_MS) out.push({ t: x.t, kind: 'stalled', w: where, what: `the app's timers stood still for ${x.d} s while it read` }); break
+      // paused, the timers stopping is Android's due (the session stays on for a Play from the lock screen): a reader
+      // who paused for an appointment was asked why the reading had stopped by itself
+      case 'stall': if (reading && Number(x.d) * 1000 >= STALL_MS) out.push({ t: x.t, kind: 'stalled', w: where, what: `the app's timers stood still for ${x.d} s while it read` }); break
     }
     if (x.e === 'start') handoff = null
     if (x.w && x.e !== 'next') where = x.w

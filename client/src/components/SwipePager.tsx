@@ -1,9 +1,9 @@
-import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
-import Animated, { Easing, cancelAnimation, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated'
+import Animated, { Easing, cancelAnimation, runOnJS, runOnUI, useAnimatedStyle, useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated'
 import { CUE_H, PULL_FAR, PULL_GAP, pullDeliberate, pullOpen, pullPx, pullShift, pullTurns, type Edges, type PullDir } from '../lib/edgePull'
-import { CueChevron, DRAG_SLOP, EDGE_PULL, FLICK_PX_S, PullCueFace, SCROLL_SLOP, SETTLE_SPRING, TURN_FAR, TURN_MS, turnMs } from './motion/reader'
+import { CueChevron, DRAG_SLOP, EDGE_PULL, FLICK_PX_S, PullCueFace, SCROLL_SLOP, SETTLE_SPRING, TURN_FAR, TURN_MIN_MS, TURN_MS, turnMs } from './motion/reader'
 import { useInks } from '../hooks/useTheme'
 import { tick } from './ui'
 import { usePref } from '../store/prefs'
@@ -46,6 +46,11 @@ const SwipePager = forwardRef<SwipePagerHandle, SwipePagerProps>(function SwipeP
   /** Where the viewport is, in pages; `at` is the page it rests on or is travelling to. */
   const pos = useSharedValue(index)
   const at = useSharedValue(index)
+  /** Swipes released while a turn was under way (sliding, or its page not yet the current one), signed: each turns one
+   *  more page once the last has landed, so ten quick swipes are ten chapters. */
+  const queued = useSharedValue(0)
+  /** The swipe in flight began while a turn was under way: it moves nothing, and released far enough it is queued. */
+  const late = useSharedValue(false)
   /** 0: pages side by side; 1: stacked for an edge pull, PULL_GAP apart. Only ever switched while `pos` is at rest. */
   const axis = useSharedValue(0)
   const edgeTop = useSharedValue(false), edgeBottom = useSharedValue(false)
@@ -69,7 +74,8 @@ const SwipePager = forwardRef<SwipePagerHandle, SwipePagerProps>(function SwipeP
     at.value = index
     cancelAnimation(pos)
     pos.value = index
-  }, [index, at, pos])
+    queued.value = 0
+  }, [index, at, pos, queued])
   // a new current page: its edges are its own, unknown until the reader says (its effect follows this one); a touch in
   // between must not pull on the last page's
   useLayoutEffect(() => { edgeTop.value = false; edgeBottom.value = false }, [index, edgeTop, edgeBottom])
@@ -82,30 +88,52 @@ const SwipePager = forwardRef<SwipePagerHandle, SwipePagerProps>(function SwipeP
     if (reduce) { pos.value = target; turned(dir, false); return }
     pos.value = withTiming(target, { duration: scaleMs(TURN_MS, speed), easing: OUT }, () => { if (at.value === target) runOnJS(turned)(dir, false) })
   }, [hasNext, hasPrev, index, reduce, speed, at, pos, axis, turned])
+  // the next queued swipe, once the page the last turn brought in is the current one: called after that render, and
+  // by a swipe released after it (a gesture still holding the last page's index sees a turn under way). Taken and
+  // started on the UI thread, where the swipes count: a write from here lands a frame late and could drop one
+  const drainNow = () => runOnUI((index: number, hasNext: boolean, hasPrev: boolean, reduce: boolean, ms: number) => {
+    'worklet'
+    const q = queued.value
+    if (!q || at.value !== index) return
+    const dir: 1 | -1 = q > 0 ? 1 : -1
+    if (!(dir > 0 ? hasNext : hasPrev)) { queued.value = 0; return }
+    queued.value = q - dir
+    const target = index + dir
+    at.value = target
+    axis.value = 0
+    if (reduce) { pos.value = target; runOnJS(turned)(dir, false); return }
+    pos.value = withTiming(target, { duration: ms, easing: OUT }, () => { if (at.value === target) runOnJS(turned)(dir, false) })
+  })(index, hasNext, hasPrev, reduce, scaleMs(TURN_MIN_MS, speed))
+  const drainLatest = useRef(drainNow)
+  drainLatest.current = drainNow
+  const drain = useCallback(() => drainLatest.current(), [])
+  useEffect(drain, [index, drain])
   const setEdges = useCallback((top: boolean, bottom: boolean) => { edgeTop.value = top; edgeBottom.value = bottom }, [edgeTop, edgeBottom])
   useImperativeHandle(ref, () => ({ go, setEdges }), [go, setEdges])
   const pan = useMemo(() => Gesture.Pan()
     .activeOffsetX([-DRAG_SLOP, DRAG_SLOP])
     .failOffsetY([-SCROLL_SLOP, SCROLL_SLOP])
-    .onStart(() => { if (at.value === index) axis.value = 0 })
+    .onStart(() => { late.value = at.value !== index; if (!late.value) axis.value = 0 })
     .onUpdate(e => {
       // a turn still waiting for its commit: the strip does not hold the page beyond it yet
-      if (reduce || at.value !== index) return
+      if (reduce || late.value || at.value !== index) return
       let x = e.translationX
       if ((x < 0 && !hasNext) || (x > 0 && !hasPrev)) x *= EDGE_PULL
       pos.value = index - x / width
     })
     .onEnd(e => {
-      if (at.value !== index) return
       const dir: 1 | -1 = e.translationX < 0 ? 1 : -1
-      const turn = (Math.abs(e.velocityX) > FLICK_PX_S || Math.abs(e.translationX) > width * TURN_FAR) && (dir > 0 ? hasNext : hasPrev)
+      const far = Math.abs(e.velocityX) > FLICK_PX_S || Math.abs(e.translationX) > width * TURN_FAR
+      // a swipe while a turn is under way counts all the same: it turns once that one has landed
+      if (late.value || at.value !== index) { if (far) { queued.value += dir; runOnJS(drain)() } return }
+      const turn = far && (dir > 0 ? hasNext : hasPrev)
       if (!turn) { pos.value = reduce ? index : withSpring(index, settle); return }
       const target = index + dir
       at.value = target
       if (reduce) { pos.value = target; runOnJS(turned)(dir, false); return }
       // a jump that lands mid-turn stops the slide; that turn is void
       pos.value = withTiming(target, { duration: scaleMs(turnMs(Math.abs(target - pos.value)), speed), easing: OUT }, () => { if (at.value === target) runOnJS(turned)(dir, false) })
-    }), [reduce, speed, settle, hasNext, hasPrev, index, width, at, pos, axis, turned])
+    }), [reduce, speed, settle, hasNext, hasPrev, index, width, at, pos, axis, queued, late, turned, drain])
   // The edge pull. Its activation is decided by hand on the UI thread: a touch that went down with the scroll at an
   // end, moving on past that end by PULL_SLOP (less than the scroll view's own slop, so the pull claims the touch
   // and the scroll view never starts a drag of its own). Anything else fails it at once and the scroll is untouched.
