@@ -14,6 +14,7 @@
 import { Directory, File, Paths } from 'expo-file-system'
 import { cleanseAuthor, cleanseContents, cleanseSection, collectionHidden } from '@shared/cleanse'
 import type { CompanionIndex, AuthorId } from '@shared/companion'
+import { t } from '@shared/i18n'
 import type { Library, LibraryAuthor, MinistrySection, WorkContents } from '@shared/ministry'
 import { get, getApiBase, loadApiBase } from './api'
 import { authorShown, onEditionChange, peekCleanse } from './editionCore'
@@ -170,7 +171,7 @@ async function downloadFile(url: string, path: readonly string[], ctl: AbortCont
   if (f.exists) f.delete()
   const task = File.createDownloadTask(url, f, { signal: ctl.signal, onProgress: p => onBytes(p.bytesWritten) })
   const got = await task.downloadAsync()
-  if (!got) throw new Error('download paused')
+  if (!got) throw new Error(t('download paused'))
   return got
 }
 
@@ -189,10 +190,10 @@ export async function download(author: string, onProgress?: (fraction: number) =
   try {
     const list = await fetchListing(true)
     const pack: PackAuthor | undefined = list?.authors.find(a => a.id === author)
-    if (!pack) throw new Error('This needs a connection to the server.')
+    if (!pack) throw new Error(t('This needs a connection to the server.'))
     const lib = await get<Library>('/ministry')
     const entry: LibraryAuthor | undefined = lib.authors.find(a => a.id === author)
-    if (!entry) throw new Error('The server has no such author.')
+    if (!entry) throw new Error(t('The server has no such author.'))
     await loadApiBase()
     const base = `${getApiBase()}/api`
     const dir = dirAt(paths.dir)
@@ -227,7 +228,7 @@ export async function download(author: string, onProgress?: (fraction: number) =
     try { const dir = dirAt(paths.dir); if (dir.exists) dir.delete() } catch { /* half a folder is read as nothing: the marker is missing */ }
     stored.set(author, null)
     if (ctl.signal.aborted || e instanceof Cancelled || (e instanceof Error && e.name === 'AbortError')) return false
-    throw e instanceof Error ? e : new Error('The download did not finish.')
+    throw e instanceof Error ? e : new Error(t('The download did not finish.'))
   } finally {
     inFlight.delete(author)
     changed()

@@ -13,6 +13,7 @@ import { Card, Enter, ErrorText, H2, Screen, SPACE, Spinner, T, Tap } from '../s
 import Icon from '../src/components/Icon'
 import SignInCard from '../src/components/SignInCard'
 import { Collapse, Stagger, useReduceMotion } from '../src/components/motion/nav'
+import { t } from '@shared/i18n'
 
 const NOTHING = () => {}
 
@@ -54,11 +55,11 @@ export default function Bookmarks() {
   return (
     <Screen>
       {ready && !user ? (
-        <SignInCard text="Kept on this device. Sign in to keep them with your account." />
+        <SignInCard text={t('Kept on this device. Sign in to keep them with your account.')} />
       ) : null}
       {err ? <ErrorText>{err}</ErrorText> : null}
       {list === null && !err && <Spinner />}
-      {list?.length === 0 && <Enter><T muted>No bookmarks yet. Select a verse in the reader and tap Bookmark, or hold a book or chapter in the picker.</T></Enter>}
+      {list?.length === 0 && <Enter><T muted>{t('No bookmarks yet. Select a verse in the reader and tap Bookmark, or hold a book or chapter in the picker.')}</T></Enter>}
       {list && groupBookmarks(list).flatMap(g => [
         // the heading folds away with the group's last row
         enter(g.kind, g.items.every(b => leaving.has(b.id)), <H2>{g.title}</H2>, NOTHING),
@@ -71,7 +72,7 @@ export default function Bookmarks() {
                   <T bold>{title}</T>
                   <T small muted>{b.label ? `${b.label} · ` : ''}{fmtDate(b.created_at)}</T>
                 </View>
-                <Tap onPress={() => { void remove(b) }} disabled={leaving.has(b.id)} scaleTo={0.86} hitSlop={6} accessibilityRole="button" accessibilityLabel={`Remove the bookmark at ${title}`}
+                <Tap onPress={() => { void remove(b) }} disabled={leaving.has(b.id)} scaleTo={0.86} hitSlop={6} accessibilityRole="button" accessibilityLabel={t('Remove the bookmark at {title}', { title })}
                   style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg }}>
                   <Icon name="x" size={16} color={c.muted} />
                 </Tap>

@@ -7,6 +7,8 @@ import { clampSpeed } from '../lib/motionSpeed'
 import { NOTE_LETTERS, type NoteLetters } from '../lib/noteLetters'
 import { readVerseNotify, type VerseNotifyPref } from '../lib/verseNotifyPlan'
 import { DAILY_GOAL_DEFAULT, readDailyGoal, type DailyGoal } from '../lib/dailyGoal'
+import { parseLangPref, type LangPref } from '../i18n'
+import { isText, parseBiblePref, type BiblePref, type BibleText } from '@shared/texts'
 
 /** A theme id from the gallery, or `system` to follow the device with `themeLight` / `themeDark`. */
 export type Theme = 'system' | ThemeId
@@ -43,6 +45,9 @@ export interface Prefs {
   toured: boolean
   /** What the welcome asked to call the reader: Home's date line, and the display name offered at sign-up. */
   readerName: string
+  /** The app's language (`auto`: the device's), the Bible shown (`auto`: the language's own Darby, the English one where it
+   *  has none) and a second Bible under or beside it ('' for none): docs/LANGUAGES.md. */
+  lang: LangPref; bible: BiblePref; bible2: BibleText | ''
 }
 export interface StreakReminder { enabled: boolean; hour: number; minute: number }
 export type Align = 'left' | 'center' | 'right'
@@ -57,7 +62,7 @@ export const FONT_MIN = 14, FONT_MAX = 32
 export const NAME_MAX = 40
 /** A value missing from the stored record takes these; `paragraphs` is off, so a new install starts every verse on its own
  *  line while a saved record keeps its choice. */
-export const DEFAULTS: Prefs = { theme: 'system', themeLight: LIGHT_DEFAULT, themeDark: DARK_DEFAULT, font: 'serif', fontSize: 19, lineHeight: 1.6, letterSpacing: 0, wordSpacing: 0, verseNumbers: true, paragraphs: false, showNotes: true, moreColours: false, noteLetters: 'chapter', reduceMotion: false, motionSpeed: 1, align: 'center', width: 'medium', ttsVoice: 'alec', ttsSpeed: 1, ttsNumbers: false, ttsHeading: true, ttsPause: 'short', ttsWord: true, ttsAutoNext: true, ttsDevice: false, ttsStopAtSelection: false, customFonts: [], dailyGoal: DAILY_GOAL_DEFAULT, streakReminder: { enabled: true, hour: 20, minute: 0 }, verseNotify: { items: [] }, inviteNotify: true, onboarded: false, toured: false, readerName: '' }
+export const DEFAULTS: Prefs = { theme: 'system', themeLight: LIGHT_DEFAULT, themeDark: DARK_DEFAULT, font: 'serif', fontSize: 19, lineHeight: 1.6, letterSpacing: 0, wordSpacing: 0, verseNumbers: true, paragraphs: false, showNotes: true, moreColours: false, noteLetters: 'chapter', reduceMotion: false, motionSpeed: 1, align: 'center', width: 'medium', ttsVoice: 'alec', ttsSpeed: 1, ttsNumbers: false, ttsHeading: true, ttsPause: 'short', ttsWord: true, ttsAutoNext: true, ttsDevice: false, ttsStopAtSelection: false, customFonts: [], dailyGoal: DAILY_GOAL_DEFAULT, streakReminder: { enabled: true, hour: 20, minute: 0 }, verseNotify: { items: [] }, inviteNotify: true, onboarded: false, toured: false, readerName: '', lang: 'auto', bible: 'auto', bible2: '' }
 const KEY = 'berean_prefs'
 /** usePosition's key, read once at start-up to tell a returning reader from a new device. */
 const POSITION_KEY = 'berean_pos'
@@ -110,7 +115,7 @@ function createStore(): PrefsStore & { hydrate: (stored: Prefs | null) => void; 
     isLoaded: () => loaded,
     set: p => commit({ ...prefs, ...p, fontSize: clamp(p.fontSize ?? prefs.fontSize, FONT_MIN, FONT_MAX) }),
     // the added fonts are files on the device; the daily goal, the notifications, the welcome, the tour and the name are not reading preferences
-    reset: () => commit({ ...DEFAULTS, customFonts: prefs.customFonts, dailyGoal: prefs.dailyGoal, streakReminder: prefs.streakReminder, verseNotify: prefs.verseNotify, inviteNotify: prefs.inviteNotify, onboarded: prefs.onboarded, toured: prefs.toured, readerName: prefs.readerName }),
+    reset: () => commit({ ...DEFAULTS, customFonts: prefs.customFonts, dailyGoal: prefs.dailyGoal, streakReminder: prefs.streakReminder, verseNotify: prefs.verseNotify, inviteNotify: prefs.inviteNotify, onboarded: prefs.onboarded, toured: prefs.toured, readerName: prefs.readerName, lang: prefs.lang, bible: prefs.bible, bible2: prefs.bible2 }),
     subscribe: fn => { listeners.add(fn); return () => { listeners.delete(fn) } },
     hydrate: stored => { if (stored) prefs = withFonts(stored, DEFAULTS); loaded = true; emit() },
     flush,
@@ -165,6 +170,9 @@ function migrate(raw: Record<string, unknown>): Partial<Prefs> {
   out.toured = typeof raw.toured === 'boolean' ? raw.toured : true
   out.readerName = typeof raw.readerName === 'string' ? raw.readerName.slice(0, NAME_MAX) : ''
   out.motionSpeed = clampSpeed(raw.motionSpeed)
+  out.lang = parseLangPref(raw.lang)
+  out.bible = parseBiblePref(raw.bible)
+  out.bible2 = isText(raw.bible2) ? raw.bible2 : ''
   out.noteLetters = NOTE_LETTERS.includes(raw.noteLetters as NoteLetters) ? raw.noteLetters as NoteLetters : 'chapter'
   return out as Partial<Prefs>
 }

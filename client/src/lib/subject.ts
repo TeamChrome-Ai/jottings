@@ -5,6 +5,7 @@
  */
 import type { CbdIndex, CbdIndexRow } from '@shared/cbd'
 import { searchHeadwords } from '@shared/cbd'
+import { tn } from '@shared/i18n'
 
 /** The dictionary shows this many articles as chips; the rest are one tap away in the dictionary's own search. */
 export const SUBJECT_ARTICLES = 8
@@ -25,4 +26,4 @@ export function subjectArticles(index: CbdIndex | null, query: string): { rows: 
 }
 
 /** "1 paper", "12 papers", "30 or more papers". */
-export const paperCount = (n: number): string => (n >= MINISTRY_LIMIT ? `${MINISTRY_LIMIT} or more papers` : `${n} ${n === 1 ? 'paper' : 'papers'}`)
+export const paperCount = (n: number): string => (n >= MINISTRY_LIMIT ? tn(MINISTRY_LIMIT, '{n} or more papers', '{n} or more papers') : tn(n, '{n} paper', '{n} papers'))

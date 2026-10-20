@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { Animated, Easing, View } from 'react-native'
 import Svg, { Path } from 'react-native-svg'
 import { encodeQr, finderOrigins, qrPath } from '@shared/qr'
+import { t } from '@shared/i18n'
 import { useThemeDef } from '../../hooks/useTheme'
 import { LIGHT_DEFAULT, THEME_MAP } from '../../theme'
 import { useReduceMotion } from '../../store/prefs'
@@ -53,7 +54,7 @@ export function QrCode({ text, size, reveal, dim = false }: { text: string; size
   const bodyStyle = useMemo(() => ({ opacity: body, transform: [{ scale: body.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) }] }), [body])
   const eyeStyles = useMemo(() => eyes.map(e => ({ opacity: e.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 1, 1], extrapolate: 'clamp' }), transform: [{ scale: e.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) }] })), [eyes])
   return (
-    <View accessibilityRole="image" accessibilityLabel="Your invite code" style={{ width: size, height: size, borderRadius: 22, backgroundColor: plate, overflow: 'hidden' }}>
+    <View accessibilityRole="image" accessibilityLabel={t('Your invite code')} style={{ width: size, height: size, borderRadius: 22, backgroundColor: plate, overflow: 'hidden' }}>
       <Animated.View style={{ opacity: fade, width: size, height: size }}>
         <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: size, height: size }, bodyStyle]}>
           <Svg width={size} height={size} viewBox={`${-QUIET} ${-QUIET} ${span} ${span}`}>

@@ -3,6 +3,7 @@
  * that remembers what has been announced. No clock, no storage, no notification API; `inviteNotice.ts` (the app) and
  * `inviteTask.ts` (the background check) both apply it, so an invite is announced once whichever of them sees it first.
  */
+import { t, tn } from '@shared/i18n'
 
 export interface InviteLite { id: number; from: { handle: string; display_name: string }; created_at: string }
 /** `GET /friends/invites/incoming`: `open` is false while invites are off (then there are none). */
@@ -65,11 +66,11 @@ function noteIds(mark: InviteMark, add: InviteLite[], since: string | null): Inv
 /** The system notification for one invite: "Anna (@anna) wants to be friends". */
 export function inviteNoticeText(inv: InviteLite): { title: string; body: string } {
   const name = inv.from.display_name.trim() || inv.from.handle
-  return { title: `${name} (@${inv.from.handle}) wants to be friends`, body: 'Accept or decline in Friends' }
+  return { title: t('{name} (@{handle}) wants to be friends', { name, handle: inv.from.handle }), body: t('Accept or decline in Friends') }
 }
 /** One notice for a burst of invites. */
 export function inviteSummaryText(n: number): { title: string; body: string } {
-  return { title: `${n} friend invites`, body: 'Accept or decline in Friends' }
+  return { title: tn(n, '{n} friend invite', '{n} friend invites'), body: t('Accept or decline in Friends') }
 }
 
 /** The notices to post for `fresh`: one each up to NOTICE_EACH_MAX, else one summary. */
@@ -82,7 +83,7 @@ export function planNotices(fresh: InviteLite[]): { key: string; title: string; 
 /** The in-app toast, short: "Anna invited you", "3 friend invites". */
 export function inviteToastText(fresh: InviteLite[]): string | null {
   if (!fresh.length) return null
-  if (fresh.length > 1) return `${fresh.length} friend invites`
+  if (fresh.length > 1) return tn(fresh.length, '{n} friend invite', '{n} friend invites')
   const f = fresh[0].from
-  return `${(f.display_name.trim() || f.handle).split(/\s+/)[0]} invited you`
+  return t('{name} invited you', { name: (f.display_name.trim() || f.handle).split(/\s+/)[0] })
 }

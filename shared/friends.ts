@@ -3,6 +3,7 @@
  * client and the tests.
  */
 import { SCHEMES } from './brand.js'
+import { t, tn } from './i18n.js'
 
 export type FriendStreakState = 'kept' | 'waiting' | 'lapsed' | 'none'
 /** A friend streak as the server sends it: days on which both friends met their own goal on the same date. */
@@ -17,12 +18,13 @@ export interface FriendStreak {
 
 export type ReactionKind = 'heart' | 'smile' | 'clap' | 'seal'
 export const REACTION_KINDS: readonly ReactionKind[] = ['heart', 'smile', 'clap', 'seal']
-/** How a reaction is named: the button's label, and the noun in a summary line. */
-export const REACTION_WORDS: Record<ReactionKind, { label: string; one: string; many: string }> = {
-  heart: { label: 'Heart', one: 'heart', many: 'hearts' },
-  smile: { label: 'Smile', one: 'smile', many: 'smiles' },
-  clap: { label: 'Applause', one: 'round of applause', many: 'rounds of applause' },
-  seal: { label: 'Well done', one: 'well-done seal', many: 'well-done seals' },
+/** How a reaction is named, in the reader's language: the button's label, the count in a summary line ("a heart",
+ *  "3 hearts"), and the note that one was sent. */
+export const REACTION_WORDS: Record<ReactionKind, { label: string; count: (n: number) => string; sent: (name: string) => string }> = {
+  heart: { get label() { return t('Heart') }, count: n => tn(n, 'a heart', '{n} hearts'), sent: name => t('{name} sent a heart', { name }) },
+  smile: { get label() { return t('Smile') }, count: n => tn(n, 'a smile', '{n} smiles'), sent: name => t('{name} sent a smile', { name }) },
+  clap: { get label() { return t('Applause') }, count: n => tn(n, 'a round of applause', '{n} rounds of applause'), sent: name => t('{name} sent a round of applause', { name }) },
+  seal: { get label() { return t('Well done') }, count: n => tn(n, 'a well-done seal', '{n} well-done seals'), sent: name => t('{name} sent a well-done seal', { name }) },
 }
 export const isReactionKind = (s: string): s is ReactionKind => (REACTION_KINDS as readonly string[]).includes(s)
 
@@ -40,7 +42,7 @@ export interface StreakPresentation {
   label: string
 }
 
-const days = (n: number) => `${n} ${n === 1 ? 'day' : 'days'}`
+const together = (n: number) => tn(n, '{n} day together', '{n} days together')
 
 /**
  * The seal's words for a friend streak with `name`. Never guilt: a lapse is only a lapse, and the one still to read is
@@ -51,21 +53,21 @@ export function presentFriendStreak(fs: FriendStreak | null | undefined, name: s
   let headline: string, line: string, count = fs.current
   switch (fs.state) {
     case 'kept':
-      headline = `${days(fs.current)} together`
-      line = fs.current === 1 ? 'Started today' : 'Kept today'
+      headline = together(fs.current)
+      line = fs.current === 1 ? t('Started today') : t('Kept today')
       break
     case 'waiting':
-      headline = `${days(fs.current)} together`
-      line = fs.mine_met && !fs.theirs_met ? `Waiting for ${name}` : !fs.mine_met && fs.theirs_met ? `${name} has read today. Your turn` : 'Read today to keep it going'
+      headline = together(fs.current)
+      line = fs.mine_met && !fs.theirs_met ? t('Waiting for {name}', { name }) : !fs.mine_met && fs.theirs_met ? t('{name} has read today. Your turn', { name }) : t('Read today to keep it going')
       break
     case 'lapsed':
       count = fs.longest
-      headline = 'Lapsed'
-      line = `Start again today. Your best was ${days(fs.longest)}`
+      headline = t('Lapsed')
+      line = tn(fs.longest, 'Start again today. Your best was {n} day', 'Start again today. Your best was {n} days')
       break
     default:
-      headline = 'No friend streak yet'
-      line = 'Both read on the same day to start one'
+      headline = t('No friend streak yet')
+      line = t('Both read on the same day to start one')
   }
   return { show: true, tone: fs.state, count, headline, line, label: `${headline}. ${line}` }
 }
@@ -81,11 +83,11 @@ export function streakMilestone(fs: FriendStreak | null | undefined): { days: nu
 export function targetName(target: string, badgeName: (code: string) => string | undefined): string {
   if (target.startsWith('badge:')) { const code = target.slice(6); return badgeName(code) ?? code }
   const m = /^streak:(\d+):/.exec(target)
-  return m ? `${m[1]}-day friend streak` : target
+  return m ? tn(Number(m[1]), '{n}-day friend streak', '{n}-day friend streak') : target
 }
 
 const list = (names: string[]): string =>
-  names.length <= 1 ? (names[0] ?? '') : names.length === 2 ? `${names[0]} and ${names[1]}` : `${names[0]} and ${names.length - 1} others`
+  names.length <= 1 ? (names[0] ?? '') : names.length === 2 ? t('{list} and {last}', { list: names[0], last: names[1] }) : tn(names.length - 1, '{name} and {n} other', '{name} and {n} others', { name: names[0] })
 
 /**
  * One line for a stack of reactions on one thing: "A heart from Anna", "3 hearts from Anna and 2 others",
@@ -94,10 +96,10 @@ const list = (names: string[]): string =>
 export function summariseReactions(rs: readonly { kind: ReactionKind; from: { display_name: string; handle: string } }[]): string {
   if (!rs.length) return ''
   const counts = REACTION_KINDS.map(k => [k, rs.filter(r => r.kind === k).length] as const).filter(([, n]) => n > 0)
-  const parts = counts.map(([k, n]) => n === 1 ? `a ${REACTION_WORDS[k].one}` : `${n} ${REACTION_WORDS[k].many}`)
-  const what = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+  const parts = counts.map(([k, n]) => REACTION_WORDS[k].count(n))
+  const what = parts.length === 1 ? parts[0] : t('{list} and {last}', { list: parts.slice(0, -1).join(', '), last: parts[parts.length - 1] })
   const names = [...new Set(rs.map(r => r.from.display_name || r.from.handle))]
-  const text = `${what} from ${list(names)}`
+  const text = t('{what} from {names}', { what, names: list(names) })
   return text[0].toUpperCase() + text.slice(1)
 }
 
@@ -143,13 +145,13 @@ export const groupAsStreak = (g: GroupStreak, meId: number): FriendStreak => ({
  */
 export function presentGroupStreak(g: GroupStreak | null | undefined): StreakPresentation {
   if (!g) return { show: false, tone: 'none', count: 0, headline: '', line: '', label: '' }
-  const who = g.met_today === g.members ? (g.members === 1 ? 'You have read today' : g.members === 2 ? 'Both have read today' : `All ${g.members} have read today`) : `${g.met_today} of ${g.members} have read today`
+  const who = g.met_today === g.members ? (g.members === 1 ? t('You have read today') : g.members === 2 ? t('Both have read today') : t('All {n} have read today', { n: g.members })) : tn(g.met_today, '{n} of {members} have read today', '{n} of {members} have read today', { members: g.members })
   let headline: string, line: string, count = g.current
   switch (g.state) {
-    case 'kept': headline = `${days(g.current)} together`; line = who; break
-    case 'waiting': headline = `${days(g.current)} together`; line = who; break
-    case 'lapsed': count = g.longest; headline = 'Lapsed'; line = `Start again today. The group’s best was ${days(g.longest)}`; break
-    default: headline = 'No group streak yet'; line = `A day on which everyone reads starts one. ${who}`
+    case 'kept': headline = together(g.current); line = who; break
+    case 'waiting': headline = together(g.current); line = who; break
+    case 'lapsed': count = g.longest; headline = t('Lapsed'); line = tn(g.longest, 'Start again today. The group’s best was {n} day', 'Start again today. The group’s best was {n} days'); break
+    default: headline = t('No group streak yet'); line = t('A day on which everyone reads starts one. {who}', { who })
   }
   return { show: true, tone: g.state, count, headline, line, label: `${headline}. ${line}` }
 }

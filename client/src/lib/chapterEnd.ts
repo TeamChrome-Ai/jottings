@@ -3,6 +3,7 @@
  * still to read, and the reader's own mark. No clock: the owner did not want a timer at the end (2026-10-14). Pure;
  * `components/ChapterEndLine.tsx` draws it.
  */
+import { t, tc } from '@shared/i18n'
 
 export interface EndFacts {
   /** The account has the chapter credited; signed out, this device judged it read. */
@@ -41,18 +42,19 @@ export function endLine(f: EndFacts): EndLine {
 export function verseList(gaps: readonly (readonly [number, number])[]): string {
   const parts = gaps.map(([a, b]) => (a === b ? `${a}` : `${a}–${b}`))
   const one = gaps.length === 1 && gaps[0][0] === gaps[0][1]
-  const shown = parts.length > 3 ? `${parts.slice(0, 3).join(', ')} and others` : parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0]
-  return `${one ? 'Verse' : 'Verses'} ${shown}`
+  const shown = parts.length > 3 ? t('{list} and others', { list: parts.slice(0, 3).join(', ') }) : parts.length > 1 ? t('{list} and {last}', { list: parts.slice(0, -1).join(', '), last: parts[parts.length - 1] }) : parts[0]
+  return one ? t('Verse {verses}', { verses: shown }) : t('Verses {verses}', { verses: shown })
 }
 
+/** Each word in the reader's language when the line reads it. */
 export const END_WORDS = {
-  read: 'Read',
-  marked: 'Marked as read',
-  undo: 'Undo',
-  mark: 'Mark as read',
-  beforePath: { credit: 'Read before this path began', mark: 'Marked before this path began' },
+  get read() { return tc('done', 'Read') },
+  get marked() { return t('Marked as read') },
+  get undo() { return t('Undo') },
+  get mark() { return t('Mark as read') },
+  beforePath: { get credit() { return t('Read before this path began') }, get mark() { return t('Marked before this path began') } },
   /** Parts that went by too quickly to count (or never came on screen): tapping goes to the first. */
-  toRead: (verses: string) => `${verses} still to read`,
+  toRead: (verses: string) => t('{verses} still to read', { verses }),
   /** Said once, the first time a reader marks a chapter. */
-  explained: 'This is your own mark: it moves your path on, and streaks, reading time and badges still come from time spent reading.',
-} as const
+  get explained() { return t('This is your own mark: it moves your path on, and streaks, reading time and badges still come from time spent reading.') },
+}

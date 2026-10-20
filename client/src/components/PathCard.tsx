@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Text, View } from 'react-native'
 import { pathBooks, pathChapters, pathTitle } from '@shared/paths'
+import { t } from '@shared/i18n'
 import { useInks } from '../hooks/useTheme'
 import { face } from '../theme'
 import type { PathView } from '../lib/paths'
@@ -23,7 +24,9 @@ export default function PathCard({ path, delay = 0, onOpen, onPaths }: { path: P
   const next = path.next
   const title = pathTitle(state)
   const pace = paceLine(path.paceNeeded, path.standing, state.target_date)
-  const label = next ? `Next on your path, ${portionTitle(next.portion)}, ${title}, ${countWords(pr)}${pace ? `. ${pace}` : ''}. Open the chapter` : `You have read ${title}. Start another`
+  const label = !next ? t('You have read {path}. Start another', { path: title })
+    : pace ? t('Next on your path, {portion}, {path}, {count}. {pace}. Open the chapter', { portion: portionTitle(next.portion), path: title, count: countWords(pr), pace })
+    : t('Next on your path, {portion}, {path}, {count}. Open the chapter', { portion: portionTitle(next.portion), path: title, count: countWords(pr) })
   return (
     <Card onPress={next ? () => onOpen(next.portion) : onPaths} accessibilityLabel={label} style={{ gap: 12, paddingVertical: 16, paddingHorizontal: 20 }}>
       <PathStrip compact route={route} routeChapters={chapters} readSet={path.readSet} place={next?.portion ?? null} delay={delay} />
@@ -33,15 +36,15 @@ export default function PathCard({ path, delay = 0, onOpen, onPaths }: { path: P
           <View style={{ flex: 1, gap: 2 }}>
             {next ? (
               <>
-                <T small muted>Next on your path</T>
+                <T small muted>{t('Next on your path')}</T>
                 <Text numberOfLines={1} style={{ color: c.text, fontSize: 22, ...face('serif', { bold: true }) }}>{portionTitle(next.portion)} <Text style={{ color: c.muted, fontSize: 16, ...face('serif') }}>· {title}</Text></Text>
                 {thenLine(next.portion) ? <T small muted numberOfLines={1}>{thenLine(next.portion)}</T> : null}
               </>
             ) : (
               <>
-                <T small muted>Your path</T>
-                <Text numberOfLines={2} style={{ color: c.text, fontSize: 20, ...face('serif', { bold: true }) }}>You have read {title}</Text>
-                <T small accent bold>Start another</T>
+                <T small muted>{t('Your path')}</T>
+                <Text numberOfLines={2} style={{ color: c.text, fontSize: 20, ...face('serif', { bold: true }) }}>{t('You have read {path}', { path: title })}</Text>
+                <T small accent bold>{t('Start another')}</T>
               </>
             )}
           </View>

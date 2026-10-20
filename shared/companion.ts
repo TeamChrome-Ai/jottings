@@ -6,6 +6,7 @@
  */
 import { BOOKS, findBook } from './books.js'
 import { looksLikeRef, parseRef, scanPrefaceRefs, type RefHome } from './ref.js'
+import { N_, t } from './i18n.js'
 
 export type AuthorId = 'darby' | 'coates'
 export interface Author {
@@ -23,8 +24,8 @@ export interface Author {
 }
 /** Darby first: the sheet's first segment and the library's first author. */
 export const AUTHORS: readonly Author[] = [
-  { id: 'darby', name: 'J. N. Darby', short: 'Darby', unit: 'section', series: 'Synopsis', source: 'J. N. Darby (1800–1882), Synopsis of the Books of the Bible. Text from Bible Truth Publishers’ online edition; public domain.' },
-  { id: 'coates', name: 'C. A. Coates', short: 'Coates', unit: 'reading', source: 'C. A. Coates (1862–1945); public domain.' },
+  { id: 'darby', name: 'J. N. Darby', short: 'Darby', unit: 'section', series: 'Synopsis', source: N_('J. N. Darby (1800–1882), Synopsis of the Books of the Bible. Text from Bible Truth Publishers’ online edition; public domain.') },
+  { id: 'coates', name: 'C. A. Coates', short: 'Coates', unit: 'reading', source: N_('C. A. Coates (1862–1945); public domain.') },
 ]
 export const authorOf = (id: string): Author | undefined => AUTHORS.find(a => a.id === id)
 
@@ -207,8 +208,8 @@ export function formatPassage(p: Passage, style: 'full' | 'abbr' | 'bare' = 'ful
   const meta = BOOKS[b - 1]
   const whole = v1 === 1 && v2 === 0
   if (style === 'bare') {
-    if (meta.chapters === 1) return whole ? meta.name : `${v2 && v2 !== v1 ? 'Verses' : 'Verse'} ${v1}${v2 && v2 !== v1 ? `–${v2}` : ''}`
-    if (whole) return c1 === c2 ? `Chapter ${c1}` : `Chapters ${c1}–${c2}`
+    if (meta.chapters === 1) return whole ? meta.name : v2 && v2 !== v1 ? t('Verses {from}–{to}', { from: v1, to: v2 }) : t('Verse {verses}', { verses: v1 })
+    if (whole) return c1 === c2 ? t('Chapter {n}', { n: c1 }) : t('Chapters {from}–{to}', { from: c1, to: c2 })
   }
   const name = style === 'bare' ? '' : `${style === 'abbr' ? meta.abbr : meta.name} `
   if (meta.chapters === 1) return whole ? name.trim() : `${name}${v1}${v2 && v2 !== v1 ? `–${v2}` : ''}`

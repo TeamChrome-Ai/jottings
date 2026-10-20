@@ -2,6 +2,7 @@ import { BOOKS } from '@shared/books'
 import { formatRef } from '@shared/ref'
 import { presentVotd } from '@shared/votd'
 import { pathTitle, type PathState, type Portion } from '@shared/paths'
+import { N_, t, tn } from '@shared/i18n'
 import { verseCard } from '../widgets/model'
 
 /**
@@ -25,12 +26,12 @@ export const VERSE_BODY_MAX = 240
 export const VERSE_NOTIFY_PRESETS = ['06:00', '07:00', '08:00'] as const
 /** Book 0: the verse of the day from anywhere in the Bible. */
 export const ANY_BOOK = 0
-export const ANY_BOOK_LABEL = 'Any book'
+export const ANY_BOOK_LABEL = N_('Any book')
 /** Book -1: the reader's path (docs/PATHS.md): the morning's notice is its next portion. Stored as the book value, so
  *  older builds reading the pref see an unknown book and fall back to Any book rather than fail. */
 export const PATH_BOOK = -1
-export const PATH_LABEL = 'Your path'
-export const NO_PATH_LABEL = 'Your path · no path started'
+export const PATH_LABEL = N_('Your path')
+export const NO_PATH_LABEL = N_('Your path · no path started')
 /** A verse shorter than this is a fragment ("And he died."); one longer would be cut in the notification. */
 export const VERSE_MIN_CHARS = 40
 export const VERSE_MAX_CHARS = 280
@@ -158,10 +159,10 @@ export function verseNotice(at: Date, chapter: ChapterReader, book = ANY_BOOK, i
   if (book === PATH_BOOK) return path ? pathNotice(identifier, at, chapter, path) : null
   if (book === ANY_BOOK) {
     const card = verseCard(at, chapter)
-    return { identifier, title: card.label, body: card.text ? trimVerse(card.text) : 'Open today’s verse', url: card.url.replace(/^[a-z]+:\/\//, '/'), at }
+    return { identifier, title: card.label, body: card.text ? trimVerse(card.text) : t('Open today’s verse'), url: card.url.replace(/^[a-z]+:\/\//, '/'), at }
   }
   const bv = verseInBook(book, at, chapter)
-  if (!bv) return { identifier, title: BOOKS[book - 1]?.name ?? 'Verse of the day', body: 'Open today’s verse', url: `${VERSE_ROUTE_PREFIX}${book}/1`, at }
+  if (!bv) return { identifier, title: BOOKS[book - 1]?.name ?? t('Verse of the day'), body: t('Open today’s verse'), url: `${VERSE_ROUTE_PREFIX}${book}/1`, at }
   return { identifier, title: formatRef({ book, chapter: bv.chapter, v1: bv.v }), body: trimVerse(presentVotd(bv.t)), url: `${VERSE_ROUTE_PREFIX}${book}/${bv.chapter}?v=${bv.v}`, at }
 }
 
@@ -173,12 +174,12 @@ export function verseNotice(at: Date, chapter: ChapterReader, book = ANY_BOOK, i
  */
 function pathNotice(identifier: string, at: Date, chapter: ChapterReader, { path, next }: NonNullable<PathNext>): VerseNotice {
   const title = pathTitle(path)
-  if (!next) return { identifier, title: `${title} · finished`, body: 'Every chapter on your path is read. Start another when you like.', url: '/', at }
+  if (!next) return { identifier, title: t('{path} · finished', { path: title }), body: t('Every chapter on your path is read. Start another when you like.'), url: '/', at }
   const first = chapter(next.book, next.chapter)?.verses[0]
   return {
     identifier, at,
     title: `${formatRef({ book: next.book, chapter: next.chapter })} · ${title}`,
-    body: first ? trimVerse(presentVotd(first.t)) : 'Open the next chapter on your path',
+    body: first ? trimVerse(presentVotd(first.t)) : t('Open the next chapter on your path'),
     url: `${VERSE_ROUTE_PREFIX}${next.book}/${next.chapter}`,
   }
 }
@@ -205,9 +206,9 @@ export function needsTopUp(scheduledAt: (Date | number)[], now: Date, min = VERS
 export const timeLabel = (hour: number, minute: number) => `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 /** A book's name for an item's row, "Any book", or the path ("Your path"; "Your path · no path started" while none is on). */
 export const bookLabel = (book: number, style: 'full' | 'abbr' = 'full', pathOn = true): string =>
-  book === PATH_BOOK ? (pathOn ? PATH_LABEL : NO_PATH_LABEL) : book === ANY_BOOK ? ANY_BOOK_LABEL : (style === 'abbr' ? BOOKS[book - 1]?.abbr : BOOKS[book - 1]?.name) ?? ANY_BOOK_LABEL
+  book === PATH_BOOK ? (pathOn ? t(PATH_LABEL) : t(NO_PATH_LABEL)) : book === ANY_BOOK ? t(ANY_BOOK_LABEL) : (style === 'abbr' ? BOOKS[book - 1]?.abbr : BOOKS[book - 1]?.name) ?? t(ANY_BOOK_LABEL)
 /** An item's row: "Every morning at 06:00". */
-export const verseItemDetail = (it: VerseNotifyItem): string => `Every morning at ${timeLabel(it.hour, it.minute)}`
+export const verseItemDetail = (it: VerseNotifyItem): string => t('Every morning at {time}', { time: timeLabel(it.hour, it.minute) })
 
 /**
  * The Settings row's one line: "Off"; "Psalms at 06:00"; two items by short name, "Ps at 06:00, John at 07:00";
@@ -215,9 +216,9 @@ export const verseItemDetail = (it: VerseNotifyItem): string => `Every morning a
  */
 export function verseNotifyDetail(pref: VerseNotifyPref): string {
   const items = pref.items
-  if (!items.length) return 'Off'
-  if (items.length === 1) return `${bookLabel(items[0].book)} at ${timeLabel(items[0].hour, items[0].minute)}`
-  if (items.length === 2) return items.map(it => `${bookLabel(it.book, 'abbr')} at ${timeLabel(it.hour, it.minute)}`).join(', ')
+  if (!items.length) return t('Off')
+  if (items.length === 1) return t('{book} at {time}', { book: bookLabel(items[0].book), time: timeLabel(items[0].hour, items[0].minute) })
+  if (items.length === 2) return items.map(it => t('{book} at {time}', { book: bookLabel(it.book, 'abbr'), time: timeLabel(it.hour, it.minute) })).join(', ')
   const first = items.reduce((a, b) => (a.hour * 60 + a.minute <= b.hour * 60 + b.minute ? a : b))
-  return `${items.length} books, from ${timeLabel(first.hour, first.minute)}`
+  return tn(items.length, '{n} book, from {time}', '{n} books, from {time}', { time: timeLabel(first.hour, first.minute) })
 }

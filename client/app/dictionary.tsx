@@ -11,12 +11,12 @@ import WordSheet, { type WordTarget } from '../src/components/WordSheet'
 import Pager, { CountChip } from '../src/components/Pager'
 import { FadeSwap, Stagger, STAGGER_CAP, useFreshList } from '../src/components/motion/nav'
 import { useReduceMotion } from '../src/store/prefs'
-import { plural } from '../src/lib/community'
 import { TURN_DX } from '../src/lib/motionTiming'
 import { useReadingFont } from '../src/hooks/useReadingFont'
 import { useColors } from '../src/hooks/useTheme'
 import { face } from '../src/theme'
 import { Button, Card, Enter, ErrorText, H, Input, ListRow, Screen, SPACE, Spinner, T, Tap, TYPE } from '../src/components/ui'
+import { N_, t, tn } from '@shared/i18n'
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 // the appendix: its introduction plus 48 studies, ids syn-…
@@ -27,8 +27,8 @@ const DARBY = 'darby'
 const PAGE = 30
 /** The letter a headword is filed under; the synonyms appendix is a section of its own. */
 const sectionOf = (r: CbdIndexRow) => r[0].startsWith('syn-') ? SYNONYMS : letterOf(r[1])
-const SOURCE = 'Text from Bible Truth Publishers’ online edition of George Morrish’s A New and Concise Bible Dictionary (1897), public domain.'
-const UNAVAILABLE = dictionaryOffline ? 'The dictionary is missing from this build.' : 'The dictionary needs a connection to the server.'
+const SOURCE = N_('Text from Bible Truth Publishers’ online edition of George Morrish’s A New and Concise Bible Dictionary (1897), public domain.')
+const UNAVAILABLE = dictionaryOffline ? N_('The dictionary is missing from this build.') : N_('The dictionary needs a connection to the server.')
 
 /**
  * `/dictionary` is Morrish's dictionary of subjects: search, A to Z with each letter's two-letter groups (Aa, Ab, …),
@@ -55,16 +55,16 @@ function Article({ id, fromIndex }: { id: string; fromIndex: boolean }) {
   const [word, setWord] = useState<WordTarget | null>(null)
   return (
     <Screen animate={false}>
-      <Stack.Screen options={{ title: 'Dictionary' }} />
-      {entry === undefined ? <Spinner /> : entry === null ? <ErrorText>{`No article “${id}”. ${UNAVAILABLE}`}</ErrorText> : (
+      <Stack.Screen options={{ title: t('Dictionary') }} />
+      {entry === undefined ? <Spinner /> : entry === null ? <ErrorText>{`${t('No article “{id}”.', { id })} ${t(UNAVAILABLE)}`}</ErrorText> : (
         <>
           <Enter><Headword entry={entry} size={TYPE.title} /></Enter>
           <Enter delay={70}><DictionaryArticle entry={entry} onLink={follow} size={17} /></Enter>
           <Enter delay={110}><ArticleWords id={entry.id} onWord={(code, lemma) => setWord({ code, word: '', label: lemma })} /></Enter>
         </>
       )}
-      <T small muted>{SOURCE}</T>
-      {fromIndex ? null : <Button title="A to Z" onPress={() => router.push('/dictionary')} style={{ alignSelf: 'flex-start' }} />}
+      <T small muted>{t(SOURCE)}</T>
+      {fromIndex ? null : <Button title={t('A to Z')} onPress={() => router.push('/dictionary')} style={{ alignSelf: 'flex-start' }} />}
       <WordSheet target={word} onClose={() => setWord(null)} />
     </Screen>
   )
@@ -115,24 +115,24 @@ function IndexView({ initialQuery }: { initialQuery: string }) {
   const open = (id: string) => router.push({ pathname: '/dictionary', params: { id, from: 'index' } })
   // a new letter, group, search or page staggers in; typing within a search narrows it still
   const fresh = useFreshList(`${index ? 1 : 0}:${query ? 'q' : listKey}#${shown.page}`)
-  const title = query ? `${rows.length.toLocaleString()} ${rows.length === 1 ? 'headword matches' : 'headwords match'} “${query}”`
-    : showTerms ? `Darby’s terms · ${terms.length} terms`
-    : `${letter === SYNONYMS ? 'New Testament synonyms' : group || letter} · ${rows.length.toLocaleString()} ${rows.length === 1 ? 'headword' : 'headwords'}`
+  const title = query ? tn(rows.length, '{n} headword matches “{query}”', '{n} headwords match “{query}”', { n: rows.length.toLocaleString(), query })
+    : showTerms ? t('Darby’s terms · {n} terms', { n: terms.length })
+    : `${letter === SYNONYMS ? t('New Testament synonyms') : group || letter} · ${tn(rows.length, '{n} headword', '{n} headwords', { n: rows.length.toLocaleString() })}`
 
   return (
     <Screen animate={false} scrollRef={scroll}>
-      <Stack.Screen options={{ title: 'Dictionary and concordance' }} />
-      <Enter><H>Dictionary and concordance</H></Enter>
-      <Enter delay={70}><T muted>The Bible’s people, places, things and teaching, from Morrish. Strong’s concordance is one tap away in the reader: turn on Word lookup and tap a word, or search a number such as G1320.</T></Enter>
-      {index === undefined ? <Spinner /> : index === null ? <ErrorText>{UNAVAILABLE}</ErrorText> : (
+      <Stack.Screen options={{ title: t('Dictionary and concordance') }} />
+      <Enter><H>{t('Dictionary and concordance')}</H></Enter>
+      <Enter delay={70}><T muted>{t('The Bible’s people, places, things and teaching, from Morrish. Strong’s concordance is one tap away in the reader: turn on Word lookup and tap a word, or search a number such as G1320.')}</T></Enter>
+      {index === undefined ? <Spinner /> : index === null ? <ErrorText>{t(UNAVAILABLE)}</ErrorText> : (
         <>
-          <Input value={q} onChangeText={t => { setDir(0); setQ(t) }} placeholder={`Search ${index.rows.length.toLocaleString()} articles`} autoCorrect={false} autoCapitalize="none" returnKeyType="search" accessibilityLabel="Search the dictionary" />
+          <Input value={q} onChangeText={t => { setDir(0); setQ(t) }} placeholder={t('Search {n} articles', { n: index.rows.length.toLocaleString() })} autoCorrect={false} autoCapitalize="none" returnKeyType="search" accessibilityLabel={t('Search the dictionary')} />
           {!query ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }} accessibilityRole="tablist">
               {LETTERS.map(l => {
                 const on = l === letter, n = counts.get(l) ?? 0
                 return (
-                  <Tap key={l} disabled={!n} onPress={() => pick(l)} scaleTo={0.9} accessibilityRole="tab" accessibilityState={{ selected: on, disabled: !n }} accessibilityLabel={`${l}, ${plural(n, 'article')}`}
+                  <Tap key={l} disabled={!n} onPress={() => pick(l)} scaleTo={0.9} accessibilityRole="tab" accessibilityState={{ selected: on, disabled: !n }} accessibilityLabel={tn(n, '{letter}, {n} article', '{letter}, {n} articles', { letter: l })}
                     style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? c.accentSoft : c.card, opacity: n ? 1 : 0.4 }}>
                     <Text style={{ color: on ? c.accent : c.text, fontSize: TYPE.body, ...face('serif', { bold: on }) }}>{l}</Text>
                   </Tap>
@@ -143,17 +143,17 @@ function IndexView({ initialQuery }: { initialQuery: string }) {
           {/* the letter's two-letter groups, only those with headwords, each with its count */}
           {!query && groups.length > 1 ? (
             <FadeSwap k={letter}>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }} accessibilityRole="tablist" accessibilityLabel={`Groups under ${letter}`}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }} accessibilityRole="tablist" accessibilityLabel={t('Groups under {letter}', { letter })}>
                 {[{ group: '', count: letterRows.length }, ...groups].map(g => (
-                  <CountChip key={g.group || 'all'} label={g.group || `All ${letter}`} count={g.count} noun={['headword', 'headwords']} on={g.group === group} onPress={() => { setDir(0); setGroup(g.group) }} />
+                  <CountChip key={g.group || 'all'} label={g.group || t('All {letter}', { letter })} count={g.count} noun={['headword', 'headwords']} on={g.group === group} onPress={() => { setDir(0); setGroup(g.group) }} />
                 ))}
               </View>
             </FadeSwap>
           ) : null}
           {!query ? (
             <Card style={{ gap: 0, paddingVertical: 8 }}>
-              {letter !== SYNONYMS ? <ListRow icon="dictionary" label="New Testament synonyms" detail={`${Math.max(0, (counts.get(SYNONYMS) ?? 0) - 1)} studies of Greek words that share an English rendering`} onPress={() => pick(SYNONYMS)} /> : null}
-              {letter !== DARBY ? <ListRow icon="companion" label="Darby’s terms" detail={`${terms.length} words J. N. Darby uses in his own sense, each with a sentence of his`} onPress={() => pick(DARBY)} /> : null}
+              {letter !== SYNONYMS ? <ListRow icon="dictionary" label={t('New Testament synonyms')} detail={t('{n} studies of Greek words that share an English rendering', { n: Math.max(0, (counts.get(SYNONYMS) ?? 0) - 1) })} onPress={() => pick(SYNONYMS)} /> : null}
+              {letter !== DARBY ? <ListRow icon="companion" label={t('Darby’s terms')} detail={t('{n} words J. N. Darby uses in his own sense, each with a sentence of his', { n: terms.length })} onPress={() => pick(DARBY)} /> : null}
             </Card>
           ) : null}
           <View style={{ gap: SPACE.m }} onLayout={e => { listY.current = e.nativeEvent.layout.y }}>
@@ -164,7 +164,7 @@ function IndexView({ initialQuery }: { initialQuery: string }) {
                 <Card style={{ gap: 0, paddingVertical: 6 }}>
                   {termsPaged.items.map((e, i) => (
                     <Stagger key={e.term} index={i} cap={fresh ? STAGGER_CAP : 0}>
-                      <Tap onPress={() => setWord({ code: '', word: bareTerm(e.term), term: e.term })} scaleTo={0.985} accessibilityRole="button" accessibilityLabel={`${e.term}, Darby’s usage`} style={{ minHeight: 44, justifyContent: 'center', paddingVertical: 8, gap: 2, borderTopWidth: i ? 1 : 0, borderTopColor: c.border }}>
+                      <Tap onPress={() => setWord({ code: '', word: bareTerm(e.term), term: e.term })} scaleTo={0.985} accessibilityRole="button" accessibilityLabel={t('{term}, Darby’s usage', { term: e.term })} style={{ minHeight: 44, justifyContent: 'center', paddingVertical: 8, gap: 2, borderTopWidth: i ? 1 : 0, borderTopColor: c.border }}>
                         <Text style={{ color: c.text, ...f.body }}>{e.term}</Text>
                         <Text style={{ color: c.muted, fontSize: TYPE.small, lineHeight: 19 }} numberOfLines={2}>{e.short}</Text>
                       </Tap>
@@ -180,20 +180,20 @@ function IndexView({ initialQuery }: { initialQuery: string }) {
                         <Tap onPress={() => open(r[0])} scaleTo={0.985} accessibilityRole="link" style={{ minHeight: 44, justifyContent: 'center', paddingVertical: 6, borderTopWidth: i ? 1 : 0, borderTopColor: c.border }}>
                           <Text style={{ color: c.text, ...f.body }}>
                             {r[1]}
-                            {see ? <Text style={{ color: c.muted, fontSize: TYPE.small, ...f.italic }}>{'  '}see {see[1]}</Text> : null}
+                            {see ? <Text style={{ color: c.muted, fontSize: TYPE.small, ...f.italic }}>{'  '}{t('see {headword}', { headword: see[1] })}</Text> : null}
                           </Text>
                         </Tap>
                       </Stagger>
                     )
                   })}
                 </Card>
-              ) : <T muted>No headword matches “{query}”.</T>}
+              ) : <T muted>{t('No headword matches “{query}”.', { query })}</T>}
             </FadeSwap>
             {shown.pages > 1 ? <Pager page={shown.page} pages={shown.pages} onPage={turn} /> : null}
           </View>
         </>
       )}
-      <T small muted>{SOURCE}</T>
+      <T small muted>{t(SOURCE)}</T>
       <WordSheet target={word} onClose={() => setWord(null)} />
     </Screen>
   )

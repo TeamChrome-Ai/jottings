@@ -4,6 +4,7 @@ import Svg, { Circle, G, Path, Polyline, Text as SvgText, TSpan } from 'react-na
 import { bandOf, blockText, chartSections, compactRef, entriesOf, harmonyOf, rowCount, tableWidths, isEntry, pagesOf, parallelsOf, refOfPassage, type ChartFigure, type DiagramFigure, type Figure, type HarmonyRow, type ParallelEntry, type ParallelItem, type ParallelsFigure, type Shape, type TableFigure, type Tone } from '@shared/figures'
 import { formatPassage } from '@shared/companion'
 import { parseRef, type Ref } from '@shared/ref'
+import { N_, t } from '@shared/i18n'
 import { inlineSpans, superscript } from '../lib/intro'
 import { useReadingFont } from '../hooks/useReadingFont'
 import { useColors } from '../hooks/useTheme'
@@ -96,7 +97,7 @@ function Styled({ text, italic, fs }: { text: string; italic: TextStyle; fs: num
 /** How the harmony is read, kept for the session: in parallel (pericopes in Mark's order) or as the page prints it. */
 type HarmonyMode = 'parallel' | 'printed'
 let harmonyMode: HarmonyMode = 'parallel'
-const MODES: { value: HarmonyMode; label: string }[] = [{ value: 'parallel', label: 'In parallel' }, { value: 'printed', label: 'As printed' }]
+const MODES: { value: HarmonyMode; label: string }[] = [{ value: 'parallel', label: N_('In parallel') }, { value: 'printed', label: N_('As printed') }]
 
 function Parallels({ fig, size, onRef, slot0 }: { fig: ParallelsFigure; size: number; onRef: (r: Ref) => void; slot0: number }) {
   const c = useColors()
@@ -113,9 +114,9 @@ function Parallels({ fig, size, onRef, slot0 }: { fig: ParallelsFigure; size: nu
   return (
     <Nest onLayout={e => setWidth(e.nativeEvent.layout.width)}>
       <View style={{ gap: 8, marginBottom: 16 }}>
-        <Segmented value={mode} options={MODES} onChange={m => { harmonyMode = m; setMode(m) }} />
+        <Segmented value={mode} options={MODES.map(o => ({ ...o, label: t(o.label) }))} onChange={m => { harmonyMode = m; setMode(m) }} />
         <Text style={{ color: c.muted, fontSize: 13, lineHeight: 18 }}>
-          {mode === 'parallel' ? 'Rows in Mark’s order; the shaded cells are the Gospels that tell it' : 'Each Gospel in its own order, with the numbers of its parallels'}
+          {mode === 'parallel' ? t('Rows in Mark’s order; the shaded cells are the Gospels that tell it') : t('Each Gospel in its own order, with the numbers of its parallels')}
         </Text>
       </View>
       {mode === 'parallel' ? <InParallel {...p} width={width || window - 40} window={window} /> : wide ? <PageLayout {...p} /> : <Stacked {...p} />}
@@ -139,7 +140,7 @@ function Figs({ see, fig, byN, fs, onRef }: { see: number[] } & LayoutProps) {
         const e = byN.get(n)
         const label = superscript(String(n)) + (i < see.length - 1 ? ' ' : ' ')
         return e?.passage
-          ? <Text key={i} accessibilityRole="link" accessibilityLabel={`Parallel ${n}: ${fullRef(fig, e)}`} onPress={() => onRef(refOfPassage(e.passage!))}>{label}</Text>
+          ? <Text key={i} accessibilityRole="link" accessibilityLabel={t('Parallel {n}: {ref}', { n, ref: fullRef(fig, e) })} onPress={() => onRef(refOfPassage(e.passage!))}>{label}</Text>
           : <Text key={i}>{label}</Text>
       })}
     </Text>
@@ -201,7 +202,7 @@ function StackedRow({ it, ...p }: { it: ParallelItem } & LayoutProps) {
                 style={e === it ? [small.bold, { color: c.text }] : { color: c.accent }}>{fullRef(fig, e)}</Text>
             </Text>
           ))}
-          {refs.length === 1 && refs[0] === it ? ' · no parallel' : ''}
+          {refs.length === 1 && refs[0] === it ? ` · ${t('no parallel')}` : ''}
         </Text>
         <Text style={[f.body, { color: c.text }]}><Words e={it} figs={it.parts.length > 1} {...p} /></Text>
       </View>
@@ -344,7 +345,7 @@ const PericopeRow = memo(function PericopeRow({ row, slots, lift, first, roomy, 
       <Text style={[roomy ? f.body : small.body, { color: roomy ? c.text : c.muted }]}><Styled text={row.subject} italic={roomy ? f.italic : small.italic} fs={roomy ? fs - 1 : fs - 2} /></Text>
       {cf.length ? (
         <Text style={[small.body, { color: c.muted }]}>
-          Compare {cf.map((e, i) => (
+          {t('Compare')} {cf.map((e, i) => (
             <Text key={e.n}>{i ? ', ' : ''}<Text accessibilityRole="link" onPress={() => onRef(refOfPassage(e.passage!))} style={{ color: c.accent }}>{formatPassage(e.passage!).replace(/ /g, '\u00a0')}</Text></Text>
           ))}
         </Text>
@@ -372,7 +373,7 @@ function Cell({ entries, col, style, roomy, fs, tint, fig, onRef }: { entries: P
   const book = fig.columns[col].title
   if (!entries.length) return (
     // the padding on the text, not the cell: a padded flex item takes more than its third
-    <View style={[style, { justifyContent: 'center' }]} accessible accessibilityLabel={`Not in ${book}`}>
+    <View style={[style, { justifyContent: 'center' }]} accessible accessibilityLabel={t('Not in {book}', { book })}>
       <Text style={[f.body, { color: c.muted, paddingHorizontal: 6, paddingVertical: 6 }]}>–</Text>
     </View>
   )
@@ -384,7 +385,7 @@ function Cell({ entries, col, style, roomy, fs, tint, fig, onRef }: { entries: P
           <Text style={[f.body, { color: c.accent, fontVariant: ['tabular-nums'] }]}>{roomy ? e.ref : compactRef(e.passage)}</Text>
         </Tap>
       ) : (
-        <Text key={e.n} accessible accessibilityLabel={`${book}, no reference printed`} style={[f.body, { color: c.muted, paddingHorizontal: 6, paddingVertical: 5 }]}>—</Text>
+        <Text key={e.n} accessible accessibilityLabel={t('{book}, no reference printed', { book })} style={[f.body, { color: c.muted, paddingHorizontal: 6, paddingVertical: 5 }]}>—</Text>
       ))}
     </View>
   )
@@ -512,7 +513,7 @@ function ShapeView({ sh, ink, font, dash }: { sh: Shape; ink: Record<Tone, strin
 // ---------- a chart of periods against passages ----------
 
 /** A column heading's passage as a link target: its first verse ("Revelation 10:1–11:14" opens at 10:1). */
-const refOfHead = (ref?: string) => ref ? parseRef(ref.replace(/–/g, '-').replace(/(\d+:\d+)-\d+:\d+$/, '$1').replace(/(\d+)-\d+$/, '$1')) : null
+const refOfHead = (ref?: string) => ref ? parseRef(ref.replace(/–/g, '-').replace(/(\d+:\d+)-\d+:\d+$/, '$1').replace(/(\d+)-\d+$/, '$1'), { english: true }) : null
 
 /**
  * Read as a list: column by column, the heading and its passage, then each note of the column with the period it stands
@@ -529,7 +530,7 @@ function Chart({ fig, size, onRef, slot0 }: { fig: ChartFigure; size: number; on
   return (
     <Nest style={{ gap: 12 }}>
       {fig.title ? <Text style={[f.body, f.bold, { color: c.text }]}>{fig.title}</Text> : null}
-      <Button small title={printed ? 'Show as a list' : 'Show the chart as printed'} onPress={() => setPrinted(p => !p)} style={{ alignSelf: 'flex-start' }} />
+      <Button small title={printed ? t('Show as a list') : t('Show the chart as printed')} onPress={() => setPrinted(p => !p)} style={{ alignSelf: 'flex-start' }} />
       {printed ? <ChartDrawing fig={fig} /> : (
         <Nest>
           <Rule heavy />
@@ -544,7 +545,7 @@ function Chart({ fig, size, onRef, slot0 }: { fig: ChartFigure; size: number; on
                     {bandOf(fig, b.rotate ? b.y - 20 : b.y).label ? <Sc color={c.muted} size={fs - 2}>{bandOf(fig, b.rotate ? b.y - 20 : b.y).label}</Sc> : null}
                     {blockText(b.lines).map((t, j) => <Text key={j} style={[f.body, { color: c.text }]}><Styled text={t} italic={f.italic} fs={fs} /></Text>)}
                   </View>
-                )) : <Text style={[small.body, small.italic, { color: c.muted }]}>Nothing written in this column.</Text>}
+                )) : <Text style={[small.body, small.italic, { color: c.muted }]}>{t('Nothing written in this column.')}</Text>}
               </RowMark>
             )
           })}

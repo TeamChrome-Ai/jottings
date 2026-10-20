@@ -1,10 +1,10 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, Easing, Pressable, Text, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native'
 import { BOOKS } from '@shared/books'
+import { tn } from '@shared/i18n'
 import { useInks } from '../hooks/useTheme'
 import { useReduceMotion } from '../store/prefs'
 import { FILL_MS } from '../lib/motionTiming'
-import { plural } from '../lib/community'
 import { chapterX, layoutStrip, spreadDots, stripLabels, type StripLayout } from '../lib/pathStrip'
 import { Grow, TYPE, useSurface } from './ui'
 
@@ -110,7 +110,7 @@ export default function PathStrip({ route, routeChapters, readSet, doneUpTo, pla
           <Seg key={seg.book} testID="path-strip-segment" x={seg.x} width={seg.width} height={seg.onRoute ? H : offH} top={seg.onRoute ? 0 : (H - offH) / 2} radius={seg.onRoute ? radius : Math.min(radius, offH / 2)}
             track={seg.onRoute ? c.accentSoft : c.border} fill={c.accent} v={valueOf(seg.book)}
             onPress={onBook && seg.onRoute && !compact ? () => onBook(seg.book) : undefined}
-            label={`${BOOKS[seg.book - 1].name}, ${seg.read} of ${plural(seg.chapters, 'chapter')} read`} />
+            label={tn(seg.chapters, '{book}, {read} of {n} chapter read', '{book}, {read} of {n} chapters read', { book: BOOKS[seg.book - 1].name, read: seg.read })} />
         )) : null}
         {dots.map(({ m, x }) => (
           <Grow key={m.key} delay={landed} style={{ position: 'absolute', left: x - MDOT / 2 - 1, top: (H - MDOT) / 2 - 1 }}>

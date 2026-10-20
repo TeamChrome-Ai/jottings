@@ -17,13 +17,14 @@ import AvatarArt from '../../src/components/AvatarArt'
 import AvatarSheet from '../../src/components/AvatarSheet'
 import { Swap } from '../../src/components/motion/community'
 import { BRAND, NOUN } from '@shared/brand'
+import { t, tc } from '@shared/i18n'
 
 export default function ProfileScreen() {
   const { handle } = useLocalSearchParams<{ handle: string }>()
   const { user: me, ready } = useAuth()
   const h = typeof handle === 'string' ? handle : ''
   const { state, reload } = useLoad(() => get<ProfileResponse>(`/users/${encodeURIComponent(h)}`), [h], ready && h !== '')
-  const title = state.kind === 'ready' ? displayName(state.data.user) : 'Profile'
+  const title = state.kind === 'ready' ? displayName(state.data.user) : t('Profile')
   return (
     <Screen animate={false}>
       <Stack.Screen options={{ title }} />
@@ -36,9 +37,9 @@ export default function ProfileScreen() {
           {me?.is_admin && state.data.user.supporter !== undefined ? <SupporterControl user={state.data.user} onChange={reload} /> : null}
           {me?.is_admin && me.id !== state.data.user.id ? <RenameControl user={state.data.user} /> : null}
           {'private' in state.data
-            ? <Card><T muted>This profile is private.</T></Card>
+            ? <Card><T muted>{t('This profile is private.')}</T></Card>
             : <>
-                {state.data.public === false ? <T small muted>Only you see this. Others see it once Public profile is on in Settings.</T> : null}
+                {state.data.public === false ? <T small muted>{t('Only you see this. Others see it once Public profile is on in Settings.')}</T> : null}
                 <PublicBody stats={state.data.stats} badges={state.data.badges} />
               </>}
         </Enter>
@@ -58,12 +59,12 @@ function Header({ user, isMe, signedIn }: { user: PublicUser; isMe: boolean; sig
         <Swap k={avatar ?? ''}><AvatarArt id={avatar} userId={user.id} size={64} /></Swap>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><H style={{ marginBottom: 0 }}>{displayName(user)}</H>{user.staff ? <AdminBadge /> : null}</View>
-          <T small muted>@{user.handle} · member since {fmtDay(user.created_at)}</T>
+          <T small muted>@{user.handle} · {t('member since {date}', { date: fmtDay(user.created_at) })}</T>
         </View>
       </View>
       {isMe && (
         <Row>
-          <Button title="Choose a picture" small onPress={() => setPicking(true)} />
+          <Button title={t('Choose a picture')} small onPress={() => setPicking(true)} />
         </Row>
       )}
       {isMe ? <AvatarSheet open={picking} onClose={() => setPicking(false)} /> : null}
@@ -84,21 +85,21 @@ function ModerationActions({ user }: { user: PublicUser }) {
   const blocked = override ?? (state.kind === 'ready' && state.data.some(b => b.user_id === user.id))
   const toggle = async () => {
     if (state.kind === 'loading') return
-    if (!blocked && !(await confirmAsync(`Block @${user.handle}?`, `Their posts and shared ${NOUN.many} disappear from your feeds. You can unblock them here or in Settings.`, 'Block'))) return
+    if (!blocked && !(await confirmAsync(t('Block @{handle}?', { handle: user.handle }), t('Their posts and shared {many} disappear from your feeds. You can unblock them here or in Settings.', { many: NOUN.many }), tc('verb', 'Block')))) return
     setBusy(true); setErr(null)
     try {
-      if (blocked) { await unblockUser(user.id); setOverride(false); mutate(bs => bs.filter(b => b.user_id !== user.id)); toast.show(`Unblocked @${user.handle}`) }
-      else { await blockUser(user.id); setOverride(true); mutate(bs => [...bs, { user_id: user.id, handle: user.handle, display_name: user.display_name }]); toast.show(`Blocked @${user.handle}`) }
+      if (blocked) { await unblockUser(user.id); setOverride(false); mutate(bs => bs.filter(b => b.user_id !== user.id)); toast.show(t('Unblocked @{handle}', { handle: user.handle })) }
+      else { await blockUser(user.id); setOverride(true); mutate(bs => [...bs, { user_id: user.id, handle: user.handle, display_name: user.display_name }]); toast.show(t('Blocked @{handle}', { handle: user.handle })) }
     } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
   return (
     <>
       <Row>
-        <Button title="Report user" small onPress={() => setReport({ kind: 'user', id: user.id, label: `@${user.handle}` })} />
-        <Button title={busy ? '…' : blocked ? 'Unblock' : 'Block'} small danger={!blocked} disabled={busy || state.kind === 'loading'} onPress={() => { void toggle() }} />
-        {blocked && <Enter><T small muted>You have blocked this user.</T></Enter>}
+        <Button title={t('Report user')} small onPress={() => setReport({ kind: 'user', id: user.id, label: `@${user.handle}` })} />
+        <Button title={busy ? '…' : blocked ? t('Unblock') : tc('verb', 'Block')} small danger={!blocked} disabled={busy || state.kind === 'loading'} onPress={() => { void toggle() }} />
+        {blocked && <Enter><T small muted>{t('You have blocked this user.')}</T></Enter>}
       </Row>
-      {state.kind === 'error' && <T small muted>Block status unavailable: {state.message}</T>}
+      {state.kind === 'error' && <T small muted>{t('Block status unavailable: {error}', { error: state.message })}</T>}
       {err && <ErrorText>{err}</ErrorText>}
       <ReportSheet target={report} onClose={() => setReport(null)} />
     </>
@@ -114,20 +115,20 @@ function RenameControl({ user }: { user: PublicUser }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const go = async () => {
-    if (!(await confirmAsync(`Take @${user.handle}'s name away?`, `Their handle and name are replaced now, and they must choose new ones the next time they open ${BRAND.name}.`, 'Take it away'))) return
+    if (!(await confirmAsync(t("Take @{handle}'s name away?", { handle: user.handle }), t('Their handle and name are replaced now, and they must choose new ones the next time they open {brand}.', { brand: BRAND.name }), t('Take it away')))) return
     setBusy(true); setErr(null)
     try {
       const r = await forceRename(user.id, shown.trim() || undefined)
-      toast.show(`Now @${r.handle} (${r.display_name})`)
+      toast.show(t('Now @{handle} ({name})', { handle: r.handle, name: r.display_name }))
       router.replace(`/u/${encodeURIComponent(r.handle)}`)
     } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
   return (
     <Card>
-      <T bold>Force a name change</T>
-      <T small muted>Admin only. Replaces the handle with a placeholder and makes them choose a new name and handle. The name shown until then is “Reader”, or what you put here.</T>
-      <Input placeholder="Name shown meanwhile (optional)" value={shown} onChangeText={setShown} maxLength={60} />
-      <Button small danger title={busy ? 'Working…' : 'Take the name away'} disabled={busy} onPress={() => { void go() }} style={{ alignSelf: 'flex-start' }} />
+      <T bold>{t('Force a name change')}</T>
+      <T small muted>{t('Admin only. Replaces the handle with a placeholder and makes them choose a new name and handle. The name shown until then is “Reader”, or what you put here.')}</T>
+      <Input placeholder={t('Name shown meanwhile (optional)')} value={shown} onChangeText={setShown} maxLength={60} />
+      <Button small danger title={busy ? t('Working…') : t('Take the name away')} disabled={busy} onPress={() => { void go() }} style={{ alignSelf: 'flex-start' }} />
       {err && <ErrorText>{err}</ErrorText>}
     </Card>
   )
@@ -145,13 +146,13 @@ function SupporterControl({ user, onChange }: { user: PublicUser; onChange: () =
     try {
       const r = await setSupporter(user.id, v)
       setOn(r.supporter)
-      toast.show(r.supporter ? 'Supporter badge given' : 'Supporter badge taken back')
+      toast.show(r.supporter ? t('Supporter badge given') : t('Supporter badge taken back'))
       onChange()
     } catch (e) { setOn(!v); setErr(errMsg(e)) } finally { setBusy(false) }
   }
   return (
     <Card>
-      <SwitchRow label="Supporter" hint="Admin only. Shows the secret Supporter badge on this account." value={on} onChange={v => { void flip(v) }} />
+      <SwitchRow label={t('Supporter')} hint={t('Admin only. Shows the secret Supporter badge on this account.')} value={on} onChange={v => { void flip(v) }} />
       {err && <ErrorText>{err}</ErrorText>}
     </Card>
   )
@@ -159,10 +160,10 @@ function SupporterControl({ user, onChange }: { user: PublicUser; onChange: () =
 
 function PublicBody({ stats, badges }: { stats: ProfileStats; badges: Badge[] }) {
   const tiles: [string, string][] = [
-    ['Active time', fmtDuration(stats.total_active_seconds)],
-    ['Chapters', String(stats.chapters_read)],
-    ['Books completed', String(stats.books_completed)],
-    ['Longest streak', `${stats.streak.longest} d`],
+    [t('Active time'), fmtDuration(stats.total_active_seconds)],
+    [t('Chapters'), String(stats.chapters_read)],
+    [t('Books completed'), String(stats.books_completed)],
+    [t('Longest streak'), tc('days', '{n} d', { n: stats.streak.longest })],
   ]
   return (
     <>
@@ -174,8 +175,8 @@ function PublicBody({ stats, badges }: { stats: ProfileStats; badges: Badge[] })
           </Card>
         ))}
       </View>
-      <H2>Badges</H2>
-      {badges.length === 0 && <T muted>No badges earned yet.</T>}
+      <H2>{t('Badges')}</H2>
+      {badges.length === 0 && <T muted>{t('No badges earned yet.')}</T>}
       <BadgeGrid badges={badges} footer={b => b.earned_at ? <T small muted>{fmtDay(b.earned_at)}</T> : null} />
     </>
   )

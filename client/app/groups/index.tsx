@@ -4,7 +4,7 @@ import type { Group } from '@shared/types'
 import { get, post } from '../../src/lib/api'
 import { useAuth } from '../../src/store/auth'
 import { useToast } from '../../src/store/toast'
-import { errMsg, plural, roleLabel, useLoad } from '../../src/lib/community'
+import { errMsg, useLoad } from '../../src/lib/community'
 import { Tag } from '../../src/components/CommunityBits'
 import { Button, Card, Enter, ErrorText, H2, Input, Row, Screen, Spinner, T, Tap } from '../../src/components/ui'
 import { MotionItem, useArrivals } from '../../src/components/motion/community'
@@ -12,6 +12,8 @@ import { tourRef } from '../../src/store/tour'
 import SignInCard from '../../src/components/SignInCard'
 import { GroupCardStrip } from '../../src/components/GroupPath'
 import { NOUN } from '@shared/brand'
+import { t, tc, tn } from '@shared/i18n'
+import { tr } from '../../src/i18n'
 
 export default function GroupsScreen() {
   const { user, ready } = useAuth()
@@ -19,11 +21,11 @@ export default function GroupsScreen() {
   const joinCode = (Array.isArray(join) ? join[0] : join) ?? ''
   return (
     <Screen animate={false}>
-      <Stack.Screen options={{ title: 'Groups' }} />
+      <Stack.Screen options={{ title: t('Groups') }} />
       {!ready && <Spinner />}
       {ready && !user && (
-        <SignInCard ref={tourRef('groups-signin')} title="Read together" text={`A few people reading alongside each other: a feed for notes and ${NOUN.many}, and events with a leaderboard.`}>
-          {joinCode ? <T small muted>Your invite code <T small bold>{joinCode}</T> will be waiting after you sign in.</T> : null}
+        <SignInCard ref={tourRef('groups-signin')} title={t('Read together')} text={t('A few people reading alongside each other: a feed for notes and {many}, and events with a leaderboard.', { many: NOUN.many })}>
+          {joinCode ? <T small muted>{tr('Your invite code <b>{code}</b> will be waiting after you sign in.', { b: s => <T small bold>{s}</T> }, { code: joinCode })}</T> : null}
         </SignInCard>
       )}
       {ready && user && (
@@ -44,18 +46,18 @@ function MyGroups() {
   const arrivals = useArrivals(state.kind === 'ready' ? state.data.map(g => g.id) : null)
   return (
     <>
-      <H2>My groups</H2>
+      <H2>{t('My groups')}</H2>
       {state.kind === 'loading' && <Spinner />}
       {state.kind === 'error' && <ErrorText>{state.message}</ErrorText>}
-      {state.kind === 'ready' && state.data.length === 0 && <T muted>You are not in any group yet. Create one below or paste an invite code.</T>}
+      {state.kind === 'ready' && state.data.length === 0 && <T muted>{t('You are not in any group yet. Create one below or paste an invite code.')}</T>}
       {state.kind === 'ready' && state.data.map((g, i) => (
         <MotionItem key={g.id} {...arrivals.modeFor(g.id, i, true)} gap={12}>
           <Tap onPress={() => router.push(`/groups/${g.slug}`)} accessibilityRole="link" scaleTo={0.985}>
             <Card>
               <Row>
                 <T bold style={{ flex: 1 }}>{g.name}</T>
-                {g.role && g.role !== 'member' ? <Tag label={roleLabel(g.role)} accent={g.role === 'admin'} /> : null}
-                <Tag label={plural(g.member_count, 'member')} />
+                {g.role && g.role !== 'member' ? <Tag label={tc('group role', 'Admin')} accent={g.role === 'admin'} /> : null}
+                <Tag label={tn(g.member_count, '{n} member', '{n} members')} />
               </Row>
               {g.description ? <T small muted numberOfLines={2}>{g.description}</T> : null}
               <GroupCardStrip path_id={g.path_id} />
@@ -84,17 +86,17 @@ function CreateGroup() {
   }
   return (
     <>
-      <H2>Create a group</H2>
+      <H2>{t('Create a group')}</H2>
       <Card ref={tourRef('groups-create')}>
-        {!open && <Button title="New group" onPress={() => setOpen(true)} />}
+        {!open && <Button title={t('New group')} onPress={() => setOpen(true)} />}
         {open && (
           <Enter style={{ gap: 8 }}>
-            <Input placeholder="Group name" value={name} onChangeText={setName} maxLength={60} autoFocus />
-            <Input placeholder="What is this group reading? (optional)" value={description} onChangeText={setDescription} maxLength={2000} multiline style={{ minHeight: 60, textAlignVertical: 'top' }} />
+            <Input placeholder={t('Group name')} value={name} onChangeText={setName} maxLength={60} autoFocus />
+            <Input placeholder={t('What is this group reading? (optional)')} value={description} onChangeText={setDescription} maxLength={2000} multiline style={{ minHeight: 60, textAlignVertical: 'top' }} />
             {err && <ErrorText>{err}</ErrorText>}
             <Row style={{ justifyContent: 'flex-end' }}>
-              <Button title="Cancel" onPress={() => { setOpen(false); setErr(null) }} disabled={busy} />
-              <Button title={busy ? 'Creating…' : 'Create'} primary onPress={submit} disabled={busy || name.trim().length < 2} />
+              <Button title={t('Cancel')} onPress={() => { setOpen(false); setErr(null) }} disabled={busy} />
+              <Button title={busy ? t('Creating…') : t('Create')} primary onPress={submit} disabled={busy || name.trim().length < 2} />
             </Row>
           </Enter>
         )}
@@ -114,18 +116,18 @@ function JoinGroup({ initialCode }: { initialCode: string }) {
     setBusy(true); setErr(null)
     try {
       const g = await post<Group>('/groups/join', { invite_code: code.trim() })
-      toast.show(`Joined ${g.name}`)
+      toast.show(t('Joined {name}', { name: g.name }))
       setCode('')
       router.push(`/groups/${g.slug}`)
     } catch (ex) { setErr(errMsg(ex)) } finally { setBusy(false) }
   }
   return (
     <>
-      <H2>Join with an invite code</H2>
+      <H2>{t('Join with an invite code')}</H2>
       <Card ref={tourRef('groups-join')}>
         <Row style={{ flexWrap: 'nowrap' }}>
-          <Input placeholder="Invite code" value={code} onChangeText={setCode} autoCapitalize="none" autoCorrect={false} style={{ flex: 1, minWidth: 0 }} onSubmitEditing={submit} />
-          <Button title={busy ? 'Joining…' : 'Join'} primary onPress={submit} disabled={busy || code.trim().length === 0} />
+          <Input placeholder={t('Invite code')} value={code} onChangeText={setCode} autoCapitalize="none" autoCorrect={false} style={{ flex: 1, minWidth: 0 }} onSubmitEditing={submit} />
+          <Button title={busy ? t('Joining…') : t('Join')} primary onPress={submit} disabled={busy || code.trim().length === 0} />
         </Row>
         {err && <ErrorText>{err}</ErrorText>}
       </Card>

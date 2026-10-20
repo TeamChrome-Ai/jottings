@@ -6,6 +6,7 @@
  */
 import type { Passage, Section, SectionMeta, WorkKind } from './companion.js'
 import type { Figure } from './figures.js'
+import { N_, t } from './i18n.js'
 
 export interface MinistryAuthor {
   id: string
@@ -33,37 +34,37 @@ export const MINISTRY_AUTHORS: readonly MinistryAuthor[] = [
   {
     id: 'darby', name: 'J. N. Darby', short: 'Darby', born: 1800, died: 1882, enabled: true,
     licence: 'Died 1882: public domain everywhere.',
-    source: 'J. N. Darby (1800–1882). Text from Bible Truth Publishers’ online library; public domain.',
+    source: N_('J. N. Darby (1800–1882). Text from Bible Truth Publishers’ online library; public domain.'),
     corpus: 'tools/ministry_convert.py (Collected Writings, Notes and Comments, Notes and Jottings, Letters, Miscellaneous Writings, other writings) and tools/synopsis_convert.py (the Synopsis)',
   },
   {
     id: 'raven', name: 'F. E. Raven', short: 'Raven', born: 1837, died: 1903, enabled: true,
     licence: 'Died 1903; addresses of 1895–1903, printed in or soon after his lifetime: public domain (data/ministry/raven/SOURCE.md).',
-    source: 'F. E. Raven (1837–1903); public domain.',
+    source: N_('F. E. Raven (1837–1903); public domain.'),
     corpus: 'tools/mse_authors.py raven (the 20 volumes of his ministry)',
   },
   {
     id: 'bellett', name: 'J. G. Bellett', short: 'Bellett', born: 1795, died: 1864, enabled: true,
     licence: 'Died 1864: public domain everywhere.',
-    source: 'J. G. Bellett (1795–1864). Text from Bible Truth Publishers’ online library; public domain.',
+    source: N_('J. G. Bellett (1795–1864). Text from Bible Truth Publishers’ online library; public domain.'),
     corpus: 'tools/btp_authors.py (his books on Bible Truth Publishers’ library)',
   },
   {
     id: 'wigram', name: 'G. V. Wigram', short: 'Wigram', born: 1805, died: 1879, enabled: true,
     licence: 'Died 1879: public domain everywhere.',
-    source: 'G. V. Wigram (1805–1879). Text from Bible Truth Publishers’ online library; public domain.',
+    source: N_('G. V. Wigram (1805–1879). Text from Bible Truth Publishers’ online library; public domain.'),
     corpus: 'tools/btp_authors.py (his books on Bible Truth Publishers’ library)',
   },
   {
     id: 'stoney', name: 'J. B. Stoney', short: 'Stoney', born: 1814, died: 1897, enabled: true,
     licence: 'Died 1897; addresses of 1859–1896, printed in or soon after his lifetime: public domain (data/ministry/stoney/SOURCE.md).',
-    source: 'J. B. Stoney (1814–1897); public domain.',
+    source: N_('J. B. Stoney (1814–1897); public domain.'),
     corpus: 'tools/mse_authors.py stoney (the 13 volumes of his ministry)',
   },
   {
     id: 'coates', name: 'C. A. Coates', short: 'Coates', born: 1862, died: 1945, enabled: true,
     licence: 'Died 1945. The edition’s publisher claims no copyright in it (data/coates/SOURCE.md).',
-    source: 'C. A. Coates (1862–1945); public domain.',
+    source: N_('C. A. Coates (1862–1945); public domain.'),
     corpus: 'tools/coates_convert.py --all (the whole collected edition, 40 works)',
   },
   // placeholders: the structure is ready, nothing is converted and nothing reaches the app
@@ -75,7 +76,7 @@ export const enabledAuthors = () => MINISTRY_AUTHORS.filter(a => a.enabled)
 /** The enabled authors by surname, in order, but those `hidden`: "Darby, Raven, Bellett, Wigram, Stoney and Coates". */
 export function authorNames(hidden: readonly string[] = []): string {
   const n = enabledAuthors().filter(a => !hidden.includes(a.id)).map(a => a.short)
-  return n.length > 1 ? `${n.slice(0, -1).join(', ')} and ${n[n.length - 1]}` : n.join('')
+  return n.length > 1 ? t('{list} and {last}', { list: n.slice(0, -1).join(', '), last: n[n.length - 1] }) : n.join('')
 }
 export const ministryAuthor = (id: string) => MINISTRY_AUTHORS.find(a => a.id === id && a.enabled)
 

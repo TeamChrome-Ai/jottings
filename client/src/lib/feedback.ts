@@ -3,6 +3,7 @@
  * shared api client adds the token only when there is one.
  */
 import { del, get, patch, post } from './api'
+import { N_ } from '@shared/i18n'
 
 /** Same cap as rs/src/feedback.rs MESSAGE_MAX. */
 export const MESSAGE_MAX = 2000
@@ -35,7 +36,7 @@ export interface FeedbackRow {
   reply?: string | null; replied_at?: string | null; reply_seen?: boolean
 }
 /** The one-tap answer (rs/src/feedback.rs THANKS), also the body of the email to a sender without an account. */
-export const THANKS = 'Thank you for this. The fix will be in the next update.'
+export const THANKS = N_('Thank you for this. The fix will be in the next update.')
 export const REPLY_MAX = 1000
 /** `reaches_sender`: the sender has an account, so the answer waits for them in the app. */
 export const replyFeedback = (id: number, body: { thanks: true } | { text: string }) => post<{ ok: true; reaches_sender: boolean }>(`/admin/feedback/${id}/reply`, body)

@@ -30,13 +30,13 @@ export function inlineRuns(html: string): Run[] {
 /** The reader route for a reference: chapter plus an optional verse to scroll to. */
 export const refParams = (r: Ref) => ({ pathname: '/read/[book]/[chapter]' as const, params: { book: String(r.book), chapter: String(r.chapter), v: r.v1 ? String(r.v1) : '', v2: r.v2 && r.v1 && r.v2 > r.v1 ? String(r.v2) : '' } })
 
-interface Props { text: string; style?: StyleProp<TextStyle>; /** Style of an italic run: from face(font, { italic: true }), so a custom italic face is named as its own family and never combined with fontStyle italic (Android then falls back to the system italic). */ italicStyle?: TextStyle; onNavigate?: (r: Ref) => void; /** The chapter the note sits in: resolves "ch. 5:25" and "ver. 15". */ context?: RefContext; /** Opens an `<a href>` run (a dictionary "See X"); without it those runs are plain text. */ onLink?: (href: string) => void }
+interface Props { text: string; /** English material (the dictionary): its references are in the English numbering whatever Bible is read. */ english?: boolean; style?: StyleProp<TextStyle>; /** Style of an italic run: from face(font, { italic: true }), so a custom italic face is named as its own family and never combined with fontStyle italic (Android then falls back to the system italic). */ italicStyle?: TextStyle; onNavigate?: (r: Ref) => void; /** The chapter the note sits in: resolves "ch. 5:25" and "ver. 15". */ context?: RefContext; /** Opens an `<a href>` run (a dictionary "See X"); without it those runs are plain text. */ onLink?: (href: string) => void }
 
 /**
  * Footnote body: transliterations arrive as `<i>…</i>` and are set in italics, scripture references
  * ("Isa 34:11", "Gen 9:26") become links into the reader. Renders inline, so it can sit inside another Text.
  */
-export default memo(function FootnoteText({ text, style, italicStyle, onNavigate, context, onLink }: Props) {
+export default memo(function FootnoteText({ text, style, italicStyle, onNavigate, context, onLink, english = false }: Props) {
   const router = useRouter()
   const colors = usePageInks()
   const cb = context?.book, cc = context?.chapter
@@ -44,8 +44,8 @@ export default memo(function FootnoteText({ text, style, italicStyle, onNavigate
   const parsed = useMemo(() => {
     const runs = inlineRuns(text)
     const plain = runs.map(r => r.text).join('')
-    return { runs, plain, refs: scanRefs(plain, cb !== undefined && cc !== undefined ? { book: cb, chapter: cc } : undefined) }
-  }, [text, cb, cc])
+    return { runs, plain, refs: scanRefs(plain, cb !== undefined && cc !== undefined ? { book: cb, chapter: cc } : undefined, { english }) }
+  }, [text, cb, cc, english])
   const nodes = useMemo(() => {
     const { runs, plain, refs } = parsed
     const go = (r: Ref) => { if (onNavigate) onNavigate(r); else router.push(refParams(r)) }

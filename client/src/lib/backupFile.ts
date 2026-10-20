@@ -15,6 +15,7 @@ import { DARBY_APP_COLORS, darbyAppPlace } from './darbyApp'
 import { DAILY_GOALS, type DailyGoal } from './dailyGoal'
 import { HL_ALL } from './hlColours'
 import { BRAND, NOUN, withArticle } from '@shared/brand'
+import { t, tn } from '@shared/i18n'
 
 export const BACKUP_FORMAT = 'jottings-backup'
 export const BACKUP_VERSION = 1
@@ -156,7 +157,7 @@ function readHistory(doc: Record<string, unknown>): BackupHistory | null {
 }
 
 function fromOwnBackup(doc: Record<string, unknown>): ParsedBackup {
-  if (int(doc.version) !== null && (doc.version as number) > BACKUP_VERSION) throw new Error(`This backup was made by a newer ${BRAND.name}. Update the app, then restore it.`)
+  if (int(doc.version) !== null && (doc.version as number) > BACKUP_VERSION) throw new Error(t('This backup was made by a newer {brand}. Update the app, then restore it.', { brand: BRAND.name }))
   let skipped = 0
   const skip = () => { skipped++ }
   const keep = <T,>(rows: unknown, read: (v: unknown) => T | null, max: number): T[] => {
@@ -217,15 +218,15 @@ function fromDarbyApp(doc: Record<string, unknown>): ParsedBackup {
 
 /** Reads a chosen file. Throws with words for the reader when it is neither kind of backup. */
 export function parseBackup(text: string): ParsedBackup {
-  if (text.length > MAX_FILE_BYTES) throw new Error('This file is too large to be a backup.')
+  if (text.length > MAX_FILE_BYTES) throw new Error(t('This file is too large to be a backup.'))
   let doc: unknown
   // a file saved on Windows may start with a byte-order mark
-  try { doc = JSON.parse(text.replace(/^﻿/, '')) } catch { throw new Error('This file is not a backup: it could not be read.') }
-  if (!isObj(doc)) throw new Error('This file is not a backup.')
+  try { doc = JSON.parse(text.replace(/^﻿/, '')) } catch { throw new Error(t('This file is not a backup: it could not be read.')) }
+  if (!isObj(doc)) throw new Error(t('This file is not a backup.'))
   if (isDarbyApp(doc)) return fromDarbyApp(doc)
   // exports made before 1.0.2 carry no format name but the same keys
   if (doc.format === BACKUP_FORMAT || (isObj(doc.user) && 'exported_at' in doc && Array.isArray(doc.outlines))) return fromOwnBackup(doc)
-  throw new Error(`This file is not ${withArticle(BRAND.name)} backup or a Darby Bible app backup.`)
+  throw new Error(t('This file is not {aBrand} backup or a Darby Bible app backup.', { aBrand: withArticle(BRAND.name), brand: BRAND.name }))
 }
 
 /** The file a device makes when nobody is signed in: the account export's keys, no reading history. */
@@ -243,8 +244,12 @@ export const isEmptyBackup = (p: ParsedBackup): boolean =>
 
 /** "12 bookmarks, 40 highlights, 3 jottings" for the confirmation and the result line; "" when there are none. */
 export function describeCounts(c: { bookmarks: number; highlights: number; jottings: number }): string {
-  const part = (n: number, one: string, many: string) => (n ? `${n.toLocaleString()} ${n === 1 ? one : many}` : '')
-  return [part(c.bookmarks, 'bookmark', 'bookmarks'), part(c.highlights, 'highlight', 'highlights'), part(c.jottings, NOUN.one, NOUN.many)].filter(Boolean).join(', ')
+  const n = (x: number) => ({ n: x.toLocaleString() })
+  return [
+    c.bookmarks ? tn(c.bookmarks, '{n} bookmark', '{n} bookmarks', n(c.bookmarks)) : '',
+    c.highlights ? tn(c.highlights, '{n} highlight', '{n} highlights', n(c.highlights)) : '',
+    c.jottings ? tn(c.jottings, '{n} {one}', '{n} {many}', { ...n(c.jottings), one: NOUN.one, many: NOUN.many }) : '',
+  ].filter(Boolean).join(', ')
 }
 
 /** Two jottings are the same when their titles and every item match; a restore run twice adds nothing the second time. */

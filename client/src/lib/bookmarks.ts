@@ -5,6 +5,7 @@
 import type { Bookmark } from '@shared/types'
 import { BOOKS } from '@shared/books'
 import { formatRef } from '@shared/ref'
+import { N_, t } from '@shared/i18n'
 
 export type BookmarkKind = 'book' | 'chapter' | 'verse'
 export interface BookmarkTarget { book: number; chapter?: number | null; verse?: number | null }
@@ -26,13 +27,13 @@ export function bookmarkTitle(b: BookmarkTarget): string {
 /** Bookmark ids by `bookmarkKey`: what the reader and the picker toggle and mark. */
 export const bookmarkIds = (list: readonly Bookmark[]): Map<string, number> => new Map(list.map(b => [bookmarkKey(b), b.id]))
 
-const GROUPS: readonly { kind: BookmarkKind; title: string }[] = [{ kind: 'book', title: 'Books' }, { kind: 'chapter', title: 'Chapters' }, { kind: 'verse', title: 'Verses' }]
+const GROUPS: readonly { kind: BookmarkKind; title: string }[] = [{ kind: 'book', title: N_('Books') }, { kind: 'chapter', title: N_('Chapters') }, { kind: 'verse', title: N_('Verses') }]
 export interface BookmarkGroup { kind: BookmarkKind; title: string; items: Bookmark[] }
 
-/** Books, Chapters, Verses, only those with something in them, each newest first. */
+/** Books, Chapters, Verses (in the reader's language), only those with something in them, each newest first. */
 export function groupBookmarks(list: readonly Bookmark[]): BookmarkGroup[] {
   const newest = [...list].sort((a, b) => b.created_at.localeCompare(a.created_at))
-  return GROUPS.map(g => ({ ...g, items: newest.filter(b => bookmarkKind(b) === g.kind) })).filter(g => g.items.length > 0)
+  return GROUPS.map(g => ({ ...g, title: t(g.title), items: newest.filter(b => bookmarkKind(b) === g.kind) })).filter(g => g.items.length > 0)
 }
 
 /**

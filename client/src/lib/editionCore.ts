@@ -5,6 +5,7 @@
  * modules can read them: no React Native (tests/edition.test.ts).
  */
 import type { Chapter, Note } from '@shared/types'
+import { peekShownText } from '@shared/texts'
 import { NEUTERED } from './buildFlags'
 
 export type Edition = '1961' | '1890'
@@ -76,19 +77,23 @@ export function noticeSections(e: Edition, intro: { sections: NoticeSection[] },
 /** What the 1890 edition's data is, from client/public/bible1890/meta.json (written by the data build): `v` changes with
  *  its chapters and notices, `text` says it has a text of its own (data/darby_1890.json), `notices` notices of its own. */
 export interface Meta1890 { v: string; text: boolean; notices: boolean }
+/** Where a chapter comes from: the English Darby in an edition, or the French or German Bible (docs/LANGUAGES.md). Each
+ *  is stored, bundled and cached as its own: a chapter of one is never shown as another's. */
+export type Source = Edition | 'fr' | 'de'
+export const SOURCES: readonly Source[] = ['1961', '1890', 'fr', 'de']
 /** A stored chapter's key: the 1961 edition keeps the keys it always had, so nothing stored before is lost. */
-export const chapterStoreKey = (e: Edition, book: number, chapter: number): string => (e === '1961' ? `${book}.${chapter}` : `${e}:${book}.${chapter}`)
-/** The edition and chapter a stored key names; null for anything else. */
-export function parseStoreKey(k: string): { edition: Edition; book: number; chapter: number } | null {
-  const m = /^(?:(1890):)?(\d+)\.(\d+)$/.exec(k)
-  return m ? { edition: m[1] === '1890' ? '1890' : '1961', book: +m[2], chapter: +m[3] } : null
+export const chapterStoreKey = (e: Source, book: number, chapter: number): string => (e === '1961' ? `${book}.${chapter}` : `${e}:${book}.${chapter}`)
+/** The source and chapter a stored key names; null for anything else. */
+export function parseStoreKey(k: string): { edition: Source; book: number; chapter: number } | null {
+  const m = /^(?:(1890|fr|de):)?(\d+)\.(\d+)$/.exec(k)
+  return m ? { edition: (m[1] as Source | undefined) ?? '1961', book: +m[2], chapter: +m[3] } : null
 }
-/** Where the web reads a chapter (and the archive): the 1890 files sit beside the 1961 ones, named by their version so
- *  no cache keeps an older copy. */
-export const chapterPath = (e: Edition, book: number, chapter: number, v: string): string => (e === '1961' ? `/bible/${book}/${chapter}.json` : `/bible1890/${book}/${chapter}.json?v=${v}`)
-export const archivePath = (e: Edition, v: string): string => (e === '1961' ? '/bible/all.json' : `/bible1890/all.json?v=${v}`)
-/** The edition a chapter is of, as it says itself (the 1890 files carry `ed`). */
-export const chapterEdition = (c: { ed?: string }): Edition => (c.ed === '1890' ? '1890' : '1961')
+/** Where the web reads a chapter (and the archive): the 1890 files and the other languages' sit beside the 1961 ones,
+ *  named by their version so no cache keeps an older copy. */
+export const chapterPath = (e: Source, book: number, chapter: number, v: string): string => (e === '1961' ? `/bible/${book}/${chapter}.json` : e === '1890' ? `/bible1890/${book}/${chapter}.json?v=${v}` : `/bible-${e}/${book}/${chapter}.json?v=${v}`)
+export const archivePath = (e: Source, v: string): string => (e === '1961' ? '/bible/all.json' : e === '1890' ? `/bible1890/all.json?v=${v}` : `/bible-${e}/all.json?v=${v}`)
+/** The source a chapter is of, as it says itself (the 1890 files carry `ed`, the other languages' `tx`). */
+export const chapterEdition = (c: { ed?: string; tx?: string }): Source => (c.tx === 'fr' || c.tx === 'de' ? c.tx : c.ed === '1890' ? '1890' : '1961')
 
 type ChapterLike = Chapter & { ed?: '1890' }
 /** One chapter of client/public/bible1890/notes/<book>.json: its notes by verse, or the whole chapter where the 1890
@@ -116,5 +121,7 @@ export function withEdition(path: string, e: Edition = current, cl: boolean = cl
   const p = path.split('?')[0]
   const depends = p === '/ministry/offline' || (p.startsWith('/bible/') && p !== '/bible/books') || p.startsWith('/search') || p.startsWith('/strongs/')
     || p === '/intro' || p === '/chronology' || p.startsWith('/companion/') || (p.startsWith('/ministry') && !p.startsWith('/ministry/offline/'))
-  return depends ? `${path}${path.includes('?') ? '&' : '?'}ed=${e}${cl ? '&cl=1' : ''}` : path
+  // the French or German Bible's verses and search (docs/LANGUAGES.md, rs/src/edition.rs text_tables)
+  const tx = peekShownText() !== 'en' && (p === '/search' || p === '/bible/verses') ? `&tx=${peekShownText()}` : ''
+  return depends ? `${path}${path.includes('?') ? '&' : '?'}ed=${e}${cl ? '&cl=1' : ''}${tx}` : path
 }

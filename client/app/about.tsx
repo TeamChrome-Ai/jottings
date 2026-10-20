@@ -9,10 +9,13 @@ import { LinkRow, Rule, Sc } from '../src/components/ChronologyTable'
 import { parseSection, superscript, type Block, type IntroSection, type Note, type Row, type Span } from '../src/lib/intro'
 import { face, proseStyle } from '../src/theme'
 import { useEdition } from '../src/lib/edition'
+import { useText } from '../src/lib/text'
 import { NEUTERED } from '../src/lib/buildFlags'
 import { hasChronology, noticeSections, type Meta1890, type NoticeSection } from '../src/lib/editionCore'
 import { Card, Enter, H, RADIUS, Screen, T, Tap } from '../src/components/ui'
 import { easeNextLayout, useReduceMotion } from '../src/components/motion/nav'
+import { t, tc } from '@shared/i18n'
+import { tr } from '../src/i18n'
 
 // shipped in this route's chunk (no network); the server's /api/intro serves the same files: the 1961 edition's notices,
 // and the 1890 edition's own when the data has them (client/public/bible1890/notices.json, null without)
@@ -36,7 +39,7 @@ function Inline({ spans, ink, underline = true }: { spans: Span[]; ink: Ink; und
   return spans.map((s, i) => {
     const style = s.italic ? ink.italic : undefined
     if (s.note !== undefined) {
-      return <Text key={i} accessibilityRole="button" accessibilityLabel={`Footnote ${s.note}`} onPress={() => ink.onNote(s.note!)} style={[style, { color: ink.accent }]}>{s.text}</Text>
+      return <Text key={i} accessibilityRole="button" accessibilityLabel={t('Footnote {n}', { n: s.note })} onPress={() => ink.onNote(s.note!)} style={[style, { color: ink.accent }]}>{s.text}</Text>
     }
     if (s.ref) {
       const ref = s.ref
@@ -158,7 +161,7 @@ function SectionBody({ s, ink, bg }: { s: IntroSection; ink: Ink; bg: string }) 
       {s.notes.length ? (
         <View style={{ gap: 6, marginTop: 4 }}>
           <Rule />
-          <Text accessibilityRole="header" style={{ color: ink.muted, fontSize: 13, marginTop: 4, ...face('sans', { bold: true }) }}>Notes</Text>
+          <Text accessibilityRole="header" style={{ color: ink.muted, fontSize: 13, marginTop: 4, ...face('sans', { bold: true }) }}>{tc('footnotes', 'Notes')}</Text>
           {s.notes.map(n => <NoteText key={n.id} note={n} ink={ink2} />)}
         </View>
       ) : null}
@@ -178,6 +181,7 @@ export default function About() {
   const Body = touched ? Enter : View
   // a neutered build (docs/EDITION.md, "Production build") carries the 1890 material only, whatever the server serves
   const live = useEdition()
+  const text = useText()
   const edition = NEUTERED ? '1890' : live
   const sections = useMemo(() => noticeSections(edition, d, own1890).map(s => parseSection(s.title, s.html)), [edition])
   // the reader's font, added fonts included; OpenDyslexic keeps its own floor: line height 1.8, letter spacing 0.03 em
@@ -191,12 +195,21 @@ export default function About() {
   return (
     // one orchestrated moment: the heading and its lead paragraph; the notices below are instant
     <Screen animate={false}>
-      <Stack.Screen options={{ title: 'About' }} />
-      <Enter><H>About this translation</H></Enter>
-      <Enter delay={70}><T muted style={{ lineHeight: 22 }}>J. N. Darby’s <T muted style={face('serif', { italic: true })}>The Holy Scriptures: A New Translation from the Original Languages</T> (New Testament 1884, Old Testament 1890). <T muted style={{ color: c.accent, textDecorationLine: 'underline' }} accessibilityRole="link" onPress={() => router.push('/credits')}>Sources are listed in Credits.</T></T></Enter>
+      <Stack.Screen options={{ title: t('About') }} />
+      <Enter><H>{t('About this translation')}</H></Enter>
+      <Enter delay={70}><T muted style={{ lineHeight: 22 }}>{tr('J. N. Darby’s <i>{title}</i> (New Testament 1884, Old Testament 1890). <link>Sources are listed in Credits.</link>', {
+        i: s => <T muted style={face('serif', { italic: true })}>{s}</T>,
+        link: s => <T muted style={{ color: c.accent, textDecorationLine: 'underline' }} accessibilityRole="link" onPress={() => router.push('/credits')}>{s}</T>,
+      }, { title: 'The Holy Scriptures: A New Translation from the Original Languages' })}</T></Enter>
+      {/* a reader of the French or German Bible: what they read, and that the notices below are the English's */}
+      {text !== 'en' ? (
+        <Enter delay={100}><Card><T muted style={{ lineHeight: 22 }}>{text === 'fr'
+          ? t('You are reading Darby’s French translation (La Sainte Bible, JND v2.0, 2024 edition of Bibles et Publications Chrétiennes, public domain). The notices below are those of his English translation.')
+          : t('You are reading the unrevised Elberfelder Bible, made by Darby with Carl Brockhaus and others (public domain). The notices below are those of Darby’s English translation.')}</T></Card></Enter>
+      ) : null}
       {hasChronology(edition) ? (
         <Card>
-          <LinkRow title="Chronological table" hint="Kings and prophets of Judah and Israel, governors, the kings of Persia" onPress={() => router.push('/chronology')} />
+          <LinkRow title={t('Chronological table')} hint={t('Kings and prophets of Judah and Israel, governors, the kings of Persia')} onPress={() => router.push('/chronology')} />
         </Card>
       ) : null}
       {sections.map((s, i) => {
@@ -218,7 +231,7 @@ export default function About() {
       })}
       {edition === '1961' ? (
         <T small muted>
-          Source: <T small style={{ color: c.accent, textDecorationLine: 'underline' }} accessibilityRole="link" onPress={() => { Linking.openURL(d.source).catch(() => {}) }}>Darby Bible at ccel.org</T>, 1961 edition
+          {tr('Source: <link>Darby Bible at ccel.org</link>, 1961 edition', { link: s => <T small style={{ color: c.accent, textDecorationLine: 'underline' }} accessibilityRole="link" onPress={() => { Linking.openURL(d.source).catch(() => {}) }}>{s}</T> })}
         </T>
       ) : null}
       <View style={{ height: 24 }} />

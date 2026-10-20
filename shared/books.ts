@@ -1,6 +1,18 @@
 // Canonical book table. `n` is 1-based canonical order, used everywhere as the book id.
+import { BOOK_ALIASES, BOOK_NAMES, type NamesLang } from './bookNames.js'
+
 export type Testament = 'OT' | 'NT'
-export interface BookMeta { n: number; name: string; abbr: string; osis: string; testament: Testament; chapters: number; aliases: string[] }
+/**
+ * `name` and `abbr` are in the language the app writes book names in (setNamesLang, docs/LANGUAGES.md), `refName` is the
+ * name a reference uses ("Psaume 23" of "Psaumes"); `nameEn` and `abbrEn` are always the English, and `chapters` is the
+ * English Darby's count, which every Bible here is kept in.
+ */
+export interface BookMeta { n: number; readonly name: string; readonly abbr: string; readonly refName: string; nameEn: string; abbrEn: string; osis: string; testament: Testament; chapters: number; aliases: string[] }
+
+let namesLang: NamesLang = 'en'
+/** The language book names are written in: the app's (Canadian French writes them as French). */
+export function setNamesLang(l: NamesLang): void { namesLang = l }
+export const peekNamesLang = (): NamesLang => namesLang
 
 const raw: [string, string, string, Testament, number, string[]][] = [
   ['Genesis','Gen','Gen','OT',50,['ge','gn']],['Exodus','Ex','Exod','OT',40,['exo','exod']],['Leviticus','Lev','Lev','OT',27,['le','lv']],
@@ -28,24 +40,42 @@ const raw: [string, string, string, Testament, number, string[]][] = [
   ['Revelation','Rev','Rev','NT',22,['re','rv','apocalypse','revelations']],
 ]
 
-export const BOOKS: BookMeta[] = raw.map(([name, abbr, osis, testament, chapters, aliases], i) => ({ n: i + 1, name, abbr, osis, testament, chapters, aliases }))
+const own = (n: number) => (namesLang === 'en' ? undefined : BOOK_NAMES[namesLang][n - 1])
+export const BOOKS: BookMeta[] = raw.map(([name, abbr, osis, testament, chapters, aliases], i) => ({
+  n: i + 1, nameEn: name, abbrEn: abbr, osis, testament, chapters, aliases,
+  get name() { return own(i + 1)?.[0] ?? name },
+  get abbr() { return own(i + 1)?.[1] ?? abbr },
+  get refName() { const o = own(i + 1); return o ? o[2] ?? o[0] : name },
+}))
 export const bookByN = (n: number): BookMeta | undefined => BOOKS[n - 1]
 
-const norm = (s: string) => s.toLowerCase().replace(/[.\s]+/g, '').replace(/^(i{1,3})(?=[a-z])/, m => String(m.length)).replace(/^(first|1st)/, '1').replace(/^(second|2nd)/, '2').replace(/^(third|3rd)/, '3')
+/** A name as lookups compare it: lower case, no accents, no dots or spaces, "I/first" → 1. */
+const norm = (s: string) => (typeof s.normalize === 'function' ? s.normalize('NFD') : s).replace(/\p{M}/gu, '').toLowerCase().replace(/[.\s]+/g, '').replace(/^(i{1,3})(?=[a-z])/, m => String(m.length)).replace(/^(first|1st)/, '1').replace(/^(second|2nd)/, '2').replace(/^(third|3rd)/, '3')
 
 const lookup = new Map<string, BookMeta>()
 for (const b of BOOKS) {
-  for (const key of [b.name, b.abbr, b.osis, ...b.aliases]) lookup.set(norm(key), b)
+  for (const key of [b.nameEn, b.abbrEn, b.osis, ...b.aliases]) lookup.set(norm(key), b)
 }
+/** Each other language's names, short forms and aliases; read before the English, so "Mc" is Marc in French. */
+const lookupIn = Object.fromEntries((Object.keys(BOOK_NAMES) as Exclude<NamesLang, 'en'>[]).map(l => {
+  const m = new Map<string, BookMeta>()
+  BOOK_NAMES[l].forEach(([name, abbr, ref], i) => {
+    for (const key of [name, abbr, ...(ref ? [ref] : []), ...(BOOK_ALIASES[l]?.[i + 1] ?? [])]) m.set(norm(key), BOOKS[i])
+  })
+  return [l, m]
+})) as Record<Exclude<NamesLang, 'en'>, Map<string, BookMeta>>
+const ownNames = (l: NamesLang): string[] => (l === 'en' ? [] : BOOK_NAMES[l].map(([name]) => norm(name)))
+
 // prefix index for partial names ("gene", "1 co")
 export function findBook(text: string): BookMeta | undefined {
   const k = norm(text)
   if (!k) return undefined
-  const exact = lookup.get(k)
+  const exact = (namesLang !== 'en' ? lookupIn[namesLang].get(k) : undefined) ?? lookup.get(k)
   if (exact) return exact
   if (k.length < 2) return undefined
-  const hits = BOOKS.filter(b => norm(b.name).startsWith(k))
-  return hits.length === 1 ? hits[0] : hits[0]
+  const mine = ownNames(namesLang).findIndex(n => n.startsWith(k))
+  if (mine >= 0) return BOOKS[mine]
+  return BOOKS.find(b => norm(b.nameEn).startsWith(k))
 }
 
 /** Optimal-string-alignment distance: insert, delete, substitute, or swap two neighbours ("jhon" → "john" = 1). */
@@ -60,7 +90,9 @@ export function editDistance(a: string, b: string): number {
   return d[m][n]
 }
 
-const KEYS: { key: string; book: BookMeta; primary: boolean }[] = BOOKS.flatMap(b => [{ key: norm(b.name), book: b, primary: true }, ...[b.abbr, b.osis, ...b.aliases].map(a => ({ key: norm(a), book: b, primary: false }))])
+const KEYS_EN: { key: string; book: BookMeta; primary: boolean }[] = BOOKS.flatMap(b => [{ key: norm(b.nameEn), book: b, primary: true }, ...[b.abbrEn, b.osis, ...b.aliases].map(a => ({ key: norm(a), book: b, primary: false }))])
+/** The keys a misspelling is measured against: the app's language's names first, then the English. */
+const keysOf = (l: NamesLang) => (l === 'en' ? KEYS_EN : [...BOOK_NAMES[l].map(([name], i) => ({ key: norm(name), book: BOOKS[i], primary: true })), ...KEYS_EN])
 
 /**
  * A misspelt book name ("Jhon", "Pslams", "Galations", "Revalation"): the closest name, abbreviation or alias within
@@ -74,7 +106,7 @@ export function findBookFuzzy(text: string): BookMeta | undefined {
   if (k.length < 4) return undefined
   const max = k.length <= 5 ? 1 : 2
   let best: { d: number; book: BookMeta; primary: boolean }[] = []
-  for (const { key, book, primary } of KEYS) {
+  for (const { key, book, primary } of keysOf(namesLang)) {
     if (Math.abs(key.length - k.length) > max) continue
     const d = editDistance(k, key)
     if (d > max) continue

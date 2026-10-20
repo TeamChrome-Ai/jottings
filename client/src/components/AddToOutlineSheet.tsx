@@ -6,6 +6,7 @@ import { addVersesToOutline } from '../lib/outlines'
 import { jottingTitle } from '../lib/jot'
 import { Button, Chip, ErrorText, Input, Sheet, T } from './ui'
 import { NOUN } from '@shared/brand'
+import { t, tc } from '@shared/i18n'
 
 /**
  * Jot: the selected verses into a jotting, with a note. The note field is ready to type when the sheet opens and the
@@ -41,24 +42,24 @@ export default function AddToOutlineSheet({ open, book, chapter, verses, onDone 
   return (
     <Sheet open={open} onClose={() => onDone(null)} title={NOUN.verb}>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled">
-        <Input placeholder="What strikes you about these verses?" accessibilityLabel="Note" value={note} onChangeText={setNote} multiline autoFocus
+        <Input placeholder={t('What strikes you about these verses?')} accessibilityLabel={tc('noun', 'Note')} value={note} onChangeText={setNote} multiline autoFocus
           style={{ minHeight: 96, textAlignVertical: 'top' }} />
         {list.length > 0 ? (
           <View style={{ gap: 6 }}>
-            <T small muted>Add to</T>
+            <T small muted>{t('Add to')}</T>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 8 }}>
-              <Chip tab label={`New ${NOUN.one}`} on={target === null} onPress={() => setTarget(null)} />
+              <Chip tab label={t('New {one}', { one: NOUN.one })} on={target === null} onPress={() => setTarget(null)} />
               {list.map(o => <Chip key={o.id} tab label={short(o.title)} accessibilityLabel={o.title} on={target?.id === o.id} onPress={() => setTarget(o)} />)}
             </ScrollView>
           </View>
         ) : null}
         {/* the button drops under the field when both do not fit (a small phone, large system text) */}
         {target ? (
-          <View style={{ flexDirection: 'row' }}><Button primary title={`Add to “${short(target.title)}”`} accessibilityLabel={`Add to ${target.title}`} disabled={busy} onPress={() => { void add(target) }} style={{ maxWidth: '100%' }} /></View>
+          <View style={{ flexDirection: 'row' }}><Button primary title={t('Add to “{title}”', { title: short(target.title) })} accessibilityLabel={t('Add to {title}', { title: target.title })} disabled={busy} onPress={() => { void add(target) }} style={{ maxWidth: '100%' }} /></View>
         ) : (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <Input placeholder={`New ${NOUN.one} title`} value={title} onChangeText={setTitle} style={{ flexGrow: 1, flexBasis: 180 }} />
-            <Button primary title="Create & add" disabled={busy || !title.trim()} onPress={create} />
+            <Input placeholder={t('New {one} title', { one: NOUN.one })} value={title} onChangeText={setTitle} style={{ flexGrow: 1, flexBasis: 180 }} />
+            <Button primary title={t('Create & add')} disabled={busy || !title.trim()} onPress={create} />
           </View>
         )}
         {err ? <ErrorText>{err}</ErrorText> : null}

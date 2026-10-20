@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Platform, View } from 'react-native'
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router'
 import { inviteToken } from '@shared/friends'
+import { t, tc, tn } from '@shared/i18n'
 import { useAuth } from '../../src/store/auth'
 import { useToast } from '../../src/store/toast'
 import { errMsg, fmtWhen, useLoad } from '../../src/lib/community'
@@ -34,12 +35,12 @@ export default function FriendsScreen() {
   const token = raw ? inviteToken(raw) : null
   return (
     <Screen animate={false}>
-      <Stack.Screen options={{ title: 'Friends' }} />
+      <Stack.Screen options={{ title: t('Friends') }} />
       {!ready ? <Spinner /> : null}
       {ready && !user ? (
         <Enter>
-          <SignInCard ref={tourRef('friends-signin')} title="Read alongside friends" text="Friends see each other’s streak, week and badges. No messages, and nobody finds you without your handle.">
-            {token ? <T small muted>The invite code you opened will be waiting after you sign in.</T> : null}
+          <SignInCard ref={tourRef('friends-signin')} title={t('Read alongside friends')} text={t('Friends see each other’s streak, week and badges. No messages, and nobody finds you without your handle.')}>
+            {token ? <T small muted>{t('The invite code you opened will be waiting after you sign in.')}</T> : null}
           </SignInCard>
         </Enter>
       ) : null}
@@ -63,13 +64,13 @@ function Signed({ token, clearToken, uid }: { token: string | null; clearToken: 
   // the invites on screen are seen: never announced later; one arriving while the screen is open joins the list
   useEffect(() => { if (data) noteInvitesShown(data.incoming) }, [data])
   useEffect(() => onInviteNews(() => reload()), [reload])
-  const befriended = (id: number, name: string) => { friends.expect(id); setMade(s => new Set([...s, id])); toast.show(`You and ${name} are friends`); reload() }
+  const befriended = (id: number, name: string) => { friends.expect(id); setMade(s => new Set([...s, id])); toast.show(t('You and {name} are friends', { name })); reload() }
   useEffect(() => {
     // someone accepted an invite of yours since this device last looked: a quiet word, once
     if (!data || fresh.size === 0) return
     // not the ones made here: this device already said "You and … are friends"
     const names = data.friends.filter(f => fresh.has(f.id) && !made.has(f.id)).map(f => f.display_name)
-    if (names.length) toast.show(names.length === 1 ? `${names[0]} accepted your invite` : `${names.length} new friends`)
+    if (names.length) toast.show(names.length === 1 ? t('{name} accepted your invite', { name: names[0] }) : tn(names.length, '{n} new friend', '{n} new friends'))
     // once per arrival set
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fresh])
@@ -81,7 +82,7 @@ function Signed({ token, clearToken, uid }: { token: string | null; clearToken: 
       {data && moments ? (
         <>
           <Incoming data={data} onAccepted={befriended} mutate={mutate} />
-          {data.friends.length ? <Enter rise={6}><H2>Your friends</H2></Enter> : null}
+          {data.friends.length ? <Enter rise={6}><H2>{t('Your friends')}</H2></Enter> : null}
           {data.friends.map((f, i) => (
             <MotionItem key={f.id} {...friends.modeFor(f.id, i, true)} gap={GAP}>
               {/* the full tour points at the first friend's card: the friend streak */}
@@ -91,13 +92,13 @@ function Signed({ token, clearToken, uid }: { token: string | null; clearToken: 
             </MotionItem>
           ))}
           {data.friends.length === 0 && data.incoming.length === 0 ? (
-            <Enter><T muted>No friends yet. Invite someone by their handle, or show them your code to scan.</T></Enter>
+            <Enter><T muted>{t('No friends yet. Invite someone by their handle, or show them your code to scan.')}</T></Enter>
           ) : null}
           <AddFriend data={data} onSent={reload} onCode={() => setCode(true)} onFriend={(id, name) => befriended(id, name)} />
           <Outgoing data={data} mutate={mutate} />
           <Enter delay={200}>
             <Card style={{ gap: 0, paddingVertical: 8 }}>
-              <ListRow icon="sliders" label="Friends settings" detail="Invites, what friends see, reactions" onPress={() => setSettings(true)} />
+              <ListRow icon="sliders" label={t('Friends settings')} detail={t('Invites, what friends see, reactions')} onPress={() => setSettings(true)} />
             </Card>
           </Enter>
         </>
@@ -120,27 +121,27 @@ function TokenInvite({ token, onDone }: { token: string; onDone: (friendId: numb
     try {
       const r = await redeemToken(token)
       if (r.status === 'friends') onDone(r.friend.id, r.friend.display_name)
-      else { toast.show(`Invite sent to ${r.friend.display_name}`); onDone(null, r.friend.display_name) }
+      else { toast.show(t('Invite sent to {name}', { name: r.friend.display_name })); onDone(null, r.friend.display_name) }
     } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
   return (
     <Enter>
       <Card>
         {!who && !err ? <Spinner /> : null}
-        {err ? <><ErrorText>{err}</ErrorText><Button small title="Close" onPress={() => onDone(null, '')} style={{ alignSelf: 'flex-start' }} /></> : null}
+        {err ? <><ErrorText>{err}</ErrorText><Button small title={tc('verb', 'Close')} onPress={() => onDone(null, '')} style={{ alignSelf: 'flex-start' }} /></> : null}
         {who ? (
           <>
             <Row style={{ flexWrap: 'nowrap', gap: 12 }}>
               <Avatar name={who.display_name} avatar={who.avatar} size={44} />
               <View style={{ flex: 1 }}>
                 <T bold>{who.display_name}</T>
-                <T small muted>@{who.handle} shared an invite code with you</T>
+                <T small muted>{t('@{handle} shared an invite code with you', { handle: who.handle })}</T>
               </View>
             </Row>
-            {who.friends ? <T small muted>You are already friends.</T> : (
+            {who.friends ? <T small muted>{t('You are already friends.')}</T> : (
               <Row>
-                <Button primary title={busy ? 'Sending…' : 'Send an invite'} disabled={busy} onPress={() => { void send() }} />
-                <Button title="Not now" onPress={() => onDone(null, '')} />
+                <Button primary title={busy ? t('Sending…') : t('Send an invite')} disabled={busy} onPress={() => { void send() }} />
+                <Button title={t('Not now')} onPress={() => onDone(null, '')} />
               </Row>
             )}
           </>
@@ -175,7 +176,7 @@ function Incoming({ data, onAccepted, mutate }: { data: FriendsOverview; onAccep
   return (
     <MotionItem leaving={last} gap={GAP} onGone={() => data.incoming.forEach(gone)}>
       <View style={{ gap: GAP }}>
-      <H2>Invites for you</H2>
+      <H2>{t('Invites for you')}</H2>
       {data.incoming.map((inv, i) => (
         <MotionItem key={inv.id} {...arrivals.modeFor(inv.id, i, true)} gap={GAP} leaving={!last && leaving.has(inv.id)}
           onGone={() => gone(inv)}>
@@ -184,12 +185,12 @@ function Incoming({ data, onAccepted, mutate }: { data: FriendsOverview; onAccep
               <Avatar name={inv.from.display_name} avatar={inv.from.avatar} size={44} />
               <View style={{ flex: 1 }}>
                 <T bold numberOfLines={1}>{inv.from.display_name}</T>
-                <T small muted>@{inv.from.handle} · {inv.via === 'qr' ? 'scanned your code' : inv.via === 'contacts' ? 'from contacts' : 'invited you'} {fmtWhen(inv.created_at)}</T>
+                <T small muted>@{inv.from.handle} · {inv.via === 'qr' ? t('scanned your code {when}', { when: fmtWhen(inv.created_at) }) : inv.via === 'contacts' ? t('from contacts {when}', { when: fmtWhen(inv.created_at) }) : t('invited you {when}', { when: fmtWhen(inv.created_at) })}</T>
               </View>
             </Row>
             <Row>
-              <Button primary small title={busy === inv.id ? 'Accepting…' : 'Accept'} disabled={busy !== null} onPress={() => { void act(inv, true) }} />
-              <Button small title="Decline" disabled={busy !== null} onPress={() => { void act(inv, false) }} />
+              <Button primary small title={busy === inv.id ? t('Accepting…') : t('Accept')} disabled={busy !== null} onPress={() => { void act(inv, true) }} />
+              <Button small title={t('Decline')} disabled={busy !== null} onPress={() => { void act(inv, false) }} />
             </Row>
           </Card>
         </MotionItem>
@@ -224,25 +225,25 @@ function AddFriend({ data, onSent, onCode, onFriend }: { data: FriendsOverview; 
   }
   return (
     <Enter delay={120} style={{ gap: 12 }}>
-      <H2 hint="Only someone who knows your handle, or scans your code, can invite you">Add a friend</H2>
+      <H2 hint={t('Only someone who knows your handle, or scans your code, can invite you')}>{t('Add a friend')}</H2>
       <Card ref={tourRef('friends-add')}>
         <Row style={{ flexWrap: 'nowrap' }}>
           <View style={{ flex: 1, justifyContent: 'center' }}>
-            <Input value={handle} onChangeText={t => { setHandle(t); setErr(null) }} placeholder="@handle" autoCapitalize="none" autoCorrect={false}
-              autoComplete="off" onSubmitEditing={() => { void send() }} accessibilityLabel="Their handle, exactly" maxLength={25} style={{ paddingLeft: 14, minWidth: 0 }} />
+            <Input value={handle} onChangeText={v => { setHandle(v); setErr(null) }} placeholder={t('@handle')} autoCapitalize="none" autoCorrect={false}
+              autoComplete="off" onSubmitEditing={() => { void send() }} accessibilityLabel={t('Their handle, exactly')} maxLength={25} style={{ paddingLeft: 14, minWidth: 0 }} />
           </View>
-          <Button primary title={busy ? 'Sending…' : 'Invite'} disabled={busy || !handle.trim()} onPress={() => { void send() }} />
+          <Button primary title={busy ? t('Sending…') : tc('verb', 'Invite')} disabled={busy || !handle.trim()} onPress={() => { void send() }} />
         </Row>
         {err ? <ErrorText>{err}</ErrorText> : null}
-        {sent ? <Swap k={String(sent.n)}><T small muted>Invite sent to @{sent.handle}. It shows below until they answer or it lapses in {data.invite_days} days.</T></Swap> : <T small muted>Their handle exactly; there is no search.</T>}
+        {sent ? <Swap k={String(sent.n)}><T small muted>{tn(data.invite_days, 'Invite sent to @{handle}. It shows below until they answer or it lapses in {n} day.', 'Invite sent to @{handle}. It shows below until they answer or it lapses in {n} days.', { handle: sent.handle })}</T></Swap> : <T small muted>{t('Their handle exactly; there is no search.')}</T>}
         <Row>
-          <Button small lead="qr" title="Show my code" accessibilityLabel="Show my invite code" onPress={onCode} />
-          {native ? <Button small lead="scan" title="Scan a code" accessibilityLabel="Scan a friend’s code" onPress={() => router.push('/friends/scan')} /> : null}
+          <Button small lead="qr" title={t('Show my code')} accessibilityLabel={t('Show my invite code')} onPress={onCode} />
+          {native ? <Button small lead="scan" title={t('Scan a code')} accessibilityLabel={t('Scan a friend’s code')} onPress={() => router.push('/friends/scan')} /> : null}
         </Row>
-        {!data.settings.invites ? <T small muted>Invites to you are off in Friends settings. You can still invite others.</T> : null}
+        {!data.settings.invites ? <T small muted>{t('Invites to you are off in Friends settings. You can still invite others.')}</T> : null}
       </Card>
       <Card style={{ gap: 0, paddingVertical: 8 }}>
-        <ListRow icon="contacts" label={native ? 'Find friends from my contacts' : 'Contacts'} detail={native ? 'Only people who chose to be found. Your contacts stay on this phone' : `Let contacts find me: ${data.discoverable ? 'on' : 'off'}`} onPress={() => router.push('/friends/contacts')} />
+        <ListRow icon="contacts" label={native ? t('Find friends from my contacts') : t('Contacts')} detail={native ? t('Only people who chose to be found. Your contacts stay on this phone') : data.discoverable ? t('Let contacts find me: on') : t('Let contacts find me: off')} onPress={() => router.push('/friends/contacts')} />
       </Card>
     </Enter>
   )
@@ -256,16 +257,16 @@ function Outgoing({ data, mutate }: { data: FriendsOverview; mutate: (fn: (d: Fr
   if (!data.outgoing.length) return null
   return (
     <>
-      <H2 hint={`Until they answer, or for ${data.invite_days} days`}>Invites sent</H2>
+      <H2 hint={tn(data.invite_days, 'Until they answer, or for {n} day', 'Until they answer, or for {n} days')}>{t('Invites sent')}</H2>
       <Card style={{ gap: 0, paddingVertical: 6 }}>
         {data.outgoing.map((o, i) => (
           <MotionItem key={o.id} {...arrivals.modeFor(o.id, i, true)} leaving={leaving.has(o.id)} onGone={() => mutate(d => ({ ...d, outgoing: d.outgoing.filter(x => x.id !== o.id) }))}>
             <Row style={{ flexWrap: 'nowrap', minHeight: 48, gap: 12 }}>
               <View style={{ flex: 1 }}>
                 <T numberOfLines={1}>@{o.handle}</T>
-                <T small muted>Sent {fmtWhen(o.created_at)}</T>
+                <T small muted>{t('Sent {when}', { when: fmtWhen(o.created_at) })}</T>
               </View>
-              <Tap onPress={() => { cancelInvite(o.id).then(() => setLeaving(s => new Set([...s, o.id]))).catch(() => {}) }} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Cancel the invite to @${o.handle}`}
+              <Tap onPress={() => { cancelInvite(o.id).then(() => setLeaving(s => new Set([...s, o.id]))).catch(() => {}) }} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('Cancel the invite to @{handle}', { handle: o.handle })}
                 style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg }}>
                 <Icon name="x" size={16} color={c.muted} />
               </Tap>

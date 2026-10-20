@@ -1,6 +1,7 @@
 import { View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { presentFriendStreak } from '@shared/friends'
+import { t, tn } from '@shared/i18n'
 import { firstName, type Friend, type FriendsOverview } from '../../lib/friends'
 import { useInks } from '../../hooks/useTheme'
 import Avatar from '../Avatar'
@@ -22,10 +23,10 @@ export default function HomeFriends({ data, uid, delay = 0 }: { data: FriendsOve
   const n = data.incoming.length
   const shown = data.friends.slice(0, SHOWN)
   return (
-    <Card onPress={() => router.push('/friends')} accessibilityLabel={`Friends${n ? `, ${n} ${n === 1 ? 'invite' : 'invites'} waiting` : ''}`} style={{ gap: 12 }}>
+    <Card onPress={() => router.push('/friends')} accessibilityLabel={n ? tn(n, 'Friends, {n} invite waiting', 'Friends, {n} invites waiting') : t('Friends')} style={{ gap: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <T bold style={{ flex: 1 }}>Friends</T>
-        {n ? <T small accent bold>{n} {n === 1 ? 'invite' : 'invites'} waiting</T> : null}
+        <T bold style={{ flex: 1 }}>{t('Friends')}</T>
+        {n ? <T small accent bold>{tn(n, '{n} invite waiting', '{n} invites waiting')}</T> : null}
         <Icon name="chevron" size={18} color={c.muted} />
       </View>
       {moments ? shown.map((f, i) => (
@@ -33,8 +34,8 @@ export default function HomeFriends({ data, uid, delay = 0 }: { data: FriendsOve
           <Line f={f} moment={moments[f.id] ?? null} delay={delay + 160 + i * 34} />
         </Stagger>
       )) : null}
-      {data.friends.length > SHOWN ? <T small muted>and {data.friends.length - SHOWN} more</T> : null}
-      {data.friends.length === 0 ? <T small muted>No friends yet: answer the invite, or add someone by their handle.</T> : null}
+      {data.friends.length > SHOWN ? <T small muted>{tn(data.friends.length - SHOWN, 'and {n} more', 'and {n} more')}</T> : null}
+      {data.friends.length === 0 ? <T small muted>{t('No friends yet: answer the invite, or add someone by their handle.')}</T> : null}
     </Card>
   )
 }

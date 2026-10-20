@@ -4,10 +4,10 @@ import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { isWholeChapter, paragraphAnchors, paragraphFor, paragraphsOf, sectionForVerse, workLine, type AuthorId, type ChapterText } from '@shared/companion'
 import { MINISTRY_AUTHORS, type MinistryGroup, type MinistryItem } from '@shared/ministry'
-import { formatVerseRuns } from '@shared/ref'
+import { formatRef, formatVerseRuns } from '@shared/ref'
+import { t } from '@shared/i18n'
 import { loadCompanionChapter } from '../lib/companion'
 import { loadMinistryRefs, ministryUnavailable } from '../lib/ministry'
-import { book as bookMeta } from '../lib/bible'
 import { TURN_DX } from '../lib/motionTiming'
 import { useReadingFont } from '../hooks/useReadingFont'
 import { useInks } from '../hooks/useTheme'
@@ -82,7 +82,7 @@ export default function MinistrySheet({ open, scope, onClose }: { open: boolean;
   if (open && !wasOpen.current && scope) shown.current = { scope, n: shown.current.n + 1 }
   wasOpen.current = open
   const s = shown.current.scope
-  const title = !s ? '' : s.kind === 'verse' ? formatVerseRuns(s.book, s.chapter, s.verses) : `${bookMeta(s.book).name} ${s.chapter}`
+  const title = !s ? '' : s.kind === 'verse' ? formatVerseRuns(s.book, s.chapter, s.verses) : formatRef({ book: s.book, chapter: s.chapter })
   return (
     <Sheet open={open} onClose={onClose} title={title}>
       {s && shown.current.n ? <Lists key={shown.current.n} scope={s} onClose={onClose} /> : null}
@@ -144,8 +144,8 @@ function Lists({ scope, onClose }: { scope: MinistryScope; onClose: () => void }
     router.push({ pathname: '/companion', params: { author: g.author, work: item.work.id, n: String(item.n), p: String(item.para), from } })
   }
   const two = !!groups && groups.length > 1
-  const body = groups === undefined ? <Spinner /> : groups === null ? <ErrorText>{ministryUnavailable}</ErrorText>
-    : !group ? <T muted>{scope.kind === 'verse' ? 'Nothing on this verse yet.' : 'Nothing on this chapter yet.'}</T> : (
+  const body = groups === undefined ? <Spinner /> : groups === null ? <ErrorText>{t(ministryUnavailable)}</ErrorText>
+    : !group ? <T muted>{scope.kind === 'verse' ? t('Nothing on this verse yet.') : t('Nothing on this chapter yet.')}</T> : (
       <>
         <FadeSwap k={`${group.author}#${group.page}`} dx={dir * TURN_DX}>
           <Card style={{ gap: 0, paddingVertical: 4 }}>

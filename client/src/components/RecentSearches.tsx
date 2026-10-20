@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { View } from 'react-native'
+import { t } from '@shared/i18n'
 import { useInks } from '../hooks/useTheme'
 import Icon from './Icon'
 import { T, Tap } from './ui'
@@ -12,17 +13,17 @@ export default function RecentSearches({ items, onPick, onRemove }: { items: rea
   if (!items.length) return null
   return (
     <View>
-      <Tap onPress={() => setOpen(o => !o)} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={open ? 'Hide recent searches' : 'Recent searches'}
+      <Tap onPress={() => setOpen(o => !o)} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={open ? t('Hide recent searches') : t('Recent searches')}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, alignSelf: 'flex-start' }}>
-        <T small muted>Recent searches</T>
+        <T small muted>{t('Recent searches')}</T>
         <Icon name={open ? 'up' : 'down'} size={16} color={c.muted} />
       </Tap>
       {open ? items.map(q => (
         <View key={q} style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Tap onPress={() => onPick(q)} accessibilityRole="link" accessibilityLabel={`Search ${q}`} style={{ flex: 1, paddingVertical: 10 }}>
+          <Tap onPress={() => onPick(q)} accessibilityRole="link" accessibilityLabel={t('Search {query}', { query: q })} style={{ flex: 1, paddingVertical: 10 }}>
             <T numberOfLines={1}>{q}</T>
           </Tap>
-          <Tap onPress={() => onRemove(q)} hitSlop={10} scaleTo={0.86} accessibilityRole="button" accessibilityLabel={`Remove ${q} from recent searches`} style={{ padding: 8 }}>
+          <Tap onPress={() => onRemove(q)} hitSlop={10} scaleTo={0.86} accessibilityRole="button" accessibilityLabel={t('Remove {query} from recent searches', { query: q })} style={{ padding: 8 }}>
             <Icon name="x" size={18} color={c.muted} />
           </Tap>
         </View>

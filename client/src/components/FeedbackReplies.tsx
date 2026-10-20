@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AppState } from 'react-native'
+import { t } from '@shared/i18n'
 import { markRepliesSeen, myReplies, type MyReply } from '../lib/feedback'
 import { useAuth } from '../store/auth'
 import { SheetBody } from './CommunityBits'
@@ -30,15 +31,15 @@ export default function FeedbackReplies() {
   }, [ready, user?.id])  // eslint-disable-line react-hooks/exhaustive-deps
   const close = () => { setShown(null); markRepliesSeen().catch(() => {}) }
   return (
-    <Sheet open={!!shown?.length} onClose={close} title={shown && shown.length > 1 ? 'Answers to your feedback' : 'An answer to your feedback'}>
+    <Sheet open={!!shown?.length} onClose={close} title={shown && shown.length > 1 ? t('Answers to your feedback') : t('An answer to your feedback')}>
       <SheetBody>
         {(shown ?? []).map(r => (
           <Card key={r.id}>
-            <T small muted numberOfLines={3}>You wrote: “{r.message}”</T>
+            <T small muted numberOfLines={3}>{t('You wrote: “{message}”', { message: r.message })}</T>
             <T selectable>{r.reply}</T>
           </Card>
         ))}
-        <Button title="OK" primary onPress={close} />
+        <Button title={t('OK')} primary onPress={close} />
       </SheetBody>
     </Sheet>
   )

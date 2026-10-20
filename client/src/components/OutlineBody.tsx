@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Linking, Pressable, Text, View } from 'react-native'
 import type { Outline, OutlineItem } from '@shared/types'
 import { formatRef, refKey, type Ref } from '@shared/ref'
+import { t } from '@shared/i18n'
 import { MAX_DEPTH, itemRef, openRef, type VerseRow } from '../lib/outlines'
 import { loadLinkPreview, type LinkPreview } from '../lib/linkPreview'
 import { usePlayer } from '../store/player'
@@ -107,7 +108,7 @@ function Listen({ passage, label }: { passage: Ref; label: string }) {
     const before = was.current
     was.current = player.status
     if (!asked) return
-    if (player.status === 'error') { toast.show(player.error || 'Could not read this aloud'); setAsked(false) }
+    if (player.status === 'error') { toast.show(player.error || t('Could not read this aloud')); setAsked(false) }
     // done, stopped, or taken over by another passage
     else if ((player.status === 'idle' && before !== 'idle') || (player.status !== 'idle' && !mine)) setAsked(false)
   }, [asked, mine, player.status, player.error, toast])
@@ -118,7 +119,7 @@ function Listen({ passage, label }: { passage: Ref; label: string }) {
     setAsked(true)
   }
   return (
-    <Pressable onPress={press} hitSlop={10} accessibilityRole="button" accessibilityLabel={on ? `Stop reading ${label}` : `Listen to ${label}`} accessibilityState={{ selected: on }}
+    <Pressable onPress={press} hitSlop={10} accessibilityRole="button" accessibilityLabel={on ? t('Stop reading {ref}', { ref: label }) : t('Listen to {ref}', { ref: label })} accessibilityState={{ selected: on }}
       style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? c.accentSoft : 'transparent' }}>
       <Icon name="speaker" size={17} color={on ? c.accent : c.muted} fill={on} />
     </Pressable>

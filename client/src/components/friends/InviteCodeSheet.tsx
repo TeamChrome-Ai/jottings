@@ -12,6 +12,7 @@ import { Button, Card, Enter, ErrorText, Grow, Row, Sheet, Spinner, T, useSheetA
 import Avatar from '../Avatar'
 import { QrCode } from './QrCode'
 import { BRAND } from '@shared/brand'
+import { t } from '@shared/i18n'
 
 const CODE = 232
 const POLL_MS = 2500
@@ -22,7 +23,7 @@ const POLL_MS = 2500
  */
 export default function InviteCodeSheet({ open, onClose, onFriend }: { open: boolean; onClose: () => void; onFriend?: (p: Person) => void }) {
   return (
-    <Sheet open={open} onClose={onClose} title="Your invite code">
+    <Sheet open={open} onClose={onClose} title={t('Your invite code')}>
       {open ? <Body onClose={onClose} onFriend={onFriend} /> : null}
     </Sheet>
   )
@@ -67,8 +68,8 @@ function Body({ onClose, onFriend }: { onClose: () => void; onFriend?: (p: Perso
   }, [tok, expired, scanned, done])
   const url = tok ? inviteUrl(tok.path) : ''
   const share = async () => {
-    const r = await shareText({ title: `Be friends on ${BRAND.name}`, message: `Be my friend on ${BRAND.name}. This link works once, for 10 minutes:`, url })
-    if (r === 'copied') toast.show('Link copied')
+    const r = await shareText({ title: t('Be friends on {brand}', { brand: BRAND.name }), message: t('Be my friend on {brand}. This link works once, for 10 minutes:', { brand: BRAND.name }), url })
+    if (r === 'copied') toast.show(t('Link copied'))
   }
   const accept = async () => {
     if (!scanned) return
@@ -76,13 +77,13 @@ function Body({ onClose, onFriend }: { onClose: () => void; onFriend?: (p: Perso
     try {
       const r = await acceptInvite(scanned.id)
       setDone(r.friend); onFriend?.(r.friend)
-      toast.show(`You and ${r.friend.display_name} are friends`)
+      toast.show(t('You and {name} are friends', { name: r.friend.display_name }))
     } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
   const mins = Math.floor(left / 60), secs = String(left % 60).padStart(2, '0')
   return (
     <View style={{ paddingHorizontal: 20, paddingBottom: 8, gap: 14, alignItems: 'center' }}>
-      <T small muted style={{ alignSelf: 'stretch' }}>Let a friend scan this with {BRAND.name}, or share the link. It works once, for 10 minutes.</T>
+      <T small muted style={{ alignSelf: 'stretch' }}>{t('Let a friend scan this with {brand}, or share the link. It works once, for 10 minutes.', { brand: BRAND.name })}</T>
       {err ? <View style={{ alignSelf: 'stretch' }}><ErrorText>{err}</ErrorText></View> : null}
       {/* the code's place is held from the first frame, so the sheet rises once to its full height */}
       <View style={{ width: CODE, height: CODE }}>
@@ -92,38 +93,38 @@ function Body({ onClose, onFriend }: { onClose: () => void; onFriend?: (p: Perso
               <QrCode text={url} size={CODE} reveal={tok.token} dim={expired || !!scanned || !!done} />
               {expired && !scanned && !done ? (
                 <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-                  <Button primary small title="New code" onPress={make} />
+                  <Button primary small title={t('New code')} onPress={make} />
                 </View>
               ) : null}
             </View>
           </Grow>
         ) : !err ? <View style={{ flex: 1, justifyContent: 'center' }}><Spinner /></View> : null}
       </View>
-      {!scanned && !done ? <Countdown key={tok?.token ?? 'none'} total={tok?.ttl_secs ?? 600} end={tok ? Date.parse(tok.expires_at) : null} delay={arrive + 200} label={!tok ? ' ' : expired ? 'This code has expired' : `${mins}:${secs} left`} /> : null}
+      {!scanned && !done ? <Countdown key={tok?.token ?? 'none'} total={tok?.ttl_secs ?? 600} end={tok ? Date.parse(tok.expires_at) : null} delay={arrive + 200} label={!tok ? ' ' : expired ? t('This code has expired') : t('{time} left', { time: `${mins}:${secs}` })} /> : null}
       {scanned && !done ? (
         <Grow from={0.9} style={{ alignSelf: 'stretch' }}>
           <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <Avatar name={scanned.from.display_name} avatar={scanned.from.avatar} size={40} />
             <View style={{ flex: 1 }}>
               <T bold>{scanned.from.display_name}</T>
-              <T small muted>@{scanned.from.handle} scanned your code</T>
+              <T small muted>{t('@{handle} scanned your code', { handle: scanned.from.handle })}</T>
             </View>
-            <Button primary small title={busy ? 'Accepting…' : 'Accept'} disabled={busy} onPress={() => { void accept() }} />
+            <Button primary small title={busy ? t('Accepting…') : t('Accept')} disabled={busy} onPress={() => { void accept() }} />
           </Card>
         </Grow>
       ) : null}
       {done ? (
         <Swap k="done" style={{ alignSelf: 'stretch' }}>
           <Card tone="soft" style={{ alignItems: 'center' }}>
-            <T bold>{done.display_name ? `You and ${done.display_name} are friends` : 'You are friends now'}</T>
-            <Button small title="Done" onPress={onClose} />
+            <T bold>{done.display_name ? t('You and {name} are friends', { name: done.display_name }) : t('You are friends now')}</T>
+            <Button small title={t('Done')} onPress={onClose} />
           </Card>
         </Swap>
       ) : null}
       {!done ? (
         <Row style={{ alignSelf: 'stretch', justifyContent: 'center' }}>
-          <Button title="Share link" small onPress={() => { void share() }} disabled={!tok || expired} accessibilityLabel="Share the invite link" />
-          {scanned ? <Button title="Not now" small onPress={onClose} /> : null}
+          <Button title={t('Share link')} small onPress={() => { void share() }} disabled={!tok || expired} accessibilityLabel={t('Share the invite link')} />
+          {scanned ? <Button title={t('Not now')} small onPress={onClose} /> : null}
         </Row>
       ) : null}
     </View>

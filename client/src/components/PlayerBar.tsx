@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
+import { t, tc } from '@shared/i18n'
 import { useBottomInset } from '../hooks/useBottomInset'
 import { useInks } from '../hooks/useTheme'
-import { book as bookMeta } from '../lib/bible'
+import { formatRef } from '@shared/ref'
 import { VOICES } from '../lib/tts'
 import { usePlayer } from '../store/player'
 import { usePref } from '../store/prefs'
@@ -39,8 +40,8 @@ function PlayerBarBody() {
   useEffect(() => offerTourControls('player', { settings: setSettings }), [])
   const voice = VOICES.find(v => v.id === ttsVoice)?.name ?? ttsVoice
   const live = {
-    where: p.spoken ? (p.spoken.v === 0 ? `${bookMeta(p.book).name} ${p.chapter}` : `${bookMeta(p.book).abbr} ${p.chapter}:${p.spoken.v}`) : `${bookMeta(p.book).abbr} ${p.chapter}`,
-    sub: p.status === 'loading' ? 'Loading…' : p.status === 'error' ? p.error ?? 'Could not play' : p.source === 'device' ? 'Device voice' : `${voice} · ${ttsSpeed}×`,
+    where: p.spoken ? (p.spoken.v === 0 ? formatRef({ book: p.book, chapter: p.chapter }) : formatRef({ book: p.book, chapter: p.chapter, v1: p.spoken.v }, 'abbr')) : formatRef({ book: p.book, chapter: p.chapter }, 'abbr'),
+    sub: p.status === 'loading' ? t('Loading…') : p.status === 'error' ? p.error ?? t('Could not play') : p.source === 'device' ? t('Device voice') : `${voice} · ${ttsSpeed}×`,
     error: p.status === 'error', playing: p.status === 'playing',
   }
   // stopped: the bar is on its way out; it keeps the verse and the pause glyph it had rather than flicking to idle
@@ -54,13 +55,13 @@ function PlayerBarBody() {
           <Text style={{ color: c.text, fontWeight: '700', fontSize: 15 }} numberOfLines={1}>{where}</Text>
           <Text style={{ color: error ? c.danger : c.muted, fontSize: 12 }} numberOfLines={1}>{sub}</Text>
         </View>
-        <Tap onPress={p.prev} accessibilityRole="button" accessibilityLabel="Previous verse" style={styles.ctl}><Icon name="prev" size={26} color={c.text} /></Tap>
-        <Tap onPress={p.toggle} accessibilityRole="button" accessibilityLabel={playing ? 'Pause' : 'Play'} style={[styles.main, { backgroundColor: c.accent }]}>
+        <Tap onPress={p.prev} accessibilityRole="button" accessibilityLabel={t('Previous verse')} style={styles.ctl}><Icon name="prev" size={26} color={c.text} /></Tap>
+        <Tap onPress={p.toggle} accessibilityRole="button" accessibilityLabel={playing ? tc('verb', 'Pause') : tc('verb', 'Play')} style={[styles.main, { backgroundColor: c.accent }]}>
           <Icon name={playing ? 'pause' : 'play'} size={30} color={c.accentText} fill />
         </Tap>
-        <Tap onPress={p.next} accessibilityRole="button" accessibilityLabel="Next verse" style={styles.ctl}><Icon name="next" size={26} color={c.text} /></Tap>
-        <Tap onPress={() => setSettings(true)} accessibilityRole="button" accessibilityLabel="Listening settings" style={styles.ctl}><Icon name="voice" size={22} color={c.muted} /></Tap>
-        <Tap onPress={p.stop} accessibilityRole="button" accessibilityLabel="Stop reading" style={styles.ctl}><Icon name="x" size={22} color={c.muted} /></Tap>
+        <Tap onPress={p.next} accessibilityRole="button" accessibilityLabel={t('Next verse')} style={styles.ctl}><Icon name="next" size={26} color={c.text} /></Tap>
+        <Tap onPress={() => setSettings(true)} accessibilityRole="button" accessibilityLabel={t('Listening settings')} style={styles.ctl}><Icon name="voice" size={22} color={c.muted} /></Tap>
+        <Tap onPress={p.stop} accessibilityRole="button" accessibilityLabel={t('Stop reading')} style={styles.ctl}><Icon name="x" size={22} color={c.muted} /></Tap>
       </View>
       <ListeningSheet open={settings} onClose={() => setSettings(false)} />
     </>

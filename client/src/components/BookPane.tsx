@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BOOKS } from '@shared/books'
+import { N_, t } from '@shared/i18n'
 import { useColors, useInks } from '../hooks/useTheme'
 import { bookmarkKey, type BookmarkTarget } from '../lib/bookmarks'
 import { PANE_W } from '../lib/layout'
@@ -13,7 +14,7 @@ import { SPACE, TYPE, Tap } from './ui'
 const PAD = 12
 /** Five of these and their 6 px gaps (224) fit the pane's inner width (PANE_W less the padding, 236) with the borders. */
 const CELL_W = 40
-const TESTAMENTS = [{ testament: 'OT', label: 'Old Testament' }, { testament: 'NT', label: 'New Testament' }] as const
+const TESTAMENTS = [{ testament: 'OT', label: N_('Old Testament') }, { testament: 'NT', label: N_('New Testament') }] as const
 const NO_MARKS: ReadonlyMap<string, number> = new Map()
 
 /**
@@ -52,16 +53,16 @@ export default function BookPane({ book, chapter, readSet, marks = NO_MARKS, onM
     scroll.current?.scrollTo({ y: Math.max(0, y - 72), animated: false })
   }
   return (
-    <ScrollView ref={scroll} style={[styles.pane, { backgroundColor: c.bg, borderRightColor: c.border }]} contentContainerStyle={{ padding: PAD, paddingTop: insets.top + PAD, gap: 2 }} accessibilityLabel="Books and chapters">
+    <ScrollView ref={scroll} style={[styles.pane, { backgroundColor: c.bg, borderRightColor: c.border }]} contentContainerStyle={{ padding: PAD, paddingTop: insets.top + PAD, gap: 2 }} accessibilityLabel={t('Books and chapters')}>
       {TESTAMENTS.map(({ testament, label }) => [
-        <Text key={testament} style={[pickerStyles.group, styles.group, { color: c.muted }]}>{label}</Text>,
+        <Text key={testament} style={[pickerStyles.group, styles.group, { color: c.muted }]}>{t(label)}</Text>,
         ...BOOKS.filter(bk => bk.testament === testament).map(bk => {
           const current = bk.n === book, shown = bk.n === open
           const marked = marks.has(bookmarkKey({ book: bk.n }))
           return (
             <View key={bk.n} onLayout={e => onRow(bk.n, e.nativeEvent.layout.y)}>
               <Tap onPress={() => setOpen(bk.n)} onLongPress={onMark ? () => onMark({ book: bk.n }) : undefined} scaleTo={0.98} accessibilityRole="button" aria-label={bk.name} aria-selected={current}
-                accessibilityHint={onMark ? marked ? 'Hold to remove the bookmark' : 'Hold to bookmark' : undefined}
+                accessibilityHint={onMark ? marked ? t('Hold to remove the bookmark') : t('Hold to bookmark') : undefined}
                 style={[styles.row, { backgroundColor: shown ? ink.card : 'transparent' }]}>
                 <Text numberOfLines={1} style={[styles.name, { color: current ? c.accent : c.text, fontWeight: current ? '700' : '400' }]}>{bk.name}</Text>
                 {marked ? <View style={[styles.mark, { backgroundColor: c.accent }]} /> : null}

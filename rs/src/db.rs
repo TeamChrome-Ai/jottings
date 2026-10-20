@@ -298,6 +298,15 @@ pub const FTS_REBUILD_1890: &str = "INSERT INTO verses_1890_fts(verses_1890_fts)
 /// main. explicitly: an unqualified DROP of a table main lacks finds the attached seed's and drops that.
 const TEXT_1890_DROP: &str = "DROP TABLE IF EXISTS main.verses_1890_fts; DROP TABLE IF EXISTS main.verses_1890_tri; DROP TABLE IF EXISTS main.verses_1890; DROP TABLE IF EXISTS main.chapters_1890; DROP TABLE IF EXISTS main.verse_words_1890;";
 
+/// The Bibles in other languages (docs/LANGUAGES.md), each in tables of its own named `<table>_<lang>`.
+pub const LANG_TEXTS: [&str; 2] = ["fr", "de"];
+/// One language's tables: the 1890 text's shape, and its notes.
+pub fn schema_text_lang(lang: &str) -> String {
+    format!("{}\nCREATE TABLE notes_{lang} (verse_id INTEGER NOT NULL, marker TEXT NOT NULL, word_index INTEGER NOT NULL, text TEXT NOT NULL);\nCREATE INDEX notes_{lang}_verse ON notes_{lang}(verse_id);", SCHEMA_TEXT_1890.replace("_1890", &format!("_{lang}")))
+}
+pub fn fts_rebuild_lang(lang: &str) -> String { FTS_REBUILD_1890.replace("_1890", &format!("_{lang}")) }
+fn text_lang_drop(lang: &str) -> String { format!("{} DROP TABLE IF EXISTS main.notes_{lang};", TEXT_1890_DROP.replace("_1890", &format!("_{lang}"))) }
+
 pub fn configure(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
@@ -448,6 +457,16 @@ pub fn reseed_scripture(conn: &Connection, seed: &str) -> Result<i64> {
         }
         conn.execute_batch(FTS_REBUILD)?;
         if text_1890 { conn.execute_batch(FTS_REBUILD_1890)?; }
+        // each other language's Bible: the seed's tables, or none when the seed has none
+        for lang in LANG_TEXTS {
+            conn.execute_batch(&text_lang_drop(lang))?;
+            if !in_seed(&format!("verses_{lang}"))? { continue }
+            conn.execute_batch(&schema_text_lang(lang))?;
+            for t in ["verses", "chapters", "verse_words", "notes"] {
+                conn.execute_batch(&format!("INSERT INTO main.{t}_{lang} SELECT * FROM seed.{t}_{lang};"))?;
+            }
+            conn.execute_batch(&fts_rebuild_lang(lang))?;
+        }
         conn.execute_batch("COMMIT;")?;
         Ok(conn.query_row("SELECT count(*) FROM verses", [], |r| r.get(0))?)
     })();

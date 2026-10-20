@@ -13,6 +13,7 @@ import { Stagger, usePressScale } from '../../src/components/motion/nav'
 import { tourRef, useTourSample } from '../../src/store/tour'
 import SignInCard from '../../src/components/SignInCard'
 import { NOUN } from '@shared/brand'
+import { t, tn } from '@shared/i18n'
 
 export default function Outlines() {
   const { user, ready } = useAuth()
@@ -20,10 +21,10 @@ export default function Outlines() {
     <Screen>
       <Stack.Screen options={{ title: NOUN.Many }} />
       {ready && !user ? (
-        <SignInCard text="Kept on this device. Sign in to keep them with your account and share them by link." />
+        <SignInCard text={t('Kept on this device. Sign in to keep them with your account and share them by link.')} />
       ) : null}
       {ready ? <Mine signedIn={!!user} /> : <Spinner />}
-      <T small muted>Your {NOUN.many} are private until you share one by link or post it to a group.</T>
+      <T small muted>{t('Your {many} are private until you share one by link or post it to a group.', { many: NOUN.many })}</T>
       <View style={{ height: 24 }} />
     </Screen>
   )
@@ -45,11 +46,11 @@ function Mine({ signedIn }: { signedIn: boolean }) {
     return () => { cancelled = true }
   }, [signedIn, merged, sample]))
   const create = async () => {
-    const t = title.trim()
-    if (!t || creating) return
+    const name = title.trim()
+    if (!name || creating) return
     setCreating(true); setErr('')
     try {
-      const o = await createOutline({ title: t })
+      const o = await createOutline({ title: name })
       setTitle('')
       router.push({ pathname: '/outlines/[id]/edit', params: { id: String(o.id) } })
     } catch (e) { setErr((e as Error).message) } finally { setCreating(false) }
@@ -59,12 +60,12 @@ function Mine({ signedIn }: { signedIn: boolean }) {
   return (
     <>
       <Row ref={tourRef('outlines-new')}>
-        <Input placeholder={`New ${NOUN.one} title`} value={title} onChangeText={setTitle} onSubmitEditing={() => { void create() }} returnKeyType="done" style={{ flex: 1, minWidth: 160 }} maxLength={160} />
-        <Button primary title={creating ? 'Creating…' : `New ${NOUN.one}`} disabled={creating || !title.trim()} onPress={() => { void create() }} />
+        <Input placeholder={t('New {one} title', { one: NOUN.one })} value={title} onChangeText={setTitle} onSubmitEditing={() => { void create() }} returnKeyType="done" style={{ flex: 1, minWidth: 160 }} maxLength={160} />
+        <Button primary title={creating ? t('Creating…') : t('New {one}', { one: NOUN.one })} disabled={creating || !title.trim()} onPress={() => { void create() }} />
       </Row>
       {err ? <ErrorText>{err}</ErrorText> : null}
       {list === null && !err ? <Spinner /> : null}
-      {list?.length === 0 ? <Enter><T muted>No {NOUN.many} yet. Type a title above, or select verses in the reader and tap {NOUN.verb}.</T></Enter> : null}
+      {list?.length === 0 ? <Enter><T muted>{t('No {many} yet. Type a title above, or select verses in the reader and tap {verb}.', { many: NOUN.many, verb: NOUN.verb })}</T></Enter> : null}
       {list?.map((o, i) => (
         <Stagger key={o.id} index={i}>
           <OutlineCard outline={o} sample={o.id === sample} onView={() => openView(o)} onEdit={() => openEdit(o)} />
@@ -86,11 +87,11 @@ function OutlineCard({ outline: o, sample, onView, onEdit }: { outline: Outline;
           {o.description ? <T small muted numberOfLines={2}>{o.description}</T> : null}
           <Row>
             <T small muted>{verseCount(o)}</T>
-            <T small style={{ color: o.visibility === 'private' ? c.muted : c.accent }}>· {isLocalOutline(o) ? 'On this device' : visibilityLabel(o.visibility)}</T>
+            <T small style={{ color: o.visibility === 'private' ? c.muted : c.accent }}>· {isLocalOutline(o) ? t('On this device') : visibilityLabel(o.visibility)}</T>
             <T small muted>· {fmtDate(o.updated_at)}</T>
           </Row>
         </Pressable>
-        <Button small title="Edit" onPress={onEdit} />
+        <Button small title={t('Edit')} onPress={onEdit} />
       </Card>
     </Animated.View>
   )
@@ -100,6 +101,6 @@ function OutlineCard({ outline: o, sample, onView, onEdit }: { outline: Outline;
 function verseCount(o: Outline): string {
   const n = (o as Outline & { verse_count?: number }).verse_count
   if (typeof n !== 'number') return ''
-  return n === 1 ? '1 verse' : `${n} verses`
+  return tn(n, '{n} verse', '{n} verses')
 }
 

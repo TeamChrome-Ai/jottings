@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Animated, ScrollView, Text, View, useWindowDimensions, type GestureResponderEvent } from 'react-native'
+import { t } from '@shared/i18n'
 import { useThemeId, useInks } from '../hooks/useTheme'
 import { usePrefsStore, useReduceMotion } from '../store/prefs'
 import { GROUPS, THEMES, face, type ThemeDef } from '../theme'
@@ -29,6 +30,8 @@ export function useChooseTheme() {
 }
 const BY_GROUP = Object.fromEntries(GROUPS.map(g => [g.group, THEMES.filter(t => t.group === g.group)]))
 const NUMERAL_FACE = face('serif', { bold: true })
+// out here because the tiles below call their theme `t`
+const themeLabel = (name: string) => t('{name} theme', { name: t(name) })
 
 /** Tight spring 0 → 1 while `on` (RING_SPRING, ~200 ms); instant under Reduce animation. Drives the selection marks. */
 function useOn(on: boolean) {
@@ -60,7 +63,7 @@ export default function ThemeGallery({ compact = false }: { compact?: boolean })
     <View ref={compact ? tourRef('theme-first') : undefined} style={{ gap: compact ? 12 : 24 }}>
       {GROUPS.map(g => (
         <View key={g.group} style={{ gap: 12 }}>
-          <H2 hint={compact ? undefined : g.hint}>{g.title}</H2>
+          <H2 hint={compact ? undefined : t(g.hint)}>{t(g.title)}</H2>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 10, rowGap: 14 }}>
             {BY_GROUP[g.group].map((t, i) => (
               <Swatch key={t.id} theme={t} selected={t.id === current} onChoose={choose} width={w} compact={compact} delay={i * 25} />
@@ -84,7 +87,7 @@ const Swatch = memo(function Swatch({ theme: t, selected, onChoose, width, compa
   const onPress = useCallback((e: GestureResponderEvent) => onChoose(t, page.current, { at: { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY }, host: compact ? 'sheet' : 'root' }), [onChoose, t, compact])
   return (
     <Grow delay={delay} style={{ width }}>
-      <Tap onPress={onPress} scaleTo={0.92} accessibilityRole="radio" accessibilityLabel={`${t.name} theme`} accessibilityState={{ selected }} style={{ gap: 6 }}>
+      <Tap onPress={onPress} scaleTo={0.92} accessibilityRole="radio" accessibilityLabel={themeLabel(t.name)} accessibilityState={{ selected }} style={{ gap: 6 }}>
         <View ref={page}>
           <Ring color={t.accent} opacity={ring} scale={ringScale} radius={22} />
           <MiniPage t={t} compact={compact} ring={ring} />
@@ -104,7 +107,7 @@ const Ring = memo(function Ring({ color, opacity, scale, radius }: { color: stri
 const Label = memo(function Label({ name, selected }: { name: string; selected: boolean }) {
   const c = useInks()
   // one word under a swatch a quarter of the sheet wide: past 1.2× system text "Lavender" would be cut
-  return <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={{ color: selected ? c.accent : c.text, fontSize: 13, fontWeight: selected ? '700' : '500', textAlign: 'center' }}>{name}</Text>
+  return <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={{ color: selected ? c.accent : c.text, fontSize: 13, fontWeight: selected ? '700' : '500', textAlign: 'center' }}>{t(name)}</Text>
 })
 const Line = ({ w, color }: { w: `${number}%`; color: string }) => <View style={{ width: w, height: 4, borderRadius: 2, backgroundColor: color }} />
 const MiniPage = memo(function MiniPage({ t, compact, ring }: { t: ThemeDef; compact: boolean; ring: Animated.Value }) {
@@ -132,8 +135,8 @@ export function ThemeStrip({ onMore }: { onMore: () => void }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingVertical: 6, paddingHorizontal: 6 }} style={{ marginHorizontal: -6 }}>
       {THEMES.map((t, i) => <StripChip key={t.id} theme={t} selected={t.id === current} onChoose={choose} delay={i * 18} />)}
-      <Tap onPress={onMore} accessibilityRole="button" accessibilityLabel="All themes" style={{ height: 48, paddingHorizontal: 16, borderRadius: 24, backgroundColor: c.card, alignItems: 'center', justifyContent: 'center' }}>
-        <T small bold>All themes</T>
+      <Tap onPress={onMore} accessibilityRole="button" accessibilityLabel={t('All themes')} style={{ height: 48, paddingHorizontal: 16, borderRadius: 24, backgroundColor: c.card, alignItems: 'center', justifyContent: 'center' }}>
+        <T small bold>{t('All themes')}</T>
       </Tap>
     </ScrollView>
   )
@@ -143,7 +146,7 @@ const StripChip = memo(function StripChip({ theme: t, selected, onChoose, delay 
   const onPress = useCallback(() => onChoose(t), [onChoose, t])
   return (
     <Grow delay={delay}>
-      <Tap onPress={onPress} scaleTo={0.88} crisp accessibilityRole="radio" accessibilityLabel={`${t.name} theme`} accessibilityState={{ selected }}>
+      <Tap onPress={onPress} scaleTo={0.88} crisp accessibilityRole="radio" accessibilityLabel={themeLabel(t.name)} accessibilityState={{ selected }}>
         <ChipFace t={t} outer={outer} hole={hole} />
       </Tap>
     </Grow>

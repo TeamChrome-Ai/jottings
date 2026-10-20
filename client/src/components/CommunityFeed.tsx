@@ -13,6 +13,7 @@ import Avatar from './Avatar'
 import { Button, Card, Chip, ErrorText, H2, Input, ListRow, Row, Sheet, Spinner, T } from './ui'
 import { BusyDots, MotionItem, useArrivals } from './motion/community'
 import { NOUN } from '@shared/brand'
+import { t, tc } from '@shared/i18n'
 
 /** Screen's column gap; a leaving post absorbs it so the list closes without a jump. */
 const GAP = 12
@@ -39,22 +40,22 @@ export function Feed({ group, me }: { group: GroupDetail; me: User }) {
     setLeaving(s => { const n = new Set(s); n.delete(id); return n })
   }
   const remove = async (p: FeedPost) => {
-    if (!(await confirmAsync('Delete this post?', undefined, 'Delete'))) return
+    if (!(await confirmAsync(t('Delete this post?'), undefined, t('Delete')))) return
     try { await del(`/groups/${group.slug}/posts/${p.id}`); leave([p.id]) } catch (e) { setErr(errMsg(e)) }
   }
   const block = async (p: FeedPost) => {
-    if (!(await confirmAsync(`Block @${p.handle}?`, `Their posts and shared ${NOUN.many} disappear from your feeds. You can unblock them in Settings.`, 'Block'))) return
+    if (!(await confirmAsync(t('Block @{handle}?', { handle: p.handle }), t('Their posts and shared {many} disappear from your feeds. You can unblock them in Settings.', { many: NOUN.many }), tc('verb', 'Block')))) return
     setBlocking(true)
     try {
       await blockUser(await resolveUserId(p))
       if (state.kind === 'ready') leave(state.data.filter(x => x.handle === p.handle).map(x => x.id))
       setMenuFor(null)
-      toast.show(`Blocked @${p.handle}`)
+      toast.show(t('Blocked @{handle}', { handle: p.handle }))
     } catch (e) { setErr(errMsg(e)); setMenuFor(null) } finally { setBlocking(false) }
   }
   return (
     <>
-      <H2>Feed</H2>
+      <H2>{t('Feed')}</H2>
       <Card>
         {adminMode(me) ? <NoticeForm slug={group.slug} onPosted={id => { arrivals.expect(id); reload() }} /> : null}
         <PostForm slug={group.slug} onPosted={id => { arrivals.expect(id); reload() }} />
@@ -62,7 +63,7 @@ export function Feed({ group, me }: { group: GroupDetail; me: User }) {
       {err && <ErrorText>{err}</ErrorText>}
       {state.kind === 'loading' && <Spinner />}
       {state.kind === 'error' && <ErrorText>{state.message}</ErrorText>}
-      {posts && posts.length === 0 && <T small muted>Nothing shared yet. Share {NOUN.a} with the group.</T>}
+      {posts && posts.length === 0 && <T small muted>{t('Nothing shared yet. Share {a} with the group.', { a: NOUN.a })}</T>}
       {posts && posts.map((p, i) => {
         const mine = p.handle === me.handle
         return (
@@ -75,26 +76,26 @@ export function Feed({ group, me }: { group: GroupDetail; me: User }) {
                   {p.staff ? <AdminBadge /> : null}
                   <T small muted>{fmtWhen(p.created_at)}</T>
                   <View style={{ flex: 1 }} />
-                  {(isAdmin || mine) && <Button title="Delete" small danger onPress={() => remove(p)} />}
-                  {!mine && <Button title="Post options" small iconName="more" onPress={() => setMenuFor(p)} />}
+                  {(isAdmin || mine) && <Button title={t('Delete')} small danger onPress={() => remove(p)} />}
+                  {!mine && <Button title={t('Post options')} small iconName="more" onPress={() => setMenuFor(p)} />}
                 </Row>
                 {p.notice ? <T selectable>{p.body}</T> : null}
-                {p.hidden ? <T small muted>Hidden by moderation: only its author and an admin see it.</T> : null}
+                {p.hidden ? <T small muted>{t('Hidden by moderation: only its author and an admin see it.')}</T> : null}
                 {p.outline_id != null && (p.share_code
-                  ? <View style={{ alignSelf: 'flex-start' }}><Chip label={p.outline_title ?? 'Outline'} detail="Outline" accessibilityLabel={`Open the outline ${p.outline_title ?? ''}`} onPress={() => router.push(`/o/${p.share_code}`)} /></View>
-                  : <T small muted>{p.outline_title ?? NOUN.A}, no longer shared</T>)}
+                  ? <View style={{ alignSelf: 'flex-start' }}><Chip label={p.outline_title ?? t('Outline')} detail={t('Outline')} accessibilityLabel={t('Open the outline {title}', { title: p.outline_title ?? '' })} onPress={() => router.push(`/o/${p.share_code}`)} /></View>
+                  : <T small muted>{t('{title}, no longer shared', { title: p.outline_title ?? NOUN.A })}</T>)}
               </Card>
             </Pressable>
           </MotionItem>
         )
       })}
-      <Sheet open={menuFor !== null} onClose={() => setMenuFor(null)} title={menuFor ? `Post by @${menuFor.handle}` : undefined}>
+      <Sheet open={menuFor !== null} onClose={() => setMenuFor(null)} title={menuFor ? t('Post by @{handle}', { handle: menuFor.handle }) : undefined}>
         <SheetBody>
           {menuFor && (
             <>
-              <Button title="Report post" onPress={() => { setReport({ kind: 'post', id: menuFor.id, label: 'post' }); setMenuFor(null) }} />
-              <Button title={blocking ? 'Blocking…' : `Block @${menuFor.handle}`} danger disabled={blocking} onPress={() => { void block(menuFor) }} />
-              <Button title="Cancel" onPress={() => setMenuFor(null)} />
+              <Button title={t('Report post')} onPress={() => { setReport({ kind: 'post', id: menuFor.id, label: tc('noun', 'post') }); setMenuFor(null) }} />
+              <Button title={blocking ? t('Blocking…') : t('Block @{handle}', { handle: menuFor.handle })} danger disabled={blocking} onPress={() => { void block(menuFor) }} />
+              <Button title={t('Cancel')} onPress={() => setMenuFor(null)} />
             </>
           )}
         </SheetBody>
@@ -117,10 +118,10 @@ function NoticeForm({ slug, onPosted }: { slug: string; onPosted: (id: number) =
   }
   return (
     <View style={{ gap: 8 }}>
-      <Input placeholder="A notice to the group, under your Developer badge" value={text} onChangeText={setText} maxLength={2000} multiline style={{ minHeight: 70, textAlignVertical: 'top' }} />
+      <Input placeholder={t('A notice to the group, under your Developer badge')} value={text} onChangeText={setText} maxLength={2000} multiline style={{ minHeight: 70, textAlignVertical: 'top' }} />
       <Row>
         <View style={{ flex: 1 }} />
-        <Button title={busy ? 'Posting…' : 'Post notice'} primary small onPress={submit} disabled={busy || !text.trim()} />
+        <Button title={busy ? t('Posting…') : t('Post notice')} primary small onPress={submit} disabled={busy || !text.trim()} />
       </Row>
       {err && <ErrorText>{err}</ErrorText>}
     </View>
@@ -144,11 +145,11 @@ function PostForm({ slug, onPosted }: { slug: string; onPosted: (id: number) => 
     <View style={{ gap: 8 }}>
       <Row>
         {outline
-          ? <Button small lead="x" title={outline.title} accessibilityLabel={`Remove the ${NOUN.one} ${outline.title}`} onPress={() => setOutline(null)} style={{ flexShrink: 1 }} />
-          : <Button title={`Choose ${NOUN.a}`} small onPress={() => setPicking(true)} />}
+          ? <Button small lead="x" title={outline.title} accessibilityLabel={t('Remove the {one} {title}', { one: NOUN.one, title: outline.title })} onPress={() => setOutline(null)} style={{ flexShrink: 1 }} />
+          : <Button title={t('Choose {a}', { a: NOUN.a })} small onPress={() => setPicking(true)} />}
         <View style={{ flex: 1 }} />
         {busy && <BusyDots />}
-        <Button title={busy ? 'Sharing…' : 'Share'} primary small onPress={submit} disabled={busy || !canPost} accessibilityState={{ busy, disabled: busy || !canPost }} />
+        <Button title={busy ? t('Sharing…') : tc('verb', 'Share')} primary small onPress={submit} disabled={busy || !canPost} accessibilityState={{ busy, disabled: busy || !canPost }} />
       </Row>
       {err && <ErrorText>{err}</ErrorText>}
       <OutlinePicker open={picking} onClose={() => setPicking(false)} onPick={o => { setOutline(o); setPicking(false) }} />
@@ -160,14 +161,14 @@ function PostForm({ slug, onPosted }: { slug: string; onPosted: (id: number) => 
 function OutlinePicker({ open, onClose, onPick }: { open: boolean; onClose: () => void; onPick: (o: Outline) => void }) {
   const { state } = useLoad(() => get<Outline[]>('/outlines'), [], open)
   return (
-    <Sheet open={open} onClose={onClose} title={`Share ${NOUN.a}`}>
+    <Sheet open={open} onClose={onClose} title={t('Share {a}', { a: NOUN.a })}>
       <SheetBody>
         {state.kind === 'loading' && <Spinner />}
-        {state.kind === 'error' && <ErrorText>Could not load your {NOUN.many}: {state.message}</ErrorText>}
-        {state.kind === 'ready' && state.data.length === 0 && <T muted>You have no {NOUN.many} yet.</T>}
+        {state.kind === 'error' && <ErrorText>{t('Could not load your {many}: {error}', { many: NOUN.many, error: state.message })}</ErrorText>}
+        {state.kind === 'ready' && state.data.length === 0 && <T muted>{t('You have no {many} yet.', { many: NOUN.many })}</T>}
         {state.kind === 'ready' && state.data.length ? (
           <Card style={{ gap: 0, paddingVertical: 8 }}>
-            {state.data.map(o => <ListRow key={o.id} label={o.title} detail={o.visibility === 'private' ? 'Private: sharing it here shares it by link' : visibilityLabel(o.visibility)} onPress={() => onPick(o)} />)}
+            {state.data.map(o => <ListRow key={o.id} label={o.title} detail={o.visibility === 'private' ? t('Private: sharing it here shares it by link') : visibilityLabel(o.visibility)} onPress={() => onPick(o)} />)}
           </Card>
         ) : null}
       </SheetBody>

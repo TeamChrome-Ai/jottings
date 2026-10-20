@@ -9,7 +9,7 @@ import { useAuth } from '../../src/store/auth'
 import { useToast } from '../../src/store/toast'
 import { useColors } from '../../src/hooks/useTheme'
 import {
-  confirmAsync, displayName, errMsg, eventStatus, fmtDay, inviteLink, plural, roleLabel, useLoad,
+  confirmAsync, displayName, errMsg, eventStatus, fmtDay, inviteLink, useLoad,
   type EventLeaderboard, type GroupDetail, type GroupEventFull, type GroupMember,
 } from '../../src/lib/community'
 import { eventLine } from '../../src/lib/events'
@@ -26,6 +26,8 @@ import GroupPathSection from '../../src/components/GroupPath'
 import Avatar from '../../src/components/Avatar'
 import SignInCard from '../../src/components/SignInCard'
 import { BRAND } from '@shared/brand'
+import { t, tc, tn } from '@shared/i18n'
+import { tr } from '../../src/i18n'
 
 export default function GroupScreen() {
   const router = useRouter()
@@ -33,20 +35,20 @@ export default function GroupScreen() {
   const s = typeof slug === 'string' ? slug : ''
   const { user, ready } = useAuth()
   const { state, reload } = useLoad(() => get<GroupDetail>(`/groups/${encodeURIComponent(s)}`), [s, user?.id], ready && !!user && s !== '')
-  const title = state.kind === 'ready' ? state.data.name : 'Group'
+  const title = state.kind === 'ready' ? state.data.name : t('Group')
   // one entrance for the group itself; the feed below staggers its first posts
   return (
     <Screen animate={false}>
       <Stack.Screen options={{ title }} />
       {!ready && <Spinner />}
       {ready && !user && (
-        <SignInCard text="Groups are for signed-in readers." />
+        <SignInCard text={t('Groups are for signed-in readers.')} />
       )}
       {ready && user && state.kind === 'loading' && <Spinner />}
       {ready && user && state.kind === 'error' && (
         <Card>
           <ErrorText>{state.message}</ErrorText>
-          <Button title="All groups" small onPress={() => router.push('/groups')} style={{ alignSelf: 'flex-start' }} />
+          <Button title={t('All groups')} small onPress={() => router.push('/groups')} style={{ alignSelf: 'flex-start' }} />
         </Card>
       )}
       {ready && user && state.kind === 'ready' && (
@@ -74,7 +76,7 @@ function Header({ group, me, reload }: SectionProps) {
   const [editing, setEditing] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const leave = async () => {
-    if (!(await confirmAsync(`Leave ${group.name}?`, undefined, 'Leave'))) return
+    if (!(await confirmAsync(t('Leave {name}?', { name: group.name }), undefined, t('Leave')))) return
     try { await post(`/groups/${group.slug}/leave`); router.dismissTo('/groups') } catch (e) { setErr(errMsg(e)) }   // back to the list if it is in the stack, else replace
   }
   return (
@@ -82,15 +84,15 @@ function Header({ group, me, reload }: SectionProps) {
     <Card>
       {group.description ? <T muted>{group.description}</T> : null}
       <Row>
-        <Tag label={plural(group.member_count, 'member')} />
-        {group.site_admin ? <Tag label="Here as the developer" accent /> : group.role !== 'member' && <Tag label={roleLabel(group.role)} accent={group.role === 'admin'} />}
+        <Tag label={tn(group.member_count, '{n} member', '{n} members')} />
+        {group.site_admin ? <Tag label={t('Here as the developer')} accent /> : group.role !== 'member' && <Tag label={tc('group role', 'Admin')} accent={group.role === 'admin'} />}
         <View style={{ flex: 1 }} />
-        {group.role === 'admin' && <Button title="Edit" small onPress={() => setEditing(true)} />}
-        {group.owner_id !== me.id && !group.site_admin && <Button title="Leave" small danger onPress={leave} />}
+        {group.role === 'admin' && <Button title={t('Edit')} small onPress={() => setEditing(true)} />}
+        {group.owner_id !== me.id && !group.site_admin && <Button title={t('Leave')} small danger onPress={leave} />}
       </Row>
-      {group.site_admin ? <T small muted>You are not a member: Admin mode opens the group to you with its admins’ rights, and your name carries the Developer badge. Members do not see you here unless you post.</T> : null}
+      {group.site_admin ? <T small muted>{t('You are not a member: Admin mode opens the group to you with its admins’ rights, and your name carries the Developer badge. Members do not see you here unless you post.')}</T> : null}
       {err && <ErrorText>{err}</ErrorText>}
-      <Sheet open={editing} onClose={() => setEditing(false)} title="Edit group">
+      <Sheet open={editing} onClose={() => setEditing(false)} title={t('Edit group')}>
         {editing && <EditGroupForm group={group} owner={group.owner_id === me.id} onDone={() => { setEditing(false); reload() }} onCancel={() => setEditing(false)} onStreak={reload} />}
       </Sheet>
     </Card>
@@ -114,13 +116,13 @@ function EditGroupForm({ group, owner, onDone, onCancel, onStreak }: { group: Gr
   }
   return (
     <SheetBody>
-      <Input placeholder="Group name" value={name} onChangeText={setName} maxLength={60} />
-      <Input placeholder="Description" value={description} onChangeText={setDescription} maxLength={2000} multiline style={{ minHeight: 70, textAlignVertical: 'top' }} />
-      {owner ? <SwitchRow label="Group streak" hint={streak ? 'Days on which every member reads, counted together' : 'Off: no group streak for anyone in the group'} value={streak} onChange={v => { void flipStreak(v) }} /> : null}
+      <Input placeholder={t('Group name')} value={name} onChangeText={setName} maxLength={60} />
+      <Input placeholder={t('Description')} value={description} onChangeText={setDescription} maxLength={2000} multiline style={{ minHeight: 70, textAlignVertical: 'top' }} />
+      {owner ? <SwitchRow label={t('Group streak')} hint={streak ? t('Days on which every member reads, counted together') : t('Off: no group streak for anyone in the group')} value={streak} onChange={v => { void flipStreak(v) }} /> : null}
       {err && <ErrorText>{err}</ErrorText>}
       <Row style={{ justifyContent: 'flex-end' }}>
-        <Button title="Cancel" onPress={onCancel} disabled={busy} />
-        <Button title="Save" primary onPress={submit} disabled={busy || name.trim().length < 2} />
+        <Button title={t('Cancel')} onPress={onCancel} disabled={busy} />
+        <Button title={t('Save')} primary onPress={submit} disabled={busy || name.trim().length < 2} />
       </Row>
     </SheetBody>
   )
@@ -135,31 +137,31 @@ function InviteTools({ group, reload }: Omit<SectionProps, 'me'>) {
   const code = group.invite_code ?? ''
   const link = inviteLink(code)
   const copy = async () => {
-    try { await Clipboard.setStringAsync(link); toast.show('Invite link copied'); setCopied(true); setTimeout(() => setCopied(false), 1500) }
-    catch { setErr(`Clipboard blocked; copy the link by hand: ${link}`) }
+    try { await Clipboard.setStringAsync(link); toast.show(t('Invite link copied')); setCopied(true); setTimeout(() => setCopied(false), 1500) }
+    catch { setErr(t('Clipboard blocked; copy the link by hand: {link}', { link })) }
   }
   const share = async () => {
-    const r = await shareText({ title: 'Share invite link', message: `Join ${group.name} on ${BRAND.name}`, url: link })
-    if (r === 'copied') toast.show('Invite link copied'); else if (r === 'failed') await copy()
+    const r = await shareText({ title: t('Share invite link'), message: t('Join {group} on {brand}', { group: group.name, brand: BRAND.name }), url: link })
+    if (r === 'copied') toast.show(t('Invite link copied')); else if (r === 'failed') await copy()
   }
   const rotate = async () => {
-    if (!(await confirmAsync('Rotate the invite code?', 'Links already shared will stop working.', 'Rotate'))) return
-    try { await patch(`/groups/${group.slug}`, { rotate_invite: true }); toast.show('Invite code rotated'); reload() } catch (e) { setErr(errMsg(e)) }
+    if (!(await confirmAsync(t('Rotate the invite code?'), t('Links already shared will stop working.'), t('Rotate')))) return
+    try { await patch(`/groups/${group.slug}`, { rotate_invite: true }); toast.show(t('Invite code rotated')); reload() } catch (e) { setErr(errMsg(e)) }
   }
   return (
     <>
-      <H2>Invite people</H2>
+      <H2>{t('Invite people')}</H2>
       <Card>
         <Row>
           <Swap k={code}>
             <T bold selectable style={{ fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }), fontSize: 18, letterSpacing: 1, color: c.accent }}>{code || '—'}</T>
           </Swap>
           <View style={{ flex: 1 }} />
-          <Swap k={copied ? 'copied' : 'copy'}><Button title={copied ? 'Copied' : 'Copy'} small onPress={copy} disabled={!code} /></Swap>
-          <Button title="Share" small onPress={share} disabled={!code} />
-          <Button title="Rotate" small danger onPress={rotate} />
+          <Swap k={copied ? 'copied' : 'copy'}><Button title={copied ? t('Copied') : tc('verb', 'Copy')} small onPress={copy} disabled={!code} /></Swap>
+          <Button title={tc('verb', 'Share')} small onPress={share} disabled={!code} />
+          <Button title={t('Rotate')} small danger onPress={rotate} />
         </Row>
-        <T small muted selectable>Anyone with the code can join at {link}</T>
+        <T small muted selectable>{t('Anyone with the code can join at {link}', { link })}</T>
         {err && <ErrorText>{err}</ErrorText>}
       </Card>
     </>
@@ -174,12 +176,12 @@ function Members({ group, me, reload }: SectionProps) {
     try { await post(`/groups/${group.slug}/members/${m.id}/role`, { role }); reload() } catch (e) { setErr(errMsg(e)) }
   }
   const remove = async (m: GroupMember) => {
-    if (!(await confirmAsync(`Remove ${displayName(m)} from the group?`, undefined, 'Remove'))) return
+    if (!(await confirmAsync(t('Remove {name} from the group?', { name: displayName(m) }), undefined, t('Remove')))) return
     try { await del(`/groups/${group.slug}/members/${m.id}`); reload() } catch (e) { setErr(errMsg(e)) }
   }
   return (
     <>
-      <H2>Members</H2>
+      <H2>{t('Members')}</H2>
       <Card>
         {group.members.map(m => {
           const isOwner = m.id === group.owner_id
@@ -189,16 +191,16 @@ function Members({ group, me, reload }: SectionProps) {
                 <Avatar name={displayName(m)} avatar={m.avatar} size={32} />
                 <View style={{ flex: 1 }}>
                   <Row style={{ gap: 6 }}><UserLink handle={m.handle} name={displayName(m)} bold />{m.staff ? <AdminBadge /> : null}</Row>
-                  <T small muted>@{m.handle} · joined {fmtDay(m.joined_at)}</T>
+                  <T small muted>@{m.handle} · {t('joined {date}', { date: fmtDay(m.joined_at) })}</T>
                 </View>
-                {isOwner ? <Tag label="Owner" accent /> : m.role === 'admin' && !m.staff ? <Tag label="Admin" /> : null}
+                {isOwner ? <Tag label={tc('group role', 'Owner')} accent /> : m.role === 'admin' && !m.staff ? <Tag label={tc('group role', 'Admin')} /> : null}
               </Row>
               {isAdmin && !isOwner && m.id !== me.id && (
                 <Row>
                   {m.role === 'admin'
-                    ? <Button title="Demote" small onPress={() => setRole(m, 'member')} />
-                    : <Button title="Make admin" small onPress={() => setRole(m, 'admin')} />}
-                  <Button title="Remove" small danger onPress={() => remove(m)} />
+                    ? <Button title={t('Demote')} small onPress={() => setRole(m, 'member')} />
+                    : <Button title={t('Make admin')} small onPress={() => setRole(m, 'admin')} />}
+                  <Button title={t('Remove')} small danger onPress={() => remove(m)} />
                 </Row>
               )}
             </View>
@@ -221,16 +223,16 @@ function Events({ group, me, reload }: SectionProps) {
   const [err, setErr] = useState<string | null>(null)
   const current = group.events.find(e => e.id === selected) ?? group.events[0] ?? null
   const remove = async (ev: GroupEventFull) => {
-    if (!(await confirmAsync(`Delete event "${ev.name}"?`, undefined, 'Delete'))) return
+    if (!(await confirmAsync(t('Delete event "{name}"?', { name: ev.name }), undefined, t('Delete')))) return
     try { await del(`/groups/${group.slug}/events/${ev.id}`); if (selected === ev.id) setSelected(null); reload() } catch (e) { setErr(errMsg(e)) }
   }
   return (
     <>
       <Row>
-        <View style={{ flex: 1 }}><H2>Events</H2></View>
-        {isAdmin && <Button title="New event" small onPress={() => setForm('new')} />}
+        <View style={{ flex: 1 }}><H2>{t('Events')}</H2></View>
+        {isAdmin && <Button title={t('New event')} small onPress={() => setForm('new')} />}
       </Row>
-      {group.events.length === 0 && <T muted>No events yet.{isAdmin ? ' Create one to start a challenge.' : ''}</T>}
+      {group.events.length === 0 && <T muted>{isAdmin ? t('No events yet. Create one to start a challenge.') : t('No events yet.')}</T>}
       {group.events.map(ev => {
         const status = eventStatus(ev)
         return (
@@ -243,8 +245,8 @@ function Events({ group, me, reload }: SectionProps) {
             <T small muted>{eventLine(ev)}</T>
             {isAdmin && (
               <Row>
-                <Button title="Edit" small onPress={() => setForm(ev)} />
-                <Button title="Delete" small danger onPress={() => remove(ev)} />
+                <Button title={t('Edit')} small onPress={() => setForm(ev)} />
+                <Button title={t('Delete')} small danger onPress={() => remove(ev)} />
               </Row>
             )}
           </SelectableRow>
@@ -252,7 +254,7 @@ function Events({ group, me, reload }: SectionProps) {
       })}
       {err && <ErrorText>{err}</ErrorText>}
       {current && <EventBoard slug={group.slug} event={current} me={me} joined={myJoinDay(group, me)} />}
-      <Sheet open={form !== 'closed'} onClose={() => setForm('closed')} title={form === 'new' ? 'New event' : 'Edit event'} maxHeight="92%">
+      <Sheet open={form !== 'closed'} onClose={() => setForm('closed')} title={form === 'new' ? t('New event') : t('Edit event')} maxHeight="92%">
         {form !== 'closed' && <EventForm slug={group.slug} event={form === 'new' ? undefined : form} onDone={() => { setForm('closed'); reload() }} onCancel={() => setForm('closed')} />}
       </Sheet>
     </>
@@ -265,11 +267,11 @@ function EventBoard({ slug, event, me, joined }: { slug: string; event: GroupEve
   const late = event.late_join === false && joined != null && joined > event.starts_at
   return (
     <Card>
-      <T bold>{event.name} <T muted>leaderboard</T></T>
+      <T bold>{tr('{name} <muted>leaderboard</muted>', { muted: s => <T muted>{s}</T> }, { name: event.name })}</T>
       {state.kind === 'loading' && <Spinner />}
       {state.kind === 'error' && <ErrorText>{state.message}</ErrorText>}
-      {state.kind === 'ready' && state.data.private ? <T small muted>Admins see the whole board; this is your own row and place.</T> : null}
-      {state.kind === 'ready' && late ? <T small muted>You joined the group after this event started, so it does not score you.</T> : null}
+      {state.kind === 'ready' && state.data.private ? <T small muted>{t('Admins see the whole board; this is your own row and place.')}</T> : null}
+      {state.kind === 'ready' && late ? <T small muted>{t('You joined the group after this event started, so it does not score you.')}</T> : null}
       {state.kind === 'ready' && <LeaderboardTable rows={state.data.rows} metric={state.data.event.metric} goal={state.data.event.goal} myId={me.id} />}
     </Card>
   )

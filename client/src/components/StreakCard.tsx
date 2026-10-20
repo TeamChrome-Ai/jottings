@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, Easing, View } from 'react-native'
 import { usePref, useReduceMotion } from '../store/prefs'
 import type { StreakInfo } from '@shared/types'
+import { t, tn } from '@shared/i18n'
 import { goalView } from '../lib/dailyGoal'
 import { dayLetter, dayName, weekOf } from '../lib/week'
 import { useInks } from '../hooks/useTheme'
@@ -33,10 +34,10 @@ export default function StreakCard({ streak, delay = 0 }: { streak: StreakInfo; 
         <PulseRing trigger={celebrate} delay={landed} size={58}>
           <T style={{ fontSize: 34, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{current}</T>
         </PulseRing>
-        <T muted style={{ flex: 1 }}>day streak · longest {longest}</T>
+        <T muted style={{ flex: 1 }}>{tn(judged.current, 'day streak · longest {longest}', 'day streak · longest {longest}', { longest })}</T>
         {met ? (
           <Grow delay={landed} style={{ alignSelf: 'center' }}>
-            <View accessibilityLabel={left ? 'streak kept today' : "today's goal met"} style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center' }}>
+            <View accessibilityLabel={left ? t('streak kept today') : t("today's goal met")} style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="check" size={16} color={c.accentText} />
             </View>
           </Grow>
@@ -92,7 +93,7 @@ export function WeekStrip({ days, delay = 0, today: day }: { days: Pick<StreakIn
   return (
     <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
       {week.map((d, i) => (
-        <View key={d.date} accessible accessibilityLabel={`${dayName(d.date)}${d.today ? ', today' : ''}${d.met ? ', met' : ''}`}
+        <View key={d.date} accessible accessibilityLabel={d.today ? d.met ? t('{day}, today, met', { day: dayName(d.date) }) : t('{day}, today', { day: dayName(d.date) }) : d.met ? t('{day}, met', { day: dayName(d.date) }) : dayName(d.date)}
           style={{ flex: 1, alignItems: 'center', gap: 4, opacity: d.ahead ? 0.45 : 1 }}>
           <Grow delay={delay + i * 30}><DayDot met={d.met} today={d.today} /></Grow>
           <T small muted={!d.today} style={[{ fontSize: 11 }, d.today && { color: c.accent, fontWeight: '700' }]}>{dayLetter(d.date)}</T>

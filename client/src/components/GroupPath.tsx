@@ -4,7 +4,9 @@ import { useRouter } from 'expo-router'
 import type { User } from '@shared/types'
 import { PATH_IDS, chapterKey, isPathId, pathBlurb, pathBooks, pathChapters, pathLength, pathTitle, type GroupPath as GroupPathData, type PathId } from '@shared/paths'
 import type { GroupDetail } from '../lib/community'
-import { confirmAsync, displayName, plural } from '../lib/community'
+import { confirmAsync, displayName } from '../lib/community'
+import { t, tc, tn } from '@shared/i18n'
+import { dateLocale } from '../i18n'
 import { useGroupPath, usePath } from '../lib/paths'
 import { useEdition } from '../lib/edition'
 import { pathOffered, shownPathId } from '../lib/editionCore'
@@ -44,7 +46,7 @@ export default function GroupPathSection({ group, me }: { group: GroupDetail; me
   const total = path ? pathLength(path.id) : 0
   const mineOnIt = !!(mine.state && path && mine.state.id === path.id)
   const takeOff = async () => {
-    if (!(await confirmAsync('Take the path off the group?', 'Everyone keeps what they have read.', 'Take off'))) return
+    if (!(await confirmAsync(t('Take the path off the group?'), t('Everyone keeps what they have read.'), t('Take off')))) return
     await gp.setGroupPath(null)
   }
   const openBook = (book: number) => {
@@ -57,8 +59,8 @@ export default function GroupPathSection({ group, me }: { group: GroupDetail; me
   return (
     <>
       <Row>
-        <View style={{ flex: 1 }}><H2>Path</H2></View>
-        {isAdmin && path ? <Button title="Change" small onPress={() => setChoosing(true)} /> : null}
+        <View style={{ flex: 1 }}><H2>{t('Path')}</H2></View>
+        {isAdmin && path ? <Button title={t('Change')} small onPress={() => setChoosing(true)} /> : null}
       </Row>
       <FadeSwap k={path ? `${path.id}:${path.started_at}` : 'none'}>
         {path ? (
@@ -66,49 +68,49 @@ export default function GroupPathSection({ group, me }: { group: GroupDetail; me
             <Row style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
               <View style={{ flex: 1, gap: 2 }}>
                 <T bold style={{ fontSize: TYPE.heading }}>{pathTitle(path.id)}</T>
-                <T small muted>{pathBlurb(path.id)} {total} chapters{path.target_date ? ` · finish by ${fmtTargetDay(path.target_date)}` : ''}</T>
+                <T small muted>{pathBlurb(path.id)} {tn(total, '{n} chapter', '{n} chapters')}{path.target_date ? ` · ${t('finish by {day}', { day: fmtTargetDay(path.target_date) })}` : ''}</T>
               </View>
-              {my ? <T bold style={{ fontSize: 20, fontVariant: ['tabular-nums'] }}>{Math.min(my.position, total)} of {total}</T> : null}
+              {my ? <T bold style={{ fontSize: 20, fontVariant: ['tabular-nums'] }}>{t('{n} of {total}', { n: Math.min(my.position, total), total })}</T> : null}
             </Row>
             <PathStrip route={route} routeChapters={chapters} doneUpTo={my?.done ?? 0} members={members} onBook={openBook} delay={120}
-              accessibilityLabel={`${pathTitle(path.id)}: ${plural(members.length, 'member')} on the path`} />
+              accessibilityLabel={tn(members.length, '{path}: {n} member on the path', '{path}: {n} members on the path', { path: pathTitle(path.id) })} />
             <View style={{ gap: 6 }}>
               {rows.map(m => {
                 const who = byId.get(m.user_id)
                 const ch = chapters?.[Math.min(m.position - 1, (chapters?.length ?? 1) - 1)]
                 return (
                   <Row key={m.user_id} style={{ flexWrap: 'nowrap' }}>
-                    <T style={{ flex: 1 }} numberOfLines={1}>{who ? displayName(who) : `#${m.user_id}`}{m.user_id === me.id ? <T muted> (you)</T> : null}</T>
-                    {ch && m.done < total ? <T small muted>{portionTitle({ book: ch[0], chapter: ch[1] })}</T> : <T small muted>finished</T>}
-                    <T small bold style={{ fontVariant: ['tabular-nums'], minWidth: 64, textAlign: 'right' }}>{m.done} of {total}</T>
+                    <T style={{ flex: 1 }} numberOfLines={1}>{who ? displayName(who) : `#${m.user_id}`}{m.user_id === me.id ? <T muted> {t('(you)')}</T> : null}</T>
+                    {ch && m.done < total ? <T small muted>{portionTitle({ book: ch[0], chapter: ch[1] })}</T> : <T small muted>{t('finished')}</T>}
+                    <T small bold style={{ fontVariant: ['tabular-nums'], minWidth: 64, textAlign: 'right' }}>{t('{n} of {total}', { n: m.done, total })}</T>
                   </Row>
                 )
               })}
             </View>
             {!mineOnIt ? (
               <Row>
-                <Button title={mine.state ? `Walk it too (${pathTitle(mine.state)} waits)` : 'Walk it too'} small onPress={() => void mine.start(path.id, { target_date: path.target_date })} />
-                <T small muted style={{ flex: 1 }}>Your own path follows the group’s; the group counts your reading either way.</T>
+                <Button title={mine.state ? t('Walk it too ({path} waits)', { path: pathTitle(mine.state) }) : t('Walk it too')} small onPress={() => void mine.start(path.id, { target_date: path.target_date })} />
+                <T small muted style={{ flex: 1 }}>{t('Your own path follows the group’s; the group counts your reading either way.')}</T>
               </Row>
             ) : null}
             {isAdmin ? (
               <Row>
-                <Button title={path.target_date ? `Finish by ${fmtTargetDay(path.target_date)}` : 'Finish by…'} small onPress={() => setDateOpen(true)} />
-                <Button title="Take off" small danger onPress={takeOff} />
+                <Button title={path.target_date ? t('Finish by {day}', { day: fmtTargetDay(path.target_date) }) : t('Finish by…')} small onPress={() => setDateOpen(true)} />
+                <Button title={t('Take off')} small danger onPress={takeOff} />
               </Row>
             ) : null}
             {gp.error ? <ErrorText>{gp.error}</ErrorText> : null}
           </Card>
         ) : (
           <Card>
-            <T muted>Read a path together: one order for everyone, each at their own pace, every member’s place on the strip.</T>
-            <Button title="Walk a path together" onPress={() => setChoosing(true)} style={{ alignSelf: 'flex-start' }} />
+            <T muted>{t('Read a path together: one order for everyone, each at their own pace, every member’s place on the strip.')}</T>
+            <Button title={t('Walk a path together')} onPress={() => setChoosing(true)} style={{ alignSelf: 'flex-start' }} />
             {gp.error ? <ErrorText>{gp.error}</ErrorText> : null}
           </Card>
         )}
       </FadeSwap>
       <ChoosePathSheet open={choosing} onClose={() => setChoosing(false)} current={path} onChoose={(id, target) => gp.setGroupPath(id, { target_date: target, restart: !!path && path.id !== id })} />
-      <Sheet open={dateOpen} onClose={() => setDateOpen(false)} title="Finish by">
+      <Sheet open={dateOpen} onClose={() => setDateOpen(false)} title={t('Finish by')}>
         <View style={{ paddingHorizontal: SPACE.l, paddingBottom: SPACE.s }}>
           {dateOpen && path ? <MonthPicker value={path.target_date} onPick={d => { setDateOpen(false); void gp.setGroupPath(path.id, { target_date: d }) }} /> : null}
         </View>
@@ -127,19 +129,19 @@ function ChoosePathSheet({ open, onClose, current, onChoose }: { open: boolean; 
   const [busy, setBusy] = useState(false)
   const go = async () => { setBusy(true); try { await onChoose(id, target); onClose() } finally { setBusy(false) } }
   return (
-    <Sheet open={open} onClose={onClose} onBack={view === 'date' ? () => setView('list') : undefined} title={view === 'date' ? 'Finish by' : 'Walk a path together'} maxHeight="88%">
+    <Sheet open={open} onClose={onClose} onBack={view === 'date' ? () => setView('list') : undefined} title={view === 'date' ? t('Finish by') : t('Walk a path together')} maxHeight="88%">
       <ScrollView contentContainerStyle={{ paddingHorizontal: SPACE.l, paddingBottom: SPACE.s, gap: SPACE.m }}>
         <FadeSwap k={view}>
           {view === 'date' ? <MonthPicker value={target} onPick={d => { setTarget(d); setView('list') }} /> : (
             <View style={{ gap: SPACE.m }}>
               <View style={{ gap: 0 }}>
-                {PATH_IDS.filter(p => pathOffered(p, edition)).map(p => <ListRow key={p} label={pathTitle(p)} icon={p === id ? 'check' : undefined} detail={`${pathLength(p).toLocaleString('en')} chapters`} onPress={() => setId(p)} />)}
+                {PATH_IDS.filter(p => pathOffered(p, edition)).map(p => <ListRow key={p} label={pathTitle(p)} icon={p === id ? 'check' : undefined} detail={tn(pathLength(p), '{n} chapter', '{n} chapters', { n: pathLength(p).toLocaleString(dateLocale() ?? 'en') })} onPress={() => setId(p)} />)}
               </View>
-              <ListRow label="Finish by" detail={target ? fmtTargetDay(target) : 'No date'} onPress={() => setView('date')} />
-              {current && current.id !== id ? <T small muted style={{ color: c.muted }}>A new path starts the group again from today; what members have read stays read.</T> : null}
+              <ListRow label={t('Finish by')} detail={target ? fmtTargetDay(target) : t('No date')} onPress={() => setView('date')} />
+              {current && current.id !== id ? <T small muted style={{ color: c.muted }}>{t('A new path starts the group again from today; what members have read stays read.')}</T> : null}
               <Row style={{ justifyContent: 'flex-end' }}>
-                <Button title="Cancel" onPress={onClose} disabled={busy} />
-                <Button title={current ? 'Set' : 'Start'} primary onPress={go} disabled={busy} />
+                <Button title={t('Cancel')} onPress={onClose} disabled={busy} />
+                <Button title={current ? tc('verb', 'Set') : t('Start')} primary onPress={go} disabled={busy} />
               </Row>
             </View>
           )}
@@ -156,5 +158,5 @@ export function GroupCardStrip({ path_id: stored }: { path_id: string | null | u
   const path_id = stored ? shownPathId(stored, edition) : stored
   const route = useMemo(() => path_id && isPathId(path_id) ? pathBooks(path_id) : null, [path_id])
   if (!route || !path_id || !isPathId(path_id)) return null
-  return <PathStrip compact route={route} readSet={null} accessibilityLabel={`Walking ${pathTitle(path_id)}`} style={{ marginTop: 4 }} />
+  return <PathStrip compact route={route} readSet={null} accessibilityLabel={t('Walking {path}', { path: pathTitle(path_id) })} style={{ marginTop: 4 }} />
 }

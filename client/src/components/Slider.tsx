@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Animated, Easing, PanResponder, StyleSheet, Text, View } from 'react-native'
+import { t } from '@shared/i18n'
 import { useColors, useFill } from '../hooks/useTheme'
 import { usePrefsStore } from '../store/prefs'
 import { PRESS_IN_MS, RELEASE_SPRING } from '../lib/motion'
@@ -70,7 +71,7 @@ export default function Slider({ label, value, min, max, step, onChange, format 
         <Text style={{ color: c.muted, fontSize: 14, fontVariant: ['tabular-nums'] }}>{shown}</Text>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <Tap accessibilityRole="button" accessibilityLabel={`${label} smaller`} scaleTo={0.9} onPress={() => onChange(clamp(value - step))} style={[styles.step, { backgroundColor: fill }]}><Text style={{ color: c.text, fontSize: 18 }}>−</Text></Tap>
+        <Tap accessibilityRole="button" accessibilityLabel={t('{label} smaller', { label })} scaleTo={0.9} onPress={() => onChange(clamp(value - step))} style={[styles.step, { backgroundColor: fill }]}><Text style={{ color: c.text, fontSize: 18 }}>−</Text></Tap>
         <View {...pan.panHandlers} accessibilityRole="adjustable" accessibilityValue={{ min, max, now: value }} onLayout={e => { const w = Math.max(1, e.nativeEvent.layout.width); widthRef.current = w; setWidth(w) }} style={{ flex: 1, height: 32, justifyContent: 'center' }}>
           <View pointerEvents="none" style={{ height: 6, borderRadius: 3, backgroundColor: c.border }} />
           <View pointerEvents="none" style={{ position: 'absolute', left: 0, width: `${pct * 100}%`, height: 6, borderRadius: 3, backgroundColor: c.accent }} />
@@ -78,7 +79,7 @@ export default function Slider({ label, value, min, max, step, onChange, format 
             <Animated.View style={[{ width: 22, height: 22, borderRadius: 11, backgroundColor: c.accent, borderWidth: 3, borderColor: fill === c.bg ? c.card : c.bg }, grow]} />
           </View>
         </View>
-        <Tap accessibilityRole="button" accessibilityLabel={`${label} larger`} scaleTo={0.9} onPress={() => onChange(clamp(value + step))} style={[styles.step, { backgroundColor: fill }]}><Text style={{ color: c.text, fontSize: 18 }}>+</Text></Tap>
+        <Tap accessibilityRole="button" accessibilityLabel={t('{label} larger', { label })} scaleTo={0.9} onPress={() => onChange(clamp(value + step))} style={[styles.step, { backgroundColor: fill }]}><Text style={{ color: c.text, fontSize: 18 }}>+</Text></Tap>
       </View>
       {width < 0 && null}
     </View>

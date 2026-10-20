@@ -1,0 +1,26 @@
+{
+ "Add a friend by their exact handle, or with your QR code.": "Ajoutez un ami par son identifiant exact, ou avec votre code QR.",
+ "Candle": "Chandelle",
+ "Email": "Adresse courriel",
+ "Email (optional)": "Adresse courriel (facultatif)",
+ "Email, if you would like a reply (optional)": "Adresse courriel, si vous souhaitez une réponse (facultatif)",
+ "Enter a phone number or an email address.": "Saisissez un numéro de téléphone ou une adresse courriel.",
+ "Enter your own phone number, email or both. Only a scrambled fingerprint of each is stored, never your contacts, and you can turn this off at any time.": "Saisissez votre propre numéro de téléphone, votre adresse courriel ou les deux. Seule une empreinte brouillée de chacun est conservée, jamais vos contacts, et vous pouvez désactiver ceci à tout moment.",
+ "Half letter": "Demi-lettre",
+ "No email and no password reset here; use Google if you would rather not keep a password.": "Pas de courriel ni de réinitialisation du mot de passe ici; utilisez Google si vous préférez ne pas garder de mot de passe.",
+ "No email and no password reset here.": "Pas de courriel ni de réinitialisation du mot de passe ici.",
+ "No internet connection. Check Wi‑Fi or mobile data and try again.": "Pas de connexion Internet. Vérifiez le Wi-Fi ou les données cellulaires et réessayez.",
+ "None of the {n} numbers and emails in your contacts belong to someone who chose to be found.\u0000None of the {n} numbers and emails in your contacts belong to someone who chose to be found.": {
+  "one": "Aucun numéro ni adresse courriel de vos contacts n’appartient à quelqu’un qui a choisi d’être trouvé.",
+  "other": "Aucun des {n} numéros et adresses courriel de vos contacts n’appartient à quelqu’un qui a choisi d’être trouvé."
+ },
+ "On. People who have your number or email in their contacts can find your handle and invite you.": "Activé. Les personnes qui ont votre numéro ou votre adresse courriel dans leurs contacts peuvent trouver votre identifiant et vous inviter.",
+ "paper size\u0004Letter": "Lettre",
+ "Phone, such as +44 7700 900123": "Téléphone, par exemple +1 514 555-0123",
+ "Save a backup file offers it to Drive, email or another app; Save to this phone writes it into a folder you choose.": "Enregistrer une sauvegarde la propose à Drive, au courriel ou à une autre application; Enregistrer sur ce téléphone l’écrit dans un dossier de votre choix.",
+ "Spam": "Pourriel",
+ "That does not look like an email address.": "Cela ne ressemble pas à une adresse courriel.",
+ "The QR code encoder behind the friend-invite code on your profile, adapted in shared/qr.ts.": "L’encodeur de code QR derrière le code d’invitation d’amis de votre profil, adapté dans shared/qr.ts.",
+ "Your contacts are read on this phone. Each number and email is turned into a scrambled fingerprint here, and only the fingerprints are sent. They are not kept, and nobody is told you looked. You see only people who chose to be found by their contacts.": "Vos contacts sont lus sur ce téléphone. Chaque numéro et chaque adresse courriel y est transformé en une empreinte brouillée, et seules les empreintes sont envoyées. Elles ne sont pas conservées, et personne n’est averti de votre recherche. Vous ne voyez que les personnes qui ont choisi d’être trouvées par leurs contacts.",
+ "Your email address": "Votre adresse courriel"
+}

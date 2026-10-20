@@ -20,6 +20,17 @@ use std::{collections::HashMap, fs, io::Write};
 #[derive(Deserialize, Clone)] struct RawNote { m: String, i: i64, t: String }
 #[derive(Deserialize)] struct StrongsEntry { lemma: String, translit: String, pron: String, kjv: String }
 
+/// A Bible in another language, kept in the English Darby's chapters and verses (docs/LANGUAGES.md): data/text_<lang>.json.
+#[derive(Deserialize)] struct LangNote { marker: String, pos: i64, text: String }
+/// A printed verse that begins inside a slot, at word `pos` (the German's Numbers 30:2 inside English 30:1).
+#[derive(Deserialize)] struct LangInner { nv: i64 }
+#[derive(Deserialize)] struct LangVerse { v: i64, t: String, h: Option<String>, p: Option<u8>, s: Option<u8>, nv: Option<i64>, nc: Option<i64>, #[serde(rename = "nvTo")] nv_to: Option<i64>, #[serde(rename = "ncTo")] nc_to: Option<i64>, #[serde(default)] inner: Vec<LangInner>, #[serde(default)] notes: Vec<LangNote> }
+#[derive(Deserialize)] struct LangChapter { c: i64, title: Option<String>, nc: Option<i64>, verses: Vec<LangVerse> }
+#[derive(Deserialize)] struct LangBook { n: i64, chapters: Vec<LangChapter> }
+#[derive(Deserialize)] struct LangText { books: Vec<LangBook> }
+/// The Bibles other than the English the data build knows.
+const LANGS: [&str; 2] = ["fr", "de"];
+
 #[derive(Deserialize)] struct Move { from: String, to: String, text: String, r#as: Option<String> }
 #[derive(Deserialize)] struct Replace { r#ref: String, from: String, to: String }
 #[derive(Deserialize, Default)] struct Corrections { #[serde(default)] moves: Vec<Move>, #[serde(default)] replace: Vec<Replace> }
@@ -208,6 +219,89 @@ fn bundle_plan<'a>(neutered: bool, raw: &'a Raw, raw_1890: Option<&'a Raw>, note
     if neutered { (raw_1890.unwrap_or(raw), notes_1890, Some("1890")) } else { (raw, notes, None) }
 }
 
+/// Every English chapter and verse has its place in `t`, in the same order: a text that lost or gained one would put a
+/// reader's highlights on the wrong words. Returns the problems, empty when there are none.
+fn lang_slots_match(english: &Raw, t: &LangText) -> Vec<String> {
+    let mut bad = Vec::new();
+    if english.books.len() != t.books.len() { bad.push(format!("{} books, the English has {}", t.books.len(), english.books.len())); }
+    for (eb, tb) in english.books.iter().zip(&t.books) {
+        if eb.n != tb.n || eb.chapters.len() != tb.chapters.len() { bad.push(format!("book {}: {} chapters, the English has {}", tb.n, tb.chapters.len(), eb.chapters.len())); continue }
+        for (ec, tc) in eb.chapters.iter().zip(&tb.chapters) {
+            let (ev, tv): (Vec<i64>, Vec<i64>) = (ec.verses.iter().map(|v| v.v).collect(), tc.verses.iter().map(|v| v.v).collect());
+            if ec.c != tc.c || ev != tv { bad.push(format!("{} {}: verses {:?}…, the English {:?}…", tb.n, tc.c, &tv[..tv.len().min(3)], &ev[..ev.len().min(3)])); }
+        }
+    }
+    bad
+}
+
+/// The text's tables for the server's search: verses_<lang> (with its full-text indexes), chapters_<lang>, notes_<lang>.
+fn write_lang_db(tx: &rusqlite::Transaction, lang: &str, t: &LangText) -> Result<usize> {
+    tx.execute_batch(&db::schema_text_lang(lang))?;
+    let mut ins_v = tx.prepare(&format!("INSERT INTO verses_{lang} (id, book, chapter, verse, text, html, para, strophe, head) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,NULL)"))?;
+    let mut ins_c = tx.prepare(&format!("INSERT INTO chapters_{lang} (book, chapter, title, division, words, verse_count) VALUES (?1,?2,?3,0,?4,?5)"))?;
+    let mut ins_n = tx.prepare(&format!("INSERT INTO notes_{lang} (verse_id, marker, word_index, text) VALUES (?1,?2,?3,?4)"))?;
+    let mut total = 0;
+    for b in &t.books { for ch in &b.chapters {
+        let mut words = 0;
+        for v in &ch.verses {
+            let id = db::verse_id(b.n, ch.c, v.v);
+            if !v.t.is_empty() { ins_v.execute(params![id, b.n, ch.c, v.v, v.t, v.h, v.p.unwrap_or(0), v.s.unwrap_or(0)])?; total += 1; }
+            words += word_count(&v.t);
+            for n in &v.notes { ins_n.execute(params![id, n.marker, n.pos, n.text])?; }
+        }
+        ins_c.execute(params![b.n, ch.c, ch.title, words, ch.verses.len() as i64])?;
+    } }
+    tx.execute_batch(&db::fts_rebuild_lang(lang))?;
+    Ok(total)
+}
+
+/// The reader's chapter files of the text (client/public/bible-<lang>/B/C.json), marked `tx` so a stored copy says which
+/// Bible it is; each verse's own printed numbers where they differ, and `m` on an English verse whose words this Bible
+/// gives with its neighbour's (the reader shows nothing for it, where an English verse Darby omits says so).
+fn lang_chapter_files(lang: &str, t: &LangText, english: &Raw) -> Vec<serde_json::Value> {
+    let mut all = Vec::with_capacity(1189);
+    for (b, eb) in t.books.iter().zip(&english.books) { for (ch, ec) in b.chapters.iter().zip(&eb.chapters) {
+        let verses: Vec<serde_json::Value> = ch.verses.iter().zip(&ec.verses).map(|(v, ev)| {
+            let mut o = serde_json::json!({ "v": v.v, "t": v.t });
+            if v.t.is_empty() && !ev.t.is_empty() { o["m"] = serde_json::json!(1); }
+            if let Some(h) = &v.h { o["h"] = serde_json::json!(h); }
+            if v.p.is_some() { o["p"] = serde_json::json!(1); }
+            if v.s.is_some() { o["s"] = serde_json::json!(1); }
+            if let Some(n) = v.nv { o["nv"] = serde_json::json!(n); }
+            if let Some(n) = v.nc { o["nc"] = serde_json::json!(n); }
+            // two printed verses in one slot: shown as their range ("1-2")
+            if let Some(n) = v.nv_to.or(v.inner.last().map(|i| i.nv)) { o["nvTo"] = serde_json::json!(n); }
+            if let Some(n) = v.nc_to { o["ncTo"] = serde_json::json!(n); }
+            if !v.notes.is_empty() { o["notes"] = serde_json::json!(v.notes.iter().enumerate().map(|(i, n)| serde_json::json!({ "id": db::verse_id(b.n, ch.c, v.v) * 10 + i as i64, "marker": n.marker, "pos": n.pos, "text": n.text })).collect::<Vec<_>>()); }
+            o
+        }).collect();
+        let mut c = serde_json::json!({ "book": b.n, "c": ch.c, "tx": lang, "verses": verses, "words": ch.verses.iter().map(|v| word_count(&v.t)).sum::<i64>() });
+        if let Some(x) = &ch.title { c["title"] = serde_json::json!(x); }
+        if let Some(n) = ch.nc { c["nc"] = serde_json::json!(n); }
+        all.push(c);
+    } }
+    all
+}
+
+/// Where the text's own numbers sit in the English (shared/texts.ts VerseMap): by English "book.chapter", runs of verses
+/// `[v, len, own chapter, own first verse]`, only where some verse differs.
+fn lang_verse_map(t: &LangText) -> serde_json::Map<String, serde_json::Value> {
+    let mut out = serde_json::Map::new();
+    for b in &t.books { for ch in &b.chapters {
+        let mut runs: Vec<[i64; 4]> = Vec::new();
+        for v in &ch.verses {
+            let (oc, ov) = (v.nc.unwrap_or(ch.c), v.nv.unwrap_or(v.v));
+            if (oc, ov) == (ch.c, v.v) { continue }
+            match runs.last_mut() {
+                Some(r) if r[0] + r[1] == v.v && r[2] == oc && r[3] + r[1] == ov => r[1] += 1,
+                _ => runs.push([v.v, 1, oc, ov]),
+            }
+        }
+        if !runs.is_empty() { out.insert(format!("{}.{}", b.n, ch.c), serde_json::json!(runs)); }
+    } }
+    out
+}
+
 fn main() -> Result<()> {
     let data = std::env::args().nth(1).unwrap_or_else(|| "data".into());
     let neutered = std::env::var("BEREAN_NEUTERED").is_ok_and(|v| v == "1");
@@ -233,6 +327,15 @@ fn main() -> Result<()> {
     let (notes_1890, glyphs_1890) = edition_notes(raw_1890.as_ref().unwrap_or(&raw), &base, own);
     println!("notes 1961: {lettered_1961} lettered (notes_bf.json) + {glyphs} El/Eloah glosses from the printed glyphs");
     println!("notes 1890: {lettered_1890} lettered (notes_1890.json{}) + {glyphs_1890} glosses; text: {}", if lettered_1890 == 0 { ": none yet" } else { "" }, if raw_1890.is_some() { "darby_1890.json" } else { "the same as 1961" });
+    // the other languages' Bibles (docs/LANGUAGES.md), each refused whole if it does not fill the English slots exactly
+    let mut texts: Vec<(&str, LangText)> = Vec::new();
+    for lang in LANGS {
+        let Ok(s) = fs::read_to_string(format!("{data}/text_{lang}.json")) else { continue };
+        let t: LangText = serde_json::from_str(&s).with_context(|| format!("data/text_{lang}.json"))?;
+        let bad = lang_slots_match(&raw, &t);
+        anyhow::ensure!(bad.is_empty(), "data/text_{lang}.json does not fill the English chapters and verses: {} problems, first {:?}", bad.len(), &bad[..bad.len().min(5)]);
+        texts.push((lang, t));
+    }
     let words: HashMap<String, Vec<(String, String)>> = fs::read_to_string(format!("{data}/words.json")).ok().map(|s| serde_json::from_str(&s)).transpose()?.unwrap_or_default();
     let strongs: HashMap<String, StrongsEntry> = fs::read_to_string(format!("{data}/strongs.json")).ok().map(|s| serde_json::from_str(&s)).transpose()?.unwrap_or_default();
 
@@ -262,6 +365,7 @@ fn main() -> Result<()> {
     }
     tx.execute_batch(db::FTS_REBUILD)?;
     if raw_1890.is_some() { tx.execute_batch(db::FTS_REBUILD_1890)?; }
+    for (lang, t) in &texts { println!("{lang} text: {} verses", write_lang_db(&tx, lang, t)?); }
     tx.execute("INSERT INTO meta (key, value) VALUES ('built_at', ?1)", params![db::now_iso()])?;
     tx.commit()?;
     conn.execute_batch("VACUUM; PRAGMA journal_mode = WAL;")?;
@@ -330,6 +434,21 @@ fn main() -> Result<()> {
     let version: String = hash.finalize()[..6].iter().map(|b| format!("{b:02x}")).collect();
     fs::write(format!("{dir_1890}/meta.json"), serde_json::to_vec(&serde_json::json!({ "v": version, "text": raw_1890.is_some(), "notices": notices.is_some() }))?)?;
     println!("1890 bundle: {} KB of chapter JSON in {dir_1890}; app overlay {} KB; version {version}", total_1890 / 1024, overlay_bytes / 1024);
+
+    // The other languages' Bibles (docs/LANGUAGES.md): the same files under bible-<lang>/ for the web, the server and the
+    // apps' bundle, with map.json (where their numbers differ) and meta.json (a version, in their URLs).
+    for (lang, t) in &texts {
+        let dir = format!("{out_dir}-{lang}");
+        let files = lang_chapter_files(lang, t, &raw);
+        let total = write_bundle(&dir, &files, None)?;
+        let map = lang_verse_map(t);
+        fs::write(format!("{dir}/map.json"), serde_json::to_vec(&map)?)?;
+        let mut hash = sha2::Sha256::new();
+        for c in &files { hash.update(serde_json::to_vec(c)?); }
+        let version: String = hash.finalize()[..6].iter().map(|b| format!("{b:02x}")).collect();
+        fs::write(format!("{dir}/meta.json"), serde_json::to_vec(&serde_json::json!({ "v": version }))?)?;
+        println!("{lang} bundle: {} KB of chapter JSON in {dir}; {} chapters numbered differently; version {version}", total / 1024, map.len());
+    }
     Ok(())
 }
 

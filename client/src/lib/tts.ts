@@ -2,6 +2,7 @@ import { Platform } from 'react-native'
 import { get, getApiBase } from './api'
 import { tokenize } from './bible'
 import type { Verse } from '@shared/types'
+import { t } from '@shared/i18n'
 
 /** Word timings for one recorded chapter; times in ms into the recording, `off` a char offset into the verse text. */
 export interface WordMark { off: number; start: number; end: number }
@@ -12,10 +13,11 @@ export interface ChapterMarks { voice: string; book: number; chapter: number; du
 export interface NumbersMarks { voice: string; numbers: [number, number, number][] }
 export interface VoiceInfo { id: string; name: string; blurb: string; chapters: number; numbers: boolean }
 
+/** Each voice by its own name; its blurb is read in the reader's language when shown. */
 export const VOICES: { id: string; name: string; blurb: string }[] = [
-  { id: 'alec', name: 'Alec', blurb: 'British, low and unhurried' },
-  { id: 'beatrice_32', name: 'Beatrice', blurb: 'British, warm' },
-  { id: 'dominic', name: 'Dominic', blurb: 'American, clear' },
+  { id: 'alec', name: 'Alec', get blurb() { return t('British, low and unhurried') } },
+  { id: 'beatrice_32', name: 'Beatrice', get blurb() { return t('British, warm') } },
+  { id: 'dominic', name: 'Dominic', get blurb() { return t('American, clear') } },
 ]
 export type Pause = 'none' | 'short' | 'long'
 export const PAUSE_MS: Record<Pause, number> = { none: 0, short: 500, long: 1200 }

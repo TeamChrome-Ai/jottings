@@ -22,8 +22,9 @@ import { localReadSet } from '../../src/lib/paths'
 import { tourRef } from '../../src/store/tour'
 import { loadReactions, markReactionsSeen, type ReceivedReaction } from '../../src/lib/friends'
 import { ReactionNotice, badgeReactions } from '../../src/components/friends/StatsReactions'
+import { t, tc } from '@shared/i18n'
 
-const days = (n: number) => `${Math.round(n)} d`
+const days = (n: number) => t('{n} d', { n: Math.round(n) })
 const whole = (n: number) => String(Math.round(n))
 
 export default function StatsScreen() {
@@ -51,12 +52,12 @@ export default function StatsScreen() {
     return () => { cancelled = true }
   }, [uid]))
 
-  if (!user) return <Screen safeTop><H>Stats</H><LocalStats /></Screen>
+  if (!user) return <Screen safeTop><H>{t('Stats')}</H><LocalStats /></Screen>
 
   const earned = stats ? stats.badges.filter(b => b.earned_at).length : 0
   return (
     <Screen safeTop>
-      <H>Stats</H>
+      <H>{t('Stats')}</H>
       {err ? <ErrorText>{err}</ErrorText> : null}
       {!stats && !err && <Spinner />}
       {stats && (
@@ -64,20 +65,20 @@ export default function StatsScreen() {
           {reactions ? <ReactionNotice reactions={reactions} badges={stats.badges} /> : null}
           {/* five tiles at 31% + flexGrow: the streak row of three, then Chapters and Books sharing the second row */}
           <View ref={tourRef('stats-tiles')} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <Tile label="Streak" value={streakToday(stats.streak, localDay()).current} fmt={days} />
-            <Tile label="Longest" value={stats.streak.longest} fmt={days} />
-            <Tile label="Time" value={stats.total_active_seconds} fmt={fmtDuration} />
-            <Tile label="Chapters" value={stats.chapters_read} />
-            <Tile label="Books" value={stats.books_completed} />
+            <Tile label={t('Streak')} value={streakToday(stats.streak, localDay()).current} fmt={days} />
+            <Tile label={t('Longest')} value={stats.streak.longest} fmt={days} />
+            <Tile label={tc('time spent', 'Time')} value={stats.total_active_seconds} fmt={fmtDuration} />
+            <Tile label={t('Chapters')} value={stats.chapters_read} />
+            <Tile label={t('Books')} value={stats.books_completed} />
           </View>
-          <H2>This week</H2>
+          <H2>{t('This week')}</H2>
           <Card ref={tourRef('stats-week')}><WeekStrip days={stats.streak.days} /><T small muted>{goalView(streakToday(stats.streak, localDay()).todaySeconds, stats.streak.today_goal_seconds, dailyGoal).line}</T></Card>
           <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
-            <H2>Badges</H2>
+            <H2>{t('Badges')}</H2>
             <BadgeCount earned={earned} total={stats.badges.length} />
           </Row>
           <View ref={tourRef('stats-badges')}><BadgeGrid badges={stats.badges} fresh={fresh} footer={reactions ? badgeReactions(reactions) : undefined} /></View>
-          <H2>Progress by book</H2>
+          <H2>{t('Progress by book')}</H2>
           <BookProgress progress={progress} />
         </>
       )}
@@ -102,14 +103,14 @@ function LocalStats() {
   const progress = useMemo(() => readSet ? readProgress(readSet) : null, [readSet])
   if (!readSet || !totals) return null
   const any = totals.chapters > 0
-  const signIn = <SignInCard ref={tourRef('stats-signin')} text="Sign in to keep a streak, badges and time, and to read with a group." />
-  const strip = <PathStrip route={null} readSet={readSet} labels={false} delay={any ? 200 : 120} accessibilityLabel={`The Bible: ${totals.chapters} of 1,189 chapters read on this device`} />
+  const signIn = <SignInCard ref={tourRef('stats-signin')} text={t('Sign in to keep a streak, badges and time, and to read with a group.')} />
+  const strip = <PathStrip route={null} readSet={readSet} labels={false} delay={any ? 200 : 120} accessibilityLabel={t('The Bible: {n} of 1,189 chapters read on this device', { n: totals.chapters })} />
   if (!any) return (
     <>
       <Enter>
         <Card style={{ gap: 10 }}>
           {strip}
-          <T small muted>Nothing read on this device yet. The chapters you read fill in here.</T>
+          <T small muted>{t('Nothing read on this device yet. The chapters you read fill in here.')}</T>
         </Card>
       </Enter>
       <Enter delay={80}>{signIn}</Enter>
@@ -118,19 +119,19 @@ function LocalStats() {
   return (
     <>
       <Enter style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        <Tile label="Chapters read here" value={totals.chapters} />
-        <Tile label="Books finished here" value={totals.books} />
+        <Tile label={t('Chapters read here')} value={totals.chapters} />
+        <Tile label={t('Books finished here')} value={totals.books} />
       </Enter>
       <Enter delay={80}>
         <Card style={{ gap: 10 }}>
           {strip}
-          <T small muted>{totals.chapters.toLocaleString()} of 1,189 chapters</T>
+          <T small muted>{t('{n} of 1,189 chapters', { n: totals.chapters.toLocaleString() })}</T>
         </Card>
       </Enter>
       {/* above the 66 rows: under them the one call to action sat a long scroll away */}
       <Enter delay={160}>{signIn}</Enter>
       <Enter delay={240} style={{ gap: SPACE.l }}>
-        <H2>Progress by book</H2>
+        <H2>{t('Progress by book')}</H2>
         <BookProgress progress={progress} />
       </Enter>
       <View style={{ height: 24 }} />
@@ -151,7 +152,7 @@ function Tile({ label, value, fmt = whole }: { label: string; value: number; fmt
 
 function BadgeCount({ earned, total }: { earned: number; total: number }) {
   const n = useCountUp(earned)
-  return <T small muted style={{ fontVariant: ['tabular-nums'] }}>{n} of {total} earned</T>
+  return <T small muted style={{ fontVariant: ['tabular-nums'] }}>{t('{n} of {total} earned', { n, total })}</T>
 }
 
 /**

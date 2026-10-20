@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { chapterKey } from '@shared/paths'
+import { t } from '@shared/i18n'
 import { END_WORDS, endLine } from '../lib/chapterEnd'
 import { refreshPath, useDeviceReads, usePathCounts } from '../lib/paths'
 import { firstMark, markRead, unmarkRead } from '../lib/readMarks'
@@ -73,7 +74,7 @@ export default memo(function ChapterEndLine({ book, chapter, credited, toCredit,
     <View style={[styles.line, bare ? styles.bare : styles.pad]}>
       {line.kind === 'read' ? <Icon name="check" size={14} color={c.muted} /> : null}
       {says && gapAt !== null && goToVerse ? (
-        <Tap onPress={() => goToVerse(gapAt)} scaleTo={0.98} crisp hitSlop={bare ? BARE_SLOP : 10} accessibilityRole="link" accessibilityLabel={`${says}. Go to verse ${gapAt}`}>
+        <Tap onPress={() => goToVerse(gapAt)} scaleTo={0.98} crisp hitSlop={bare ? BARE_SLOP : 10} accessibilityRole="link" accessibilityLabel={t('{line}. Go to verse {v}', { line: says, v: gapAt })}>
           <T small muted maxFontSizeMultiplier={cap} style={styles.gap}>{says}</T>
         </Tap>
       ) : says ? <T small muted maxFontSizeMultiplier={cap}>{says}</T> : null}

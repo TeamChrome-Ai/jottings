@@ -3,6 +3,7 @@ import type { Font } from './store/prefs'
 import { customIdOf, getCustomFont, nativeFamily, webFamily, type FaceKey } from './lib/customFonts'
 import { lineFactor } from './lib/lineHeight'
 import { HL_EXTRA, type HlColor, type HlCore, type HlExtra } from './lib/hlColours'
+import { N_, t, tc } from '@shared/i18n'
 
 export type Group = 'light' | 'dark' | 'black'
 export interface Colors {
@@ -110,6 +111,8 @@ function build(s: Spec, dark: boolean, m: Mix): Omit<ThemeDef, 'id'> & { id: str
   const muted = legible(s.muted, s.text, [s.bg, card], 4.5), accent = legible(s.accent, s.text, [s.bg, card], 4.5)
   return {
     ...s, dark, card, muted, accent,
+    // the name below is its English; the screens read it in the reader's language
+    get name() { return t(s.name) },
     bar: mix(s.bg, s.text, m.bar),
     border: mix(s.bg, s.text, m.border),
     accentText: s.accentText ?? (dark ? s.bg : '#ffffff'),
@@ -125,33 +128,33 @@ const black = (id: string, name: string, accent: string) => build({ id, name, gr
 
 // Ordered as the gallery shows them. Ids are storage keys: never rename one, only add.
 const SPECS = [
-  light({ id: 'paper', name: 'Paper', group: 'light', bg: '#faf7f2', text: '#221b16', muted: '#6b5f55', accent: '#7c2d12' }),
-  light({ id: 'sepia', name: 'Sepia', group: 'light', bg: '#f3e9d4', text: '#382b1c', muted: '#6e5d45', accent: '#8a3a0e', danger: '#9f1239' }),
-  light({ id: 'linen', name: 'Linen', group: 'light', bg: '#f3f0ea', text: '#1f2330', muted: '#5f6170', accent: '#27466e' }),
-  light({ id: 'sand', name: 'Sand', group: 'light', bg: '#faf3e3', text: '#33260f', muted: '#735f3c', accent: '#9a4a06' }),
-  light({ id: 'mint', name: 'Mint', group: 'light', bg: '#ecf5ef', text: '#10302a', muted: '#4f6d64', accent: '#0b6b61' }),
-  light({ id: 'sky', name: 'Sky', group: 'light', bg: '#edf3fb', text: '#0f1d38', muted: '#51607a', accent: '#1f4fd1' }),
-  light({ id: 'rose', name: 'Rose', group: 'light', bg: '#fbf0f2', text: '#3b0f1e', muted: '#7d4f5d', accent: '#b3123d' }),
-  light({ id: 'lavender', name: 'Lavender', group: 'light', bg: '#f3f0fb', text: '#221a3d', muted: '#625a7d', accent: '#6427cf' }),
-  light({ id: 'olive', name: 'Olive', group: 'light', bg: '#f2f3ea', text: '#1e2314', muted: '#5f6650', accent: '#46700c' }),
+  light({ id: 'paper', name: N_('Paper'), group: 'light', bg: '#faf7f2', text: '#221b16', muted: '#6b5f55', accent: '#7c2d12' }),
+  light({ id: 'sepia', name: N_('Sepia'), group: 'light', bg: '#f3e9d4', text: '#382b1c', muted: '#6e5d45', accent: '#8a3a0e', danger: '#9f1239' }),
+  light({ id: 'linen', name: N_('Linen'), group: 'light', bg: '#f3f0ea', text: '#1f2330', muted: '#5f6170', accent: '#27466e' }),
+  light({ id: 'sand', name: N_('Sand'), group: 'light', bg: '#faf3e3', text: '#33260f', muted: '#735f3c', accent: '#9a4a06' }),
+  light({ id: 'mint', name: N_('Mint'), group: 'light', bg: '#ecf5ef', text: '#10302a', muted: '#4f6d64', accent: '#0b6b61' }),
+  light({ id: 'sky', name: N_('Sky'), group: 'light', bg: '#edf3fb', text: '#0f1d38', muted: '#51607a', accent: '#1f4fd1' }),
+  light({ id: 'rose', name: N_('Rose'), group: 'light', bg: '#fbf0f2', text: '#3b0f1e', muted: '#7d4f5d', accent: '#b3123d' }),
+  light({ id: 'lavender', name: N_('Lavender'), group: 'light', bg: '#f3f0fb', text: '#221a3d', muted: '#625a7d', accent: '#6427cf' }),
+  light({ id: 'olive', name: N_('Olive'), group: 'light', bg: '#f2f3ea', text: '#1e2314', muted: '#5f6650', accent: '#46700c' }),
 
-  dark({ id: 'slate', name: 'Slate', group: 'dark', bg: '#1c1917', text: '#ebe6e1', muted: '#a79f97', accent: '#f6b17f' }),
-  dark({ id: 'midnight', name: 'Midnight', group: 'dark', bg: '#0e1628', text: '#e3e9f3', muted: '#95a3ba', accent: '#8ccbff' }),
-  dark({ id: 'forest', name: 'Forest', group: 'dark', bg: '#0e1d16', text: '#dbf3e3', muted: '#8db29c', accent: '#72e0b3' }),
-  dark({ id: 'wine', name: 'Wine', group: 'dark', bg: '#1d0e13', text: '#f8e6ec', muted: '#b98f9e', accent: '#ff9fb0' }),
-  dark({ id: 'nord', name: 'Nord', group: 'dark', bg: '#2e3440', text: '#eceff4', muted: '#aab3c5', accent: '#88c0d0' }),
-  dark({ id: 'plum', name: 'Plum', group: 'dark', bg: '#272433', text: '#f3f0f8', muted: '#a8a2bb', accent: '#c3a2ff' }),
-  dark({ id: 'graphite', name: 'Graphite', group: 'dark', bg: '#1f1f1f', text: '#ececec', muted: '#a0a0a0', accent: '#e6e6e6' }),
-  dark({ id: 'ocean', name: 'Ocean', group: 'dark', bg: '#0a1b23', text: '#e0f1f8', muted: '#8fb2c2', accent: '#3fd5c2' }),
+  dark({ id: 'slate', name: N_('Slate'), group: 'dark', bg: '#1c1917', text: '#ebe6e1', muted: '#a79f97', accent: '#f6b17f' }),
+  dark({ id: 'midnight', name: N_('Midnight'), group: 'dark', bg: '#0e1628', text: '#e3e9f3', muted: '#95a3ba', accent: '#8ccbff' }),
+  dark({ id: 'forest', name: N_('Forest'), group: 'dark', bg: '#0e1d16', text: '#dbf3e3', muted: '#8db29c', accent: '#72e0b3' }),
+  dark({ id: 'wine', name: N_('Wine'), group: 'dark', bg: '#1d0e13', text: '#f8e6ec', muted: '#b98f9e', accent: '#ff9fb0' }),
+  dark({ id: 'nord', name: N_('Nord'), group: 'dark', bg: '#2e3440', text: '#eceff4', muted: '#aab3c5', accent: '#88c0d0' }),
+  dark({ id: 'plum', name: N_('Plum'), group: 'dark', bg: '#272433', text: '#f3f0f8', muted: '#a8a2bb', accent: '#c3a2ff' }),
+  dark({ id: 'graphite', name: N_('Graphite'), group: 'dark', bg: '#1f1f1f', text: '#ececec', muted: '#a0a0a0', accent: '#e6e6e6' }),
+  dark({ id: 'ocean', name: N_('Ocean'), group: 'dark', bg: '#0a1b23', text: '#e0f1f8', muted: '#8fb2c2', accent: '#3fd5c2' }),
 
-  black('black', 'Black', '#fdba74'),
-  black('black-ember', 'Ember', '#fb8a3c'),
-  black('black-jade', 'Jade', '#34d399'),
-  black('black-ice', 'Ice', '#6aa8ff'),
-  black('black-rose', 'Petal', '#fb7185'),
-  black('black-gold', 'Gold', '#fbbf24'),
-  black('black-lilac', 'Lilac', '#c89bff'),
-  black('black-white', 'Ink', '#f5f5f5'),
+  black('black', N_('Black'), '#fdba74'),
+  black('black-ember', N_('Ember'), '#fb8a3c'),
+  black('black-jade', N_('Jade'), '#34d399'),
+  black('black-ice', N_('Ice'), '#6aa8ff'),
+  black('black-rose', N_('Petal'), '#fb7185'),
+  black('black-gold', N_('Gold'), '#fbbf24'),
+  black('black-lilac', N_('Lilac'), '#c89bff'),
+  black('black-white', N_('Ink'), '#f5f5f5'),
 ] as const
 
 export type ThemeId = typeof SPECS[number]['id']
@@ -160,9 +163,9 @@ export const THEME_MAP: Record<string, ThemeDef> = Object.fromEntries(THEMES.map
 export const LIGHT_DEFAULT: ThemeId = 'paper'
 export const DARK_DEFAULT: ThemeId = 'slate'
 export const GROUPS: { group: Group; title: string; hint: string }[] = [
-  { group: 'light', title: 'Light', hint: 'Paper tones for daylight' },
-  { group: 'dark', title: 'Dark', hint: 'Soft dark pages for the evening' },
-  { group: 'black', title: 'Black', hint: 'True black for OLED screens; only the ink changes' },
+  { group: 'light', get title() { return tc('theme group', 'Light') }, get hint() { return t('Paper tones for daylight') } },
+  { group: 'dark', get title() { return tc('theme group', 'Dark') }, get hint() { return t('Soft dark pages for the evening') } },
+  { group: 'black', get title() { return tc('theme group', 'Black') }, get hint() { return t('True black for OLED screens; only the ink changes') } },
 ]
 export const isThemeId = (s: string): s is ThemeId => s in THEME_MAP
 

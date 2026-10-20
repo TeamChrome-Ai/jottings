@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { Animated, Platform, StyleSheet, Text, View, type LayoutChangeEvent, type NativeSyntheticEvent, type TextLayoutEventData, type TextStyle } from 'react-native'
 import { isLookupWord, wholeWord } from '@shared/cbd'
+import { t, tc } from '@shared/i18n'
 import { isLettered, relabel } from '../lib/noteLetters'
 import type { Note, Verse } from '@shared/types'
 import type { Ref } from '@shared/ref'
@@ -63,25 +64,40 @@ interface Props {
   onVerseLayout?: (v: number, paraIndex: number, y: number) => void
   /** Read-aloud: the word being spoken, as (verse, char offset into the verse text). */
   spoken?: { v: number; off: number | null } | null
+  /** Side by side (docs/LANGUAGES.md): the same chapter of a second Bible, each verse under its own, or beside it on a
+   *  wide screen (`wide`). Every verse is then a paragraph of its own. */
+  second?: ChapterData | null
+  wide?: boolean
 }
+
+/** A verse's own printed chapter and number in a Bible other than the English (the English ones elsewhere). */
+const ownChapter = (v: Verse, c: number) => v.nc ?? c
+export const verseLabel = (v: Verse) => (v.nvTo ? `${v.nv ?? v.v}${v.ncTo ? `–${v.ncTo}:` : '-'}${v.nvTo}` : String(v.nv ?? v.v))
 
 /**
  * Paragraph layout from the `p` / `hd` flags; each verse is a memoised nested Text. Memoised itself: the reading
  * screen re-renders for its sheets, toasts and every spoken word, and none of those may walk the chapter. No colour
  * passes through it: a theme change repaints the leaves that carry one (InkText, the heading, a note, a tinted verse).
  */
-export default memo(function ChapterView({ data, prefs, selected, flash = EMPTY, highlights, bookmarked, openNotes, allNotes = false, wordTags = null, tapWords = false, onWord, isRead, marked = false, onSelect, onToggleNote, onParaLayout, onNavigate, onVerseLayout, spoken = null }: Props) {
+export default memo(function ChapterView({ data, prefs, selected, flash = EMPTY, highlights, bookmarked, openNotes, allNotes = false, wordTags = null, tapWords = false, onWord, isRead, marked = false, onSelect, onToggleNote, onParaLayout, onNavigate, onVerseLayout, spoken = null, second = null, wide = false }: Props) {
   const meta = bookMeta(data.book)
   // the footnote letters the reader chose (lib/noteLetters.ts); `data` itself is what the server sent
   const verses = useMemo(() => relabel(data.verses, prefs.noteLetters), [data.verses, prefs.noteLetters])
+  // a paragraph never runs across a printed chapter of the Bible shown (its number heads the new one), and side by side
+  // every verse is one
   const paras = useMemo(() => {
     const out: Verse[][] = []
+    let prev: Verse | null = null
     for (const v of verses) {
-      if (!out.length || !prefs.paragraphs || v.p || v.hd) out.push([v])
+      const turn = prev !== null && ownChapter(prev, data.c) !== ownChapter(v, data.c)
+      if (!out.length || !prefs.paragraphs || second || v.p || v.hd || turn) out.push([v])
       else out[out.length - 1].push(v)
+      prev = v
     }
     return out
-  }, [verses, prefs.paragraphs])
+  }, [verses, prefs.paragraphs, second, data.c])
+  const secondBy = useMemo(() => new Map((second?.verses ?? []).map(v => [v.v, v])), [second])
+  const pair = !!second && wide
 
   const fs = prefs.fontSize
   const dys = prefs.font === 'dyslexic'
@@ -146,18 +162,23 @@ export default memo(function ChapterView({ data, prefs, selected, flash = EMPTY,
     })
   }, [onParaLayout])
   const noteContext = useMemo(() => ({ book: data.book, chapter: data.c }), [data.book, data.c])
+  const maxWidth = READ_EM[prefs.width] ? Math.round(fs * READ_EM[prefs.width]! * (pair ? 2 : 1)) + (pair ? 64 : 40) : undefined
   return (
-    <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24, width: '100%', maxWidth: READ_EM[prefs.width] ? Math.round(fs * READ_EM[prefs.width]!) + 40 : undefined, alignSelf: ALIGN_SELF[prefs.align] }}>
-      <Heading name={meta.name} chapter={data.c} isRead={isRead} marked={marked} font={prefs.font} dys={dys} numeralSize={numeralSize} />
+    <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24, width: '100%', maxWidth, alignSelf: ALIGN_SELF[prefs.align] }}>
+      <Heading name={meta.name} chapter={data.nc ?? ownChapter(data.verses[0] ?? { v: 1, t: '' }, data.c)} isRead={isRead} marked={marked} font={prefs.font} dys={dys} numeralSize={numeralSize} />
       {data.title ? <InkText ink="muted" style={{ textAlign: 'center', fontSize: Math.round(fs * 0.9), lineHeight: Math.round(fs * 0.9 * 1.45), marginBottom: 18, paddingHorizontal: 8, ...face(prefs.font, { italic: true }) }}>{data.title}</InkText> : null}
-      {paras.map((pv, i) => (
-        <Paragraph key={i} index={i} register={registerPara} onParaLayout={reportPara} onVerseLayout={onVerseLayout} getParaNode={getParaNode} spoken={spoken}
-          verses={pv} book={data.book} chapter={data.c} noteContext={noteContext} paraStyle={paraStyle} wordSpacing={letterSpacing + wordSpacing} plainSeps={wordSpacing === 0}
-          prefs={prefs} gap={Math.round(lineHeight * 0.55)}
-          selected={selected} flash={flash} highlights={highlights} bookmarked={bookmarked} shownNotes={shownNotes} leaving={notes.leaving} delays={notes.delays} onExited={notes.exited} pinned={allNotes}
-          wordTags={wordTags} tapWords={tapWords} onWord={onWord} onSelect={onSelect} onToggleNote={onToggleNote} onNavigate={onNavigate}
-          tourNote={tourNote !== null && pv.some(v => v.notes?.some(n => n.id === tourNote)) ? tourNote : null} />
-      ))}
+      {paras.map((pv, i) => {
+        const own = ownChapter(pv[0], data.c), before = i ? paras[i - 1][paras[i - 1].length - 1] : null
+        return (
+          <Paragraph key={i} index={i} register={registerPara} onParaLayout={reportPara} onVerseLayout={onVerseLayout} getParaNode={getParaNode} spoken={spoken}
+            verses={pv} book={data.book} chapter={data.c} noteContext={noteContext} paraStyle={paraStyle} wordSpacing={letterSpacing + wordSpacing} plainSeps={wordSpacing === 0}
+            prefs={prefs} gap={Math.round(lineHeight * 0.55)} turn={before && ownChapter(before, data.c) !== own ? own : 0}
+            second={second ? secondBy.get(pv[0].v) ?? null : undefined} pair={pair}
+            selected={selected} flash={flash} highlights={highlights} bookmarked={bookmarked} shownNotes={shownNotes} leaving={notes.leaving} delays={notes.delays} onExited={notes.exited} pinned={allNotes}
+            wordTags={wordTags} tapWords={tapWords} onWord={onWord} onSelect={onSelect} onToggleNote={onToggleNote} onNavigate={onNavigate}
+            tourNote={tourNote !== null && pv.some(v => v.notes?.some(n => n.id === tourNote)) ? tourNote : null} />
+        )
+      })}
     </View>
   )
 })
@@ -205,13 +226,17 @@ const Heading = memo(function Heading({ name, chapter, isRead, marked, font, dys
   const readMark = useMemo(() => settled(anim.read.opacity, flip, 0.8), [anim, flip])
   const ribbonMark = useMemo(() => settled(anim.read.opacity, ribbon, 0.6), [anim, ribbon])
   const ribbonSize = Math.round(numeralSize * 0.26)
+  const label = isRead && marked ? t('{book} chapter {chapter}, read, bookmarked', { book: name, chapter })
+    : isRead ? t('{book} chapter {chapter}, read', { book: name, chapter })
+    : marked ? t('{book} chapter {chapter}, bookmarked', { book: name, chapter })
+    : t('{book} chapter {chapter}', { book: name, chapter })
   return (
-    <View style={{ alignItems: 'center', marginTop: 20, marginBottom: 22 }} accessibilityRole="header" accessibilityLabel={`${name} chapter ${chapter}${isRead ? ', read' : ''}${marked ? ', bookmarked' : ''}`}>
+    <View style={{ alignItems: 'center', marginTop: 20, marginBottom: 22 }} accessibilityRole="header" accessibilityLabel={label}>
       <View>
         <Animated.Text style={[{ color: colors.muted, fontSize: 17, ...face(font, { italic: true }) }, anim.name]}>{name}</Animated.Text>
         <Animated.View pointerEvents="none" style={[styles.read, { backgroundColor: colors.accentSoft }, readMark]}>
           <Icon name="check" size={13} color={colors.accent} />
-          <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>Read</Text>
+          <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>{tc('done', 'Read')}</Text>
         </Animated.View>
       </View>
       <Animated.View style={anim.numeral}>
@@ -238,6 +263,11 @@ interface ParaProps {
   onSelect: (v: number) => void; onToggleNote: (id: number) => void; onNavigate?: (r: Ref) => void
   /** The note the guided tour has opened, when it is in this paragraph: its text and card are what the tour points at. */
   tourNote: number | null
+  /** The printed chapter of the Bible shown that begins here, inside the English one (0: none). */
+  turn: number
+  /** Side by side: the second Bible's verse for this one (null: it has none here), beside it when `pair`. */
+  second?: Verse | null
+  pair: boolean
 }
 /** Chapter-wide collections: a new instance re-renders only the paragraphs whose own verses or notes read differently from it. */
 const SLICED: ReadonlySet<string> = new Set<keyof ParaProps>(['selected', 'flash', 'highlights', 'bookmarked', 'spoken', 'shownNotes', 'leaving', 'delays'])
@@ -266,7 +296,7 @@ function sameParagraph(a: ParaProps, b: ParaProps): boolean {
  * One paragraph = one Text, split wherever a verse has an expanded footnote so the note sits right under it.
  * Runs and notes are flat siblings keyed by first verse / note id, so opening one note never remounts another.
  */
-const Paragraph = memo(function Paragraph({ index, register, onParaLayout, onVerseLayout, getParaNode, spoken, verses, book, chapter, noteContext, paraStyle, wordSpacing, plainSeps, prefs, gap, selected, flash, highlights, bookmarked, shownNotes, leaving, delays, onExited, pinned, wordTags, tapWords, onWord, onSelect, onToggleNote, onNavigate, tourNote }: ParaProps) {
+const Paragraph = memo(function Paragraph({ index, register, onParaLayout, onVerseLayout, getParaNode, spoken, verses, book, chapter, noteContext, paraStyle, wordSpacing, plainSeps, prefs, gap, selected, flash, highlights, bookmarked, shownNotes, leaving, delays, onExited, pinned, wordTags, tapWords, onWord, onSelect, onToggleNote, onNavigate, tourNote, turn, second, pair }: ParaProps) {
   const firstVerse = verses[0].v, lastVerse = verses[verses.length - 1].v
   const ref = useCallback((el: View | null) => { if (el) register(index, el) }, [register, index])
   const onLayout = useCallback((e: LayoutChangeEvent) => onParaLayout({ index, y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height, firstVerse, lastVerse }), [onParaLayout, index, firstVerse, lastVerse])
@@ -282,14 +312,16 @@ const Paragraph = memo(function Paragraph({ index, register, onParaLayout, onVer
   // numbers are off), plus the run's offset in the paragraph. A zero-size view inside Text never reports a
   // measurement on Android, so the marker path in VerseSpan is web only.
   const runYs = useRef<number[]>([]); const runLines = useRef<TextLayoutEventData['lines'][]>([])
+  // side by side on a wide screen the runs sit in a row below the paragraph's headings: their y is from the row
+  const rowY = useRef(0)
   const reportRun = useCallback((ri: number, rv: Verse[]) => {
-    const y0 = runYs.current[ri], lines = runLines.current[ri]
+    const y0 = runYs.current[ri] === undefined ? undefined : runYs.current[ri] + (pair ? rowY.current : 0), lines = runLines.current[ri]
     if (y0 === undefined || !lines || !onVerseLayout) return
     const starts: number[] = []; let joined = ''
     for (const l of lines) { starts.push(joined.length); joined += l.text }
     let from = 0
     for (const v of rv) {
-      const key = prefs.verseNumbers ? String(v.v) : (v.t.trim().split(/\s+/)[0] ?? '')
+      const key = prefs.verseNumbers ? verseLabel(v) : (v.t.trim().split(/\s+/)[0] ?? '')
       if (!key) continue
       let idx = joined.indexOf(key, from)
       while (idx > 0 && prefs.verseNumbers && /\d/.test(joined[idx - 1])) idx = joined.indexOf(key, idx + 1)
@@ -298,17 +330,14 @@ const Paragraph = memo(function Paragraph({ index, register, onParaLayout, onVer
       onVerseLayout(v.v, index, y0 + lines[li].y)
       from = idx + key.length
     }
-  }, [onVerseLayout, index, prefs.verseNumbers])
+  }, [onVerseLayout, index, prefs.verseNumbers, pair])
   const nativeMeasure = Platform.OS !== 'web' && !!onVerseLayout
   // the tour points at a note it has opened, with the text that holds its letter
-  return (
-    <View ref={ref} onLayout={onLayout}>
-      {verses[0].hd ? <InkText ink="muted" style={{ textAlign: 'center', fontSize: Math.round(prefs.fontSize * 0.85), marginTop: 18, marginBottom: 8, ...face(prefs.font, { italic: true }) }}>{verses[0].hd}</InkText> : null}
-      {runs.flatMap((r, ri) => r.verses.length === 0 ? [] : [
+  const body = runs.flatMap((r, ri) => r.verses.length === 0 ? [] : [
           <InkText key={'t' + r.verses[0].v} ink="text" style={runStyle} ref={tourNote !== null && r.notes.some(n => n.id === tourNote) ? tourRef('reader-note-run') : undefined}
             onLayout={nativeMeasure ? (e: LayoutChangeEvent) => { runYs.current[ri] = e.nativeEvent.layout.y; reportRun(ri, r.verses) } : undefined}
             onTextLayout={nativeMeasure ? (e: NativeSyntheticEvent<TextLayoutEventData>) => { runLines.current[ri] = e.nativeEvent.lines; reportRun(ri, r.verses) } : undefined}>
-            {r.verses.map(v => (
+            {r.verses.map(v => v.m ? null : (
               <VerseSpan key={v.v} verse={v} fontSize={prefs.fontSize} font={prefs.font} wordSpacing={wordSpacing} plainSeps={plainSeps}
                 selected={selected.has(v.v)} flashed={flash.has(v.v)} hl={highlights.get(verseId(book, chapter, v.v))} bookmarked={bookmarked.has(v.v)}
                 showNumbers={prefs.verseNumbers} showNotes={prefs.showNotes} tags={wordTags ? wordTags.get(v.v) ?? NO_TAGS : null} tapWords={tapWords} onWord={onWord}
@@ -320,10 +349,41 @@ const Paragraph = memo(function Paragraph({ index, register, onParaLayout, onVer
               <NoteCard note={n} tour={n.id === tourNote} font={prefs.font} italicStyle={italicStyle} context={noteContext} onNavigate={onNavigate} onClose={pinned && isLettered(n) ? undefined : onToggleNote} />
             </Reveal>
           )),
-      ])}
+      ])
+  const other = second === undefined ? null
+    : <SecondVerse verse={second} chapter={chapter} fontSize={prefs.fontSize} font={prefs.font} pair={pair} onPress={() => onSelect(verses[0].v)} />
+  return (
+    <View ref={ref} onLayout={onLayout}>
+      {turn ? <InkText ink="accent" accessibilityRole="header" style={{ textAlign: 'center', fontSize: Math.round(prefs.fontSize * 0.9), marginTop: 18, marginBottom: 10, ...sansBold }}>{t('Chapter {n}', { n: turn })}</InkText> : null}
+      {verses[0].hd ? <InkText ink="muted" style={{ textAlign: 'center', fontSize: Math.round(prefs.fontSize * 0.85), marginTop: 18, marginBottom: 8, ...face(prefs.font, { italic: true }) }}>{verses[0].hd}</InkText> : null}
+      {pair
+        ? <View style={styles.pair} onLayout={(e: LayoutChangeEvent) => { rowY.current = e.nativeEvent.layout.y }}><View style={{ flex: 1 }}>{body}</View>{other}</View>
+        : <>{body}{other}</>}
     </View>
   )
 }, sameParagraph)
+
+/**
+ * The second Bible's verse side by side (docs/LANGUAGES.md): read-only, quieter than the first, its own printed number
+ * (with its chapter where that is not the English one). A tap on it selects the verse it stands with.
+ */
+const SecondVerse = memo(function SecondVerse({ verse: v, chapter, fontSize, font, pair, onPress }: { verse: Verse | null; chapter: number; fontSize: number; font: Prefs['font']; pair: boolean; onPress: () => void }) {
+  if (!v || v.m || !v.t) return pair ? <View style={{ flex: 1 }} /> : null
+  const size = pair ? fontSize : Math.round(fontSize * 0.88)
+  const italic = face(font, { italic: true })
+  const parts = (v.h ?? v.t).split(/(<i>|<\/i>)/)
+  let on = false
+  return (
+    <InkText ink="muted" onPress={onPress} style={{ flex: pair ? 1 : undefined, fontSize: size, lineHeight: Math.round(size * 1.5), marginBottom: pair ? 6 : 12, marginLeft: pair ? 0 : 14, ...face(font) }}>
+      <InkText ink="accent" style={{ fontSize: size * 0.58, ...sansBold, ...inlineMark(size * 0.58) }}>{v.nc && v.nc !== chapter ? `${v.nc}:${verseLabel(v)}` : verseLabel(v)} </InkText>
+      {parts.map((p, i) => {
+        if (p === '<i>') { on = true; return null }
+        if (p === '</i>') { on = false; return null }
+        return p ? <Text key={i} style={on ? italic : undefined}>{p.replace(/<[^>]+>/g, '')}</Text> : null
+      })}
+    </InkText>
+  )
+})
 
 /** An open footnote under its verse. */
 const NoteCard = memo(function NoteCard({ note: n, tour, font, italicStyle, context, onNavigate, onClose }: { note: Note; tour: boolean; font: Prefs['font']; italicStyle: TextStyle; context: { book: number; chapter: number }; onNavigate?: (r: Ref) => void; onClose?: (id: number) => void }) {
@@ -334,7 +394,7 @@ const NoteCard = memo(function NoteCard({ note: n, tour, font, italicStyle, cont
         <Text style={{ color: colors.accent, ...face('sans', { bold: true }) }}>{n.marker}  </Text>
         <FootnoteText text={n.text} italicStyle={italicStyle} context={context} onNavigate={onNavigate} />
       </Text>
-      {onClose ? <Tap onPress={() => onClose(n.id)} hitSlop={10} scaleTo={0.8} accessibilityRole="button" accessibilityLabel="Close note" style={styles.noteClose}><Icon name="x" size={16} color={colors.muted} /></Tap> : null}
+      {onClose ? <Tap onPress={() => onClose(n.id)} hitSlop={10} scaleTo={0.8} accessibilityRole="button" accessibilityLabel={t('Close note')} style={styles.noteClose}><Icon name="x" size={16} color={colors.muted} /></Tap> : null}
     </View>
   )
 })
@@ -388,13 +448,13 @@ const VerseSpan = memo(function VerseSpan({ verse: v, fontSize, font, wordSpacin
     // at the end of that word ("anewʰ he"); the divine-name symbols (·, †) mark the word after and stay in front.
     const markStyle = { fontSize: fontSize * 0.62, ...sansBold, ...inlineMark(fontSize * 0.62) }
     const marker = (n: Note) => (
-      <InkText key={'n' + n.id} ink="accent" onPress={() => onToggleNote(n.id)} style={markStyle} accessibilityRole="button" accessibilityLabel={`Note ${n.marker}`}>{n.marker}</InkText>
+      <InkText key={'n' + n.id} ink="accent" onPress={() => onToggleNote(n.id)} style={markStyle} accessibilityRole="button" accessibilityLabel={t('Note {marker}', { marker: n.marker })}>{n.marker}</InkText>
     )
     const before = (k: number) => (notesAt.get(k) ?? []).filter(n => !isLettered(n)).map(marker)
     const after = (k: number) => (notesAt.get(k) ?? []).filter(isLettered).map(marker)
     const out: ReactNode[] = after(0)
     if (v.t === '') {
-      out.push(<InkText key="omitted" ink="muted" style={italicFace}>[omitted]</InkText>)
+      out.push(<InkText key="omitted" ink="muted" style={italicFace}>{t('[omitted]')}</InkText>)
     } else {
       // Android draws no dotted decoration, so tagged words fall back to a plain underline there
       const tagged = { textDecorationLine: 'underline' as const, textDecorationStyle: Platform.OS === 'android' ? 'solid' as const : 'dotted' as const }
@@ -432,10 +492,10 @@ const VerseSpan = memo(function VerseSpan({ verse: v, fontSize, font, wordSpacin
             const note = !lookup ? (preNotes[0] ?? postNotes[0]) : undefined
             // U+2060 word joiner: no line may break between a marker and its word ("· God", "anewʰ")
             out.push(
-              <Text key={i} onPress={note ? () => onToggleNote(note.id) : undefined} accessibilityRole={note ? 'button' : undefined} accessibilityLabel={note ? `${t.tok}, note ${note.marker}` : undefined}>
+              <Text key={i} onPress={note ? () => onToggleNote(note.id) : undefined} accessibilityRole={note ? 'button' : undefined} accessibilityLabel={note ? noteWordLabel(t.tok, note.marker) : undefined}>
                 {pre}{pre.length ? '\u2060' : null}
                 {lookup && first
-                  ? <InkText {...paint} style={wordStyle} onPress={() => onWord!(first, t.tok)} accessibilityRole="button" accessibilityLabel={`${t.tok}, Strong’s ${first}`}>{t.tok}</InkText>
+                  ? <InkText {...paint} style={wordStyle} onPress={() => onWord!(first, t.tok)} accessibilityRole="button" accessibilityLabel={strongsLabel(t.tok, first)}>{t.tok}</InkText>
                   : lookup ? <InkText {...paint} style={wordStyle} onPress={() => onWord!('', wholeWord(toks, i))}>{t.tok}</InkText>
                   : <InkText {...paint} style={wordStyle}>{t.tok}</InkText>}
                 {post.length ? '\u2060' : null}{post}
@@ -457,13 +517,16 @@ const VerseSpan = memo(function VerseSpan({ verse: v, fontSize, font, wordSpacin
     <Text onPress={press} style={{ backgroundColor: bg, textDecorationLine: selected ? 'underline' : 'none' }} accessibilityRole="text">
       {onVerseLayout && Platform.OS === 'web' ? <View ref={markRef} style={MARK} onLayout={reportMark} /> : null}
       {v.s ? <InkText ink="muted" style={{ fontSize: fontSize * 0.7 }}>✦ </InkText> : null}
-      {showNumbers ? <InkText ink="accent" style={{ fontSize: fontSize * 0.58, ...sansBold, ...inlineMark(fontSize * 0.58) }}>{v.v}{bookmarked ? '▮' : ''} </InkText> : null}
+      {showNumbers ? <InkText ink="accent" style={{ fontSize: fontSize * 0.58, ...sansBold, ...inlineMark(fontSize * 0.58) }}>{verseLabel(v)}{bookmarked ? '▮' : ''} </InkText> : null}
       {body}
       {' '}
     </Text>
   )
 })
 
+// out here because the word loop above names its token `t`
+const noteWordLabel = (word: string, marker: string) => t('{word}, note {marker}', { word, marker })
+const strongsLabel = (word: string, code: string) => t('{word}, Strong’s {code}', { word, code })
 const sansBold = face('sans', { bold: true })
 const SPOKEN = { borderRadius: 3 }
 /** Zero-size inline view whose layout gives the verse's y within its paragraph (nested text cannot be measured). */
@@ -471,6 +534,7 @@ const MARK = { width: 0, height: 0 } as const
 /** Web only: a small sans span inside serif text keeps its own line box tight, or its different ascent pushes the line open. */
 const inlineMark = (size: number) => Platform.OS === 'web' ? { lineHeight: Math.round(size) } : null
 const styles = StyleSheet.create({
+  pair: { flexDirection: 'row', gap: 24, alignItems: 'flex-start' },
   noteSlot: { marginTop: -2 },
   read: { position: 'absolute', left: '100%', marginLeft: 10, top: '50%', marginTop: -11, height: 22, flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 11, paddingHorizontal: 8 },
   ribbon: { position: 'absolute', left: '100%' },

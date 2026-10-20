@@ -4,6 +4,7 @@
  * from. No other file of code names any of them. The few values the code needs built from those are here too.
  */
 import raw from './brand.json'
+import { tc } from './i18n.js'
 
 /**
  * The name set letter by letter for the welcome animation: each letter's left edge and advance in em of the bold
@@ -67,8 +68,21 @@ export const nounForms = (noun: Brand['noun']) => ({
   verb: noun.verb,
   verbLower: noun.verb.toLowerCase(),
 })
-/** The feature's noun and verb, as the reader sees them. */
-export const NOUN = nounForms(BRAND.noun)
+/**
+ * The feature's noun and verb, as the reader sees them: in the app's language when its catalogue names them (context
+ * "brand noun": "annotation", "une annotation", "Annoter"; scripts/i18n.mjs adds the keys), else the brand's own.
+ */
+const own = (s: string) => tc('brand noun', s)
+export const NOUN = {
+  get one() { return own(BRAND.noun.one) },
+  get many() { return own(BRAND.noun.many) },
+  get One() { return capitalise(own(BRAND.noun.one)) },
+  get Many() { return capitalise(own(BRAND.noun.many)) },
+  get a() { return own(withArticle(BRAND.noun.one)) },
+  get A() { return capitalise(own(withArticle(BRAND.noun.one))) },
+  get verb() { return own(BRAND.noun.verb) },
+  get verbLower() { return own(BRAND.noun.verb).toLowerCase() },
+} satisfies ReturnType<typeof nounForms>
 
 /**
  * A brand's addresses: `siteUrl('/friends?t=…')` on its site, `appUrl('read/43/3?v=16')` by its own scheme, and

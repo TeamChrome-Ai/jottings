@@ -3,6 +3,7 @@ import { describeMerge, hasLocalLibrary, mergeLocalLibrary, mergedAnything, onLi
 import { useAuth } from '../store/auth'
 import { useToast } from '../store/toast'
 import { NOUN } from '@shared/brand'
+import { t } from '@shared/i18n'
 
 /**
  * Whenever a user is signed in and this device still holds bookmarks, highlights or outlines made signed out, they
@@ -20,9 +21,9 @@ export function useLocalLibraryMerge() {
       if (!(await hasLocalLibrary())) return
       try {
         const r = await mergeLocalLibrary(uid)
-        if (live && mergedAnything(r)) toast.show(`Moved to your account: ${describeMerge(r)}`, 4000)
+        if (live && mergedAnything(r)) toast.show(t('Moved to your account: {list}', { list: describeMerge(r) }), 4000)
       } catch {
-        if (live) toast.show(`Some bookmarks or ${NOUN.many} are still only on this device; they move to your account when the server is reachable`, 5000)
+        if (live) toast.show(t('Some bookmarks or {many} are still only on this device; they move to your account when the server is reachable', { many: NOUN.many }), 5000)
       }
     })()
     return () => { live = false }

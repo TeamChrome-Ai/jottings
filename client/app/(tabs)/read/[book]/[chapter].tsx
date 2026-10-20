@@ -10,8 +10,10 @@ import SwipePager, { type Page, type SwipePagerHandle } from '../../../../src/co
 import ReaderPage, { type PageLayout } from '../../../../src/components/ReaderPage'
 import * as Clipboard from 'expo-clipboard'
 import type { Outline } from '@shared/types'
-import { formatVerseRuns, type Ref } from '@shared/ref'
+import { formatRef, formatVerseRuns, type Ref } from '@shared/ref'
 import { book as bookMeta, chapterIndex, fetchChapter, key as chapterKeyOf, nextChapter, peekChapter, prevChapter, validRef, verseId, warmAround, type ChapterData } from '../../../../src/lib/bible'
+import { useText } from '../../../../src/lib/text'
+import { TEXT_SHORT, peekShownText } from '@shared/texts'
 import { note } from '../../../../src/lib/readAloudLog'
 import { place } from '../../../../src/lib/readAloudLogCore'
 import { get, getApiBase, isNetworkError } from '../../../../src/lib/api'
@@ -56,6 +58,7 @@ import { offerTourControls, tourRef } from '../../../../src/store/tour'
 import { TOOLBAR_WIDE } from '../../../../src/lib/tour'
 import { usePathHere } from '../../../../src/lib/paths'
 import { useReadTicks } from '../../../../src/hooks/useReadTicks'
+import { t, tn } from '@shared/i18n'
 
 type Target = { book: number; chapter: number }
 
@@ -144,7 +147,14 @@ function ReadScreenPage() {
   const [themes, setThemes] = useState(false)
   const [more, setMore] = useState(false)          // the controls behind More: on a phone those that do not fit beside the picker; on a wide screen Reading settings
   const [allNotes, setAllNotes] = useState(false)
-  const [wordMode, setWordMode] = useState(false)
+  const [wordAsked, setWordAsked] = useState(false)
+  // Strong's tags and Morrish's headwords are the English text's words: another Bible has no word lookup (docs/LANGUAGES.md)
+  const english = useText() === 'en'
+  const wordMode = wordAsked && english
+  const setWordMode = useCallback((on: boolean | ((w: boolean) => boolean)) => {
+    if (!english) { toast.show(t('Word lookup is for the English text')); return }
+    setWordAsked(on)
+  }, [english, toast])
   const [wordTags, setWordTags] = useState<WordTags | null>(null)
   /** Ministry on the selected verses or on this chapter (opened at the first verse selected, else the one at the top). */
   const [ministry, setMinistry] = useState<{ open: boolean; scope: MinistryScope | null }>({ open: false, scope: null })
@@ -287,7 +297,7 @@ function ReadScreenPage() {
     fetchWordTags(bookN, chapterN).then(t => { if (!cancelled) setWordTags(t) }).catch(e => {
       if (cancelled || tagsWarned.current) return
       tagsWarned.current = true
-      toast.show(isNetworkError(e) ? 'Strong’s tags need a connection; tapping a word still opens the dictionary' : 'Could not load Strong’s tags; tapping a word still opens the dictionary')
+      toast.show(isNetworkError(e) ? t('Strong’s tags need a connection; tapping a word still opens the dictionary') : t('Could not load Strong’s tags; tapping a word still opens the dictionary'))
     })
     return () => { cancelled = true }
   }, [wordMode, bookN, chapterN, valid, toast])
@@ -485,8 +495,8 @@ function ReadScreenPage() {
   }, [verseY, prefs.reduceMotion, flashVerse])
   // a chapter left just before its credit lands is credited by the beat that closes it, with this screen on the next
   useEffect(() => onBeat(r => {
-    if (r.credited) { const k = chapterKeyOf(r.credited.book, r.credited.chapter); setReadSet(s => s.has(k) ? s : new Set(s).add(k)); toast.show('Chapter credited') }
-    for (const b of r.new_badges ?? []) toast.show(`Badge earned: ${b.name}`)
+    if (r.credited) { const k = chapterKeyOf(r.credited.book, r.credited.chapter); setReadSet(s => s.has(k) ? s : new Set(s).add(k)); toast.show(t('Chapter credited')) }
+    for (const b of r.new_badges ?? []) toast.show(t('Badge earned: {name}', { name: b.name }))
   }), [toast])
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     // while the footnote hold lasts (and a throttled event may still be on its way) the offset is where it put the text
@@ -618,7 +628,7 @@ function ReadScreenPage() {
   // the authors going through this chapter (Darby's Synopsis, Coates's Outlines), Darby first; offered only where there is one
   const indexes = useCompanionIndexes()
   const companionAuthors = useMemo(() => valid ? AUTHORS.filter(a => { const i = indexes[a.id]; return !!i && sectionsFor(i, bookN, chapterN).length > 0 }).map(a => a.id) : [], [valid, indexes, bookN, chapterN])
-  const chapterMinistry = companionAuthors.length ? 'Ministry on this chapter' : ''
+  const chapterMinistry = companionAuthors.length ? t('Ministry on this chapter') : ''
   const closeMinistry = useCallback(() => setMinistry(m => ({ ...m, open: false })), [])
   // a link with `ministry` (a jotting's "JND on John 3:16") opens the ministry on arrival, at that author: on the
   // verses when the link names them, else on the chapter; once per link
@@ -674,7 +684,7 @@ function ReadScreenPage() {
       setHighlights(h => { const n = new Map(h); if (color) n.set(id, color); else n.delete(id); return n })
       await setHighlight(user?.id ?? null, id, color).catch(() => { failed = true })
     }
-    if (failed) toast.show(user ? 'Highlight kept on this device; it will not sync until the server is reachable' : 'Could not save the highlight on this device')
+    if (failed) toast.show(user ? t('Highlight kept on this device; it will not sync until the server is reachable') : t('Could not save the highlight on this device'))
     setSelected(new Set())
   }
   const openFlip = () => router.push({ pathname: '/flip/[book]/[chapter]', params: { book: String(bookN), chapter: String(chapterN), v: String(currentVerse()) } })
@@ -686,42 +696,42 @@ function ReadScreenPage() {
     try {
       if (bookmarkedAll) {
         for (const v of selList) { const id = marks.get(verseKey(v)); if (id !== undefined) { await removeBookmark(id); put(verseKey(v), null) } }
-        toast.show(selList.length > 1 ? 'Bookmarks removed' : 'Bookmark removed')
+        toast.show(tn(selList.length, 'Bookmark removed', 'Bookmarks removed'))
       } else {
         for (const v of selList) {
           if (marks.has(verseKey(v))) continue
           put(verseKey(v), (await addBookmark({ book: bookN, chapter: chapterN, verse: v, label: null })).id)
         }
-        toast.show('Bookmarked')
+        toast.show(t('Bookmarked'))
       }
-    } catch { toast.show(bookmarkedAll ? 'Could not remove the bookmark' : 'Could not bookmark') }
+    } catch { toast.show(bookmarkedAll ? t('Could not remove the bookmark') : t('Could not bookmark')) }
     setSelected(new Set())
   }
   /** A chapter's or a book's bookmark on or off (the More sheet, a long press in the picker), said in a toast. */
-  const toggleMark = async (t: BookmarkTarget) => {
-    const k = bookmarkKey(t), id = marks.get(k)
+  const toggleMark = async (target: BookmarkTarget) => {
+    const k = bookmarkKey(target), id = marks.get(k)
     try {
       if (id !== undefined) {
         await removeBookmark(id)
         setMarks(m => { const n = new Map(m); n.delete(k); return n })
-        toast.show('Bookmark removed')
+        toast.show(t('Bookmark removed'))
       } else {
-        const b = await addBookmark(t)
+        const b = await addBookmark(target)
         setMarks(m => new Map(m).set(k, b.id))
-        toast.show(`${bookmarkTitle(t)} bookmarked`)
+        toast.show(t('{title} bookmarked', { title: bookmarkTitle(target) }))
       }
-    } catch { toast.show(id !== undefined ? 'Could not remove the bookmark' : 'Could not bookmark') }
+    } catch { toast.show(id !== undefined ? t('Could not remove the bookmark') : t('Could not bookmark')) }
   }
   const chapterMarked = marks.has(bookmarkKey({ book: bookN, chapter: chapterN }))
   const copy = async () => {
     await Clipboard.setStringAsync(`${selText()} (${selLabel}, Darby)`)
-    toast.show('Copied'); setSelected(new Set())
+    toast.show(t('Copied')); setSelected(new Set())
   }
   const share = async () => {
     const last = selList[selList.length - 1]
     const url = `${getApiBase() || siteOrigin()}/read/${bookN}/${chapterN}?v=${selList[0]}${last !== selList[0] ? `&v2=${last}` : ''}`
-    const r = await shareText({ title: selLabel, message: `${selText()}\n— ${selLabel} (Darby)`, url })
-    if (r === 'copied') toast.show('Copied with link')
+    const r = await shareText({ title: selLabel, message: `${selText()}\n— ${selLabel} (${TEXT_SHORT[peekShownText()]})`, url })
+    if (r === 'copied') toast.show(t('Copied with link'))
   }
 
   // the portion's ministry, offered at the chapter's end and never required (docs/PATHS.md rule 6): opens the library
@@ -731,7 +741,7 @@ function ReadScreenPage() {
     if (!then) return
     router.push({ pathname: '/companion', params: { author: then.author, work: then.work, n: String(then.n), from: `${bookN}.${chapterN}.${currentVerse()}` } })
   }, [then, router, bookN, chapterN, currentVerse])
-  const thenLine = useMemo(() => then ? { label: `then, if you like: ${AUTHORS.find(a => a.id === then.author)?.short ?? then.author} on ${bookMeta(bookN).name} ${chapterN}`, onPress: openThen } : undefined, [then, openThen, bookN, chapterN])
+  const thenLine = useMemo(() => then ? { label: t('then, if you like: {author} on {ref}', { author: AUTHORS.find(a => a.id === then.author)?.short ?? then.author, ref: formatRef({ book: bookN, chapter: chapterN }) }), onPress: openThen } : undefined, [then, openThen, bookN, chapterN])
 
   const neighbour = (t: Target | null, dir: 1 | -1): Page | null => {
     if (!t) return null
@@ -743,11 +753,11 @@ function ReadScreenPage() {
     ) }
   }
 
-  if (!valid) return <View style={[styles.fill, { backgroundColor: colors.bg, paddingTop: insets.top + 16 }]}><ErrorText>Pick a book and chapter.</ErrorText></View>
+  if (!valid) return <View style={[styles.fill, { backgroundColor: colors.bg, paddingTop: insets.top + 16 }]}><ErrorText>{t('Pick a book and chapter.')}</ErrorText></View>
   const meta = bookMeta(bookN)
   const cue = {
-    next: next ? `${pathNext ? 'Next on your path · ' : 'Next: '}${bookMeta(next.book).name} ${next.chapter}` : `${meta.name} ${chapterN} is the last chapter`,
-    prev: prev ? `Previous: ${bookMeta(prev.book).name} ${prev.chapter}` : `${meta.name} ${chapterN} is the first chapter`,
+    next: next ? (pathNext ? t('Next on your path · {ref}', { ref: formatRef(next) }) : t('Next: {ref}', { ref: formatRef(next) })) : t('{ref} is the last chapter', { ref: formatRef({ book: bookN, chapter: chapterN }) }),
+    prev: prev ? t('Previous: {ref}', { ref: formatRef(prev) }) : t('{ref} is the first chapter', { ref: formatRef({ book: bookN, chapter: chapterN }) }),
     // the read-aloud bar covers the bottom of the page: the next cue rides above it
     inset: player.status !== 'idle' ? player.barHeight : 0,
   }
@@ -760,39 +770,39 @@ function ReadScreenPage() {
       <View style={[styles.toolbar, { paddingTop: insets.top + 6, backgroundColor: colors.bar, borderBottomColor: colors.border }]}>
         <View>
           {/* the path dot scales with the system text size, so it stays a quiet mark beside a larger pill too */}
-          <Button ref={tourRef('reader-picker')} title={`${meta.name} ${chapterN} ▾`} onPress={() => setPicker(true)} />
+          <Button ref={tourRef('reader-picker')} title={`${formatRef({ book: bookN, chapter: chapterN })} ▾`} onPress={() => setPicker(true)} />
           {/* on the active path: one dot beside the ▾, nothing else changes */}
-          {onPathHere.onPath ? <View pointerEvents="none" accessibilityLabel="On your path" style={[styles.pathDot, { backgroundColor: colors.accent, width: pathDot, height: pathDot, borderRadius: pathDot / 2, marginTop: -pathDot / 2 }]} /> : null}
+          {onPathHere.onPath ? <View pointerEvents="none" accessibilityLabel={t('On your path')} style={[styles.pathDot, { backgroundColor: colors.accent, width: pathDot, height: pathDot, borderRadius: pathDot / 2, marginTop: -pathDot / 2 }]} /> : null}
         </View>
         <View style={{ flex: 1 }} />
         {/* nine controls need ~700 pt; a phone has 360-430, so the rarer ones move behind "more" there (TOOLBAR_WIDE); Reading
             settings sits behind More at every width (it leaves the reader, so it is not a reading control) */}
-        {!compact ? <Button ref={tourRef('reader-size-down')} icon title="A−" accessibilityLabel="Smaller text" disabled={prefs.fontSize <= FONT_MIN} onPress={() => set({ fontSize: prefs.fontSize - 1 })} textStyle={{ fontSize: 14 }} /> : null}
-        {!compact ? <Button ref={tourRef('reader-size')} icon title="A+" accessibilityLabel="Larger text" disabled={prefs.fontSize >= FONT_MAX} onPress={() => set({ fontSize: prefs.fontSize + 1 })} textStyle={{ fontSize: 18 }} /> : null}
-        <ToggleButton on={allNotes} title="†" accessibilityLabel={allNotes ? 'Hide all footnotes' : 'Show all footnotes'} onPress={toggleAllNotes} textStyle={{ fontSize: 18 }} />
+        {!compact ? <Button ref={tourRef('reader-size-down')} icon title="A−" accessibilityLabel={t('Smaller text')} disabled={prefs.fontSize <= FONT_MIN} onPress={() => set({ fontSize: prefs.fontSize - 1 })} textStyle={{ fontSize: 14 }} /> : null}
+        {!compact ? <Button ref={tourRef('reader-size')} icon title="A+" accessibilityLabel={t('Larger text')} disabled={prefs.fontSize >= FONT_MAX} onPress={() => set({ fontSize: prefs.fontSize + 1 })} textStyle={{ fontSize: 18 }} /> : null}
+        <ToggleButton on={allNotes} title="†" accessibilityLabel={allNotes ? t('Hide all footnotes') : t('Show all footnotes')} onPress={toggleAllNotes} textStyle={{ fontSize: 18 }} />
         {/* wrapped for the tour to measure; the button itself takes no ref */}
-        {!compact ? <View ref={tourRef('reader-lookup')} collapsable={false}><ToggleButton on={wordMode} title="Aa" accessibilityLabel={wordMode ? 'Word lookup off' : 'Word lookup'}
+        {!compact ? <View ref={tourRef('reader-lookup')} collapsable={false}><ToggleButton on={wordMode} title="Aa" accessibilityLabel={wordMode ? t('Word lookup off') : t('Word lookup')}
           onPress={() => setWordMode(w => !w)} textStyle={{ fontSize: 14 }} /></View> : null}
-        <Button ref={tourRef('reader-listen')} iconName="headphones" title="Read aloud" primary={player.status === 'playing' && player.book === bookN && player.chapter === chapterN} onPress={listen} />
-        <Button ref={tourRef('reader-theme')} iconName="palette" title="Theme" onPress={() => setThemes(true)} />
-        {!compact ? <Button ref={tourRef('reader-paged')} iconName="pages" title="Paged mode" onPress={openFlip} /> : null}
+        <Button ref={tourRef('reader-listen')} iconName="headphones" title={t('Read aloud')} primary={player.status === 'playing' && player.book === bookN && player.chapter === chapterN} onPress={listen} />
+        <Button ref={tourRef('reader-theme')} iconName="palette" title={t('Theme')} onPress={() => setThemes(true)} />
+        {!compact ? <Button ref={tourRef('reader-paged')} iconName="pages" title={t('Paged mode')} onPress={openFlip} /> : null}
         {!compact && chapterMinistry ? <Button ref={tourRef('reader-ministry')} iconName="companion" title={chapterMinistry} onPress={() => openChapterMinistry(false)} /> : null}
-        <Button ref={tourRef('reader-more')} iconName="more" title="More" primary={compact && wordMode} onPress={() => setMore(true)} />
+        <Button ref={tourRef('reader-more')} iconName="more" title={t('More')} primary={compact && wordMode} onPress={() => setMore(true)} />
       </View>
-      <Sheet open={more} onClose={() => setMore(false)} title={`${meta.name} ${chapterN}`}>
+      <Sheet open={more} onClose={() => setMore(false)} title={formatRef({ book: bookN, chapter: chapterN })}>
         <View style={{ padding: 16, gap: 12 }}>
           {compact ? <View ref={tourRef('more-size')} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <T style={{ flex: 1 }}>Text size</T>
-            <Button icon title="A−" accessibilityLabel="Smaller text" disabled={prefs.fontSize <= FONT_MIN} onPress={() => set({ fontSize: prefs.fontSize - 1 })} textStyle={{ fontSize: 14 }} />
+            <T style={{ flex: 1 }}>{t('Text size')}</T>
+            <Button icon title="A−" accessibilityLabel={t('Smaller text')} disabled={prefs.fontSize <= FONT_MIN} onPress={() => set({ fontSize: prefs.fontSize - 1 })} textStyle={{ fontSize: 14 }} />
             <T muted style={{ minWidth: 28, textAlign: 'center' }}>{prefs.fontSize}</T>
-            <Button icon title="A+" accessibilityLabel="Larger text" disabled={prefs.fontSize >= FONT_MAX} onPress={() => set({ fontSize: prefs.fontSize + 1 })} textStyle={{ fontSize: 18 }} />
+            <Button icon title="A+" accessibilityLabel={t('Larger text')} disabled={prefs.fontSize >= FONT_MAX} onPress={() => set({ fontSize: prefs.fontSize + 1 })} textStyle={{ fontSize: 18 }} />
           </View> : null}
-          {compact ? <View ref={tourRef('more-lookup')}><SwitchRow label="Word lookup" hint="Tap a word: Strong’s concordance and Morrish" value={wordMode} onChange={setWordMode} /></View> : null}
-          {compact ? <Button ref={tourRef('more-bookmark')} lead="bookmark" title={chapterMarked ? 'Remove chapter bookmark' : 'Bookmark this chapter'} onPress={() => { setMore(false); void toggleMark({ book: bookN, chapter: chapterN }) }} /> : null}
+          {compact ? <View ref={tourRef('more-lookup')}><SwitchRow label={t('Word lookup')} hint={t('Tap a word: Strong’s concordance and Morrish')} value={wordMode} onChange={setWordMode} /></View> : null}
+          {compact ? <Button ref={tourRef('more-bookmark')} lead="bookmark" title={chapterMarked ? t('Remove chapter bookmark') : t('Bookmark this chapter')} onPress={() => { setMore(false); void toggleMark({ book: bookN, chapter: chapterN }) }} /> : null}
           {compact && chapterMinistry ? <Button ref={tourRef('more-ministry')} lead="companion" title={chapterMinistry} onPress={() => openChapterMinistry(true)} /> : null}
-          {compact ? <Button ref={tourRef('more-paged')} lead="pages" title="Paged mode" onPress={() => { setMore(false); openFlip() }} /> : null}
-          <Button lead="share" title="Share this chapter" onPress={() => { setMore(false); void shareChapter(bookN, chapterN).then(r => { if (r === 'copied') toast.show('Link copied') }) }} />
-          <Button lead="sliders" title="Reading settings" onPress={() => { setMore(false); router.push('/settings') }} />
+          {compact ? <Button ref={tourRef('more-paged')} lead="pages" title={t('Paged mode')} onPress={() => { setMore(false); openFlip() }} /> : null}
+          <Button lead="share" title={t('Share this chapter')} onPress={() => { setMore(false); void shareChapter(bookN, chapterN).then(r => { if (r === 'copied') toast.show(t('Link copied')) }) }} />
+          <Button lead="sliders" title={t('Reading settings')} onPress={() => { setMore(false); router.push('/settings') }} />
         </View>
       </Sheet>
 
@@ -803,19 +813,19 @@ function ReadScreenPage() {
           onNavigate={pageNavigate} allNotes={allNotes} wordTags={wordMode ? wordTags : null} tapWords={wordMode} onWord={onWord} isRead={ticks.has(chapterKey)} marked={chapterMarked} onSelect={toggleSelect} onToggleNote={toggleNote} />
       ) }} />
       {/* tap zones on the screen edges: previous / next chapter */}
-      {prev && <Pressable accessibilityLabel="Previous chapter" onPress={() => go(-1)} style={[styles.edge, { left: 0 }]} />}
-      {next && <Pressable accessibilityLabel="Next chapter" onPress={() => go(1)} style={[styles.edge, { right: 0 }]} />}
+      {prev && <Pressable accessibilityLabel={t('Previous chapter')} onPress={() => go(-1)} style={[styles.edge, { left: 0 }]} />}
+      {next && <Pressable accessibilityLabel={t('Next chapter')} onPress={() => go(1)} style={[styles.edge, { right: 0 }]} />}
       <FontLoading state={fontState} size={52} />
       <ActionBar open={selected.size > 0} label={selLabel} shortLabel={selList.length ? formatVerseRuns(bookN, chapterN, selList, 'abbr') : ''} bookmarked={bookmarkedAll} lift={player.status !== 'idle' ? player.barHeight : 0} onListen={() => { const v = selList[0] ?? 1; const last = selList[selList.length - 1]; setSelected(new Set()); player.seekVerse(bookN, chapterN, v, prefs.ttsStopAtSelection && last ? { stopAfter: last } : undefined) }} onHighlight={highlight} onBookmark={bookmark} onCopy={copy} onShare={share} onClose={() => setSelected(new Set())}
         onJot={() => setAddOutline(true)} onMinistry={hasMinistry ? openVerseMinistry : undefined} />
-      <ChapterPicker open={picker} book={bookN} chapter={chapterN} readSet={ticks} marks={marks} onMark={t => { void toggleMark(t) }} onClose={() => setPicker(false)} onPick={(b, c) => { setPicker(false); navigate({ book: b, chapter: c }) }} />
+      <ChapterPicker open={picker} book={bookN} chapter={chapterN} readSet={ticks} marks={marks} onMark={t => { void toggleMark(t) }} onClose={() => setPicker(false)} onPick={(b, c, v) => { setPicker(false); if (v) onNavigate({ book: b, chapter: c, v1: v }); else navigate({ book: b, chapter: c }) }} />
       <WordSheet target={wordTarget} onClose={() => setWordTarget(null)} />
       <MinistrySheet open={ministry.open} scope={ministry.scope} onClose={closeMinistry} />
       <PlayerBar flatTop={selected.size > 0} />
-      <Sheet open={themes} onClose={() => setThemes(false)} title="Theme">
+      <Sheet open={themes} onClose={() => setThemes(false)} title={t('Theme')}>
         <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 8 }}><ThemeGallery compact /></ScrollView>
       </Sheet>
-      <AddToOutlineSheet open={addOutline} book={bookN} chapter={chapterN} verses={selList} onDone={(o: Outline | null) => { setAddOutline(false); if (o) { setSelected(new Set()); toast.show(`Added to “${o.title}”`) } }} />
+      <AddToOutlineSheet open={addOutline} book={bookN} chapter={chapterN} verses={selList} onDone={(o: Outline | null) => { setAddOutline(false); if (o) { setSelected(new Set()); toast.show(t('Added to “{title}”', { title: o.title })) } }} />
       </View>
     </View>
   )

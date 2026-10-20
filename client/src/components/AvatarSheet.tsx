@@ -13,6 +13,7 @@ import { Swap } from './motion/community'
 import { PopIn } from './motion/nav'
 import { Button, ErrorText, Sheet, T, Tap, useSheetArrivalDelay } from './ui'
 import { BRAND } from '@shared/brand'
+import { t } from '@shared/i18n'
 
 const TILE = 60
 
@@ -22,7 +23,7 @@ const TILE = 60
  */
 export default function AvatarSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Sheet open={open} onClose={onClose} title="Your picture" maxHeight="90%">
+    <Sheet open={open} onClose={onClose} title={t('Your picture')} maxHeight="90%">
       {open ? <Body /> : null}
     </Sheet>
   )
@@ -34,7 +35,7 @@ function Body() {
   const [sel, setSel] = useState(user?.avatar ?? AVATARS[0].id)
   const [err, setErr] = useState<string | null>(null)
   if (!user) return null
-  const name = AVATARS.find(a => a.id === sel)?.name ?? ''
+  const name = t(AVATARS.find(a => a.id === sel)?.name ?? '')
   const choose = async (id: string | null) => {
     const was = sel
     setErr(null)
@@ -51,10 +52,10 @@ function Body() {
         <Swap k={sel}><AvatarArt id={sel} size={96} /></Swap>
         <T small muted>{name}</T>
       </View>
-      <View accessibilityRole="radiogroup" accessibilityLabel="Pictures" style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10 }}>
+      <View accessibilityRole="radiogroup" accessibilityLabel={t('Pictures')} style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10 }}>
         {AVATARS.map((a, i) => (
           <PopIn key={a.id} index={i} cap={AVATARS.length} step={10} base={arrive} from={0.8}>
-            <Tile id={a.id} name={a.name} on={a.id === sel} onPress={() => { if (a.id !== sel || !user.avatar_chosen) void choose(a.id) }} />
+            <Tile id={a.id} name={t(a.name)} on={a.id === sel} onPress={() => { if (a.id !== sel || !user.avatar_chosen) void choose(a.id) }} />
           </PopIn>
         ))}
       </View>
@@ -63,8 +64,8 @@ function Body() {
       <View style={{ minHeight: 36, alignItems: 'center', justifyContent: 'center' }}>
         <Swap k={user.avatar_chosen ? 'chosen' : 'given'}>
           {user.avatar_chosen
-            ? <Button small title={`Let ${BRAND.name} choose`} onPress={() => { void choose(null) }} />
-            : <T small muted>Chosen for you until you pick one</T>}
+            ? <Button small title={t('Let {brand} choose', { brand: BRAND.name })} onPress={() => { void choose(null) }} />
+            : <T small muted>{t('Chosen for you until you pick one')}</T>}
         </Swap>
       </View>
     </ScrollView>

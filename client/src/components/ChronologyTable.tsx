@@ -2,7 +2,9 @@ import { useMemo } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native'
 import { useRouter } from 'expo-router'
 import { parseRef } from '@shared/ref'
+import { t } from '@shared/i18n'
 import { useColors } from '../hooks/useTheme'
+import { tr } from '../i18n'
 import { usePref } from '../store/prefs'
 import { face } from '../theme'
 import { refParams } from './FootnoteText'
@@ -39,7 +41,7 @@ export function RefLinks({ s, small }: { s?: string; small?: boolean }) {
       {s.split(';').map((part, i) => {
         const t = part.trim()
         // "2 Chron. 25.15" -> "2 Chron 25:15": a dot between digits is a verse separator, any other dot is an abbreviation
-        const r = parseRef(t.replace(/(\d)\.(\d)/g, '$1:$2').replace(/\./g, ''))
+        const r = parseRef(t.replace(/(\d)\.(\d)/g, '$1:$2').replace(/\./g, ''), { english: true })
         return (
           <Text key={i}>
             {i > 0 ? '; ' : ''}
@@ -106,15 +108,15 @@ export function KingdomsTable({ rows, width }: { rows: KRow[]; width: number }) 
         <Rule heavy />
         {/* \multicolumn headings with \cmidrule under each kingdom */}
         <View style={styles.row}>
-          <View style={cell(SUM_J, { alignItems: 'center', paddingTop: 10, paddingBottom: 4 })}><Sc color={c.text} size={15} bold>Judah</Sc></View>
+          <View style={cell(SUM_J, { alignItems: 'center', paddingTop: 10, paddingBottom: 4 })}><Sc color={c.text} size={15} bold>{t('Judah')}</Sc></View>
           <View style={{ flex: GAP }} />
-          <View style={cell(SUM_I, { alignItems: 'center', paddingTop: 10, paddingBottom: 4 })}><Sc color={c.text} size={15} bold>Israel</Sc></View>
+          <View style={cell(SUM_I, { alignItems: 'center', paddingTop: 10, paddingBottom: 4 })}><Sc color={c.text} size={15} bold>{t('Israel')}</Sc></View>
         </View>
         <View style={styles.row}><Rule flex={SUM_J} inset={8} /><View style={{ flex: GAP }} /><Rule flex={SUM_I} inset={8} /></View>
         <View style={styles.row}>
-          <Th style={cell(J.prophets)}>Prophets</Th><Th style={cell(J.king)}>King</Th><Th style={cell(J.bc)} align="right">B.C.</Th><Th style={cell(J.ref)}>Reference</Th>
+          <Th style={cell(J.prophets)}>{t('Prophets')}</Th><Th style={cell(J.king)}>{t('King')}</Th><Th style={cell(J.bc)} align="right">{t('B.C.')}</Th><Th style={cell(J.ref)}>{t('Reference')}</Th>
           <View style={{ flex: GAP }} />
-          <Th style={cell(I.bc)} align="right">B.C.</Th><Th style={cell(I.king)}>King</Th><Th style={cell(I.prophets)}>Prophets</Th>
+          <Th style={cell(I.bc)} align="right">{t('B.C.')}</Th><Th style={cell(I.king)}>{t('King')}</Th><Th style={cell(I.prophets)}>{t('Prophets')}</Th>
         </View>
         <Rule />
         {rows.map((r, i) => {
@@ -143,7 +145,7 @@ export function KingdomCards({ rows }: { rows: KRow[] }) {
   const c = useColors()
   const f = useFaces()
   const label = (s: string) => <Sc color={c.muted} size={13}>{s}</Sc>
-  const year = (y?: number) => y ? <Text style={{ color: c.muted, fontSize: 13, fontVariant: ['tabular-nums'], ...f.r }}>{y} <Sc color={c.muted} size={13}>b.c.</Sc></Text> : null
+  const year = (y?: number) => y ? <Text style={{ color: c.muted, fontSize: 13, fontVariant: ['tabular-nums'], ...f.r }}>{y} <Sc color={c.muted} size={13}>{t('B.C.')}</Sc></Text> : null
   return (
     <View>
       <Rule heavy />
@@ -154,16 +156,16 @@ export function KingdomCards({ rows }: { rows: KRow[] }) {
           <View key={i} style={{ paddingVertical: 8, gap: 6, borderBottomWidth: RULE_LIGHT, borderBottomColor: c.border }}>
             {hasJ ? (
               <View style={[styles.entry, { borderLeftColor: c.accent }]}>
-                <View style={styles.entryHead}>{label('judah')}{year(r.bj)}</View>
+                <View style={styles.entryHead}>{label(t('Judah'))}{year(r.bj)}</View>
                 <King name={r.kj} reign={r.rj} />
-                {r.pj ? <Text style={{ color: c.muted, fontSize: 13, ...f.r }}>Prophet <Text style={{ color: c.text, ...f.i }}>{r.pj}</Text></Text> : null}
+                {r.pj ? <Text style={{ color: c.muted, fontSize: 13, ...f.r }}>{tr('Prophet <i>{name}</i>', { i: s => <Text style={{ color: c.text, ...f.i }}>{s}</Text> }, { name: r.pj })}</Text> : null}
               </View>
             ) : null}
             {hasI ? (
               <View style={[styles.entry, { borderLeftColor: c.muted, backgroundColor: ev ? c.selected : undefined }]}>
-                <View style={styles.entryHead}>{label('israel')}{year(r.bi)}</View>
+                <View style={styles.entryHead}>{label(t('Israel'))}{year(r.bi)}</View>
                 <King name={r.ki} reign={r.ri} event={ev} />
-                {r.pi ? <Text style={{ color: c.muted, fontSize: 13, ...f.r }}>Prophet <Text style={{ color: c.text, ...f.i }}>{r.pi}</Text></Text> : null}
+                {r.pi ? <Text style={{ color: c.muted, fontSize: 13, ...f.r }}>{tr('Prophet <i>{name}</i>', { i: s => <Text style={{ color: c.text, ...f.i }}>{s}</Text> }, { name: r.pi })}</Text> : null}
               </View>
             ) : null}
             {r.ref ? <View style={{ paddingLeft: 12 }}><RefLinks s={r.ref} /></View> : null}
@@ -182,7 +184,7 @@ export function GovernorsTable({ rows }: { rows: GRow[] }) {
     <View style={{ paddingVertical: 4 }}>
       <Rule heavy />
       <View style={styles.row}>
-        <Th style={cell(1.1)}>Prophet</Th><Th style={cell(1.1)}>Governor</Th><Th style={cell(0.5)} align="right">B.C.</Th><Th style={cell(1)}>Reference</Th>
+        <Th style={cell(1.1)}>{t('Prophet')}</Th><Th style={cell(1.1)}>{t('Governor')}</Th><Th style={cell(0.5)} align="right">{t('B.C.')}</Th><Th style={cell(1)}>{t('Reference')}</Th>
       </View>
       <Rule />
       {rows.map((r, i) => {
@@ -209,8 +211,8 @@ export function PersiaTimeline({ rows }: { rows: PRow[] }) {
     <View style={{ paddingVertical: 4 }}>
       <Rule heavy />
       <View style={styles.row}>
-        <Th style={{ width: 56, paddingHorizontal: 6, paddingVertical: 6 }} align="right">B.C.</Th>
-        <Th style={{ flex: 1, paddingHorizontal: 6, paddingVertical: 6 }}>Event</Th>
+        <Th style={{ width: 56, paddingHorizontal: 6, paddingVertical: 6 }} align="right">{t('B.C.')}</Th>
+        <Th style={{ flex: 1, paddingHorizontal: 6, paddingVertical: 6 }}>{t('Event')}</Th>
       </View>
       <Rule />
       {rows.map((r, i) => (

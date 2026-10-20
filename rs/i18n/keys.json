@@ -1,0 +1,437 @@
+{
+ "A handle is 3 to 24 letters, digits or _": [
+  "rs/src/friends.rs:337",
+  "rs/src/friends.rs:568"
+ ],
+ "a notice: up to 2,000 characters": [
+  "rs/src/groups.rs:397"
+ ],
+ "action": [
+  "rs/src/moderation.rs:346"
+ ],
+ "an admin's name is their own": [
+  "rs/src/feedback.rs:174"
+ ],
+ "avatar: one of the preset pictures": [
+  "rs/src/routes.rs:149"
+ ],
+ "backup signing is not configured": [
+  "rs/src/me_data.rs:100"
+ ],
+ "bad figures": [
+  "rs/src/ministry.rs:295"
+ ],
+ "bad JWKS from Google": [
+  "rs/src/google.rs:29"
+ ],
+ "bad key": [
+  "rs/src/google.rs:42"
+ ],
+ "bad notes": [
+  "rs/src/ministry.rs:294"
+ ],
+ "bad reference": [
+  "rs/src/routes.rs:213",
+  "rs/src/routes.rs:257"
+ ],
+ "bad token": [
+  "rs/src/google.rs:37",
+  "rs/src/google.rs:38"
+ ],
+ "bad worker token": [
+  "rs/src/moderation.rs:120"
+ ],
+ "book": [
+  "rs/src/routes.rs:269"
+ ],
+ "book range: 1 to 66": [
+  "rs/src/groups.rs:248"
+ ],
+ "books: numbers 1 to 66": [
+  "rs/src/groups.rs:247"
+ ],
+ "cannot remove the owner": [
+  "rs/src/groups.rs:183"
+ ],
+ "choose at least one category": [
+  "rs/src/me_data.rs:164"
+ ],
+ "could not reach Google": [
+  "rs/src/google.rs:28"
+ ],
+ "counts_from": [
+  "rs/src/groups.rs:250"
+ ],
+ "custom: a custom path needs its books": [
+  "rs/src/paths.rs:118"
+ ],
+ "custom.books: 1 to 66 books, each 1 to 66": [
+  "rs/src/paths.rs:113"
+ ],
+ "custom.title: up to 60 characters": [
+  "rs/src/paths.rs:112"
+ ],
+ "dates must be YYYY-MM-DD": [
+  "rs/src/groups.rs:242"
+ ],
+ "db": [
+  "rs/src/auth.rs:111"
+ ],
+ "description: up to 120 characters": [
+  "rs/src/groups.rs:246"
+ ],
+ "display_name: 1-60 characters": [
+  "rs/src/feedback.rs:172",
+  "rs/src/routes.rs:136"
+ ],
+ "email: that does not look like an email address": [
+  "rs/src/feedback.rs:63"
+ ],
+ "ends before it starts": [
+  "rs/src/groups.rs:243"
+ ],
+ "Feedback is busy right now. Please try again in an hour.": [
+  "rs/src/feedback.rs:81"
+ ],
+ "goal: 0 or more": [
+  "rs/src/groups.rs:245"
+ ],
+ "Google sign-in is not configured on this server": [
+  "rs/src/google.rs:36"
+ ],
+ "group admins only": [
+  "rs/src/groups.rs:48"
+ ],
+ "handle: 3-24 letters, digits or _": [
+  "rs/src/auth.rs:60"
+ ],
+ "hash": [
+  "rs/src/auth.rs:71"
+ ],
+ "hashes: SHA-256 hex strings": [
+  "rs/src/friends.rs:551"
+ ],
+ "id: no path to change; start one": [
+  "rs/src/paths.rs:149"
+ ],
+ "id: not a path": [
+  "rs/src/paths.rs:117",
+  "rs/src/paths.rs:128"
+ ],
+ "invalid invite code": [
+  "rs/src/groups.rs:88"
+ ],
+ "Invites are off in your friends settings": [
+  "rs/src/friends.rs:402"
+ ],
+ "kind": [
+  "rs/src/moderation.rs:42"
+ ],
+ "kind: heart, smile, clap or seal": [
+  "rs/src/friends.rs:491"
+ ],
+ "marks: at most 1,189, the chapters of the Bible": [
+  "rs/src/marks.rs:67"
+ ],
+ "marks: no such chapter": [
+  "rs/src/marks.rs:70"
+ ],
+ "metric": [
+  "rs/src/groups.rs:241"
+ ],
+ "name: 2-60 characters": [
+  "rs/src/groups.rs:72",
+  "rs/src/groups.rs:159"
+ ],
+ "name: 2-80 characters": [
+  "rs/src/groups.rs:240"
+ ],
+ "no such API": [
+  "rs/src/main.rs:189",
+  "rs/src/testkit.rs:17"
+ ],
+ "no such author": [
+  "rs/src/companion.rs:67",
+  "rs/src/companion.rs:70",
+  "rs/src/ministry.rs:169",
+  "rs/src/ministry.rs:171",
+  "rs/src/ministry.rs:193",
+  "rs/src/ministry.rs:464",
+  "rs/src/ministry_offline.rs:223"
+ ],
+ "no such book": [
+  "rs/src/companion.rs:122",
+  "rs/src/ministry.rs:305"
+ ],
+ "no such chapter": [
+  "rs/src/companion.rs:123",
+  "rs/src/marks.rs:45",
+  "rs/src/marks.rs:53",
+  "rs/src/ministry.rs:306",
+  "rs/src/ministry.rs:471",
+  "rs/src/routes.rs:32"
+ ],
+ "no such dictionary entry": [
+  "rs/src/dictionary.rs:70"
+ ],
+ "no such event": [
+  "rs/src/groups.rs:271",
+  "rs/src/groups.rs:333"
+ ],
+ "no such file": [
+  "rs/src/ministry_offline.rs:238"
+ ],
+ "no such group": [
+  "rs/src/groups.rs:45",
+  "rs/src/groups.rs:47"
+ ],
+ "no such message": [
+  "rs/src/feedback.rs:106"
+ ],
+ "no such open job": [
+  "rs/src/moderation.rs:143"
+ ],
+ "no such report": [
+  "rs/src/moderation.rs:328"
+ ],
+ "no such section": [
+  "rs/src/companion.rs:113",
+  "rs/src/ministry.rs:280"
+ ],
+ "no such user": [
+  "rs/src/feedback.rs:173",
+  "rs/src/feedback.rs:188",
+  "rs/src/feedback.rs:190",
+  "rs/src/routes.rs:173",
+  "rs/src/routes.rs:176",
+  "rs/src/routes.rs:184"
+ ],
+ "no such verse": [
+  "rs/src/ministry.rs:472",
+  "rs/src/routes.rs:36",
+  "rs/src/routes.rs:37"
+ ],
+ "no such work": [
+  "rs/src/companion.rs:112",
+  "rs/src/ministry.rs:174",
+  "rs/src/ministry.rs:175",
+  "rs/src/ministry_offline.rs:272"
+ ],
+ "no worker token configured": [
+  "rs/src/moderation.rs:119"
+ ],
+ "not found": [
+  "rs/src/outlines.rs:121",
+  "rs/src/outlines.rs:148",
+  "rs/src/outlines.rs:155",
+  "rs/src/outlines.rs:156",
+  "rs/src/outlines.rs:175",
+  "rs/src/outlines.rs:194",
+  "rs/src/outlines.rs:195",
+  "rs/src/outlines.rs:215"
+ ],
+ "Not in your friends": [
+  "rs/src/friends.rs:330",
+  "rs/src/friends.rs:331",
+  "rs/src/friends.rs:494"
+ ],
+ "not recorded yet": [
+  "rs/src/tts.rs:402",
+  "rs/src/tts.rs:403"
+ ],
+ "not your outline": [
+  "rs/src/groups.rs:403"
+ ],
+ "Nothing to react to there": [
+  "rs/src/friends.rs:497"
+ ],
+ "nothing to report": [
+  "rs/src/moderation.rs:47"
+ ],
+ "only the group's owner turns the group streak on or off": [
+  "rs/src/groups.rs:156"
+ ],
+ "orphan identity": [
+  "rs/src/google.rs:59"
+ ],
+ "password: at least 8 characters": [
+  "rs/src/auth.rs:67"
+ ],
+ "path_id: a group walks one of the built-in paths": [
+  "rs/src/groups.rs:138"
+ ],
+ "please choose a handle of your own": [
+  "rs/src/routes.rs:143"
+ ],
+ "print_style": [
+  "rs/src/outlines.rs:133"
+ ],
+ "private": [
+  "rs/src/outlines.rs:122",
+  "rs/src/outlines.rs:149"
+ ],
+ "Publish an outline with Publish": [
+  "rs/src/outlines.rs:159"
+ ],
+ "Reactions are off in your friends settings": [
+  "rs/src/friends.rs:495"
+ ],
+ "read error": [
+  "rs/src/tts.rs:424"
+ ],
+ "reason": [
+  "rs/src/moderation.rs:43"
+ ],
+ "repeat": [
+  "rs/src/groups.rs:251"
+ ],
+ "role": [
+  "rs/src/groups.rs:175"
+ ],
+ "send {\"confirm\":\"delete\"}": [
+  "rs/src/routes.rs:158"
+ ],
+ "server error": [
+  "rs/src/auth.rs:116",
+  "rs/src/main.rs:24",
+  "rs/src/ministry.rs:187",
+  "rs/src/ministry_offline.rs:214"
+ ],
+ "session_id": [
+  "rs/src/routes.rs:268"
+ ],
+ "sign in required": [
+  "rs/src/auth.rs:122"
+ ],
+ "sign in to preview this link": [
+  "rs/src/link_preview.rs:278"
+ ],
+ "sign-up is not available": [
+  "rs/src/bans.rs:71"
+ ],
+ "since: an ISO 8601 time": [
+  "rs/src/friends.rs:383",
+  "rs/src/friends.rs:387"
+ ],
+ "site admins only": [
+  "rs/src/moderation.rs:305"
+ ],
+ "started_at: an ISO instant": [
+  "rs/src/paths.rs:119"
+ ],
+ "target": [
+  "rs/src/friends.rs:492"
+ ],
+ "target_date: a day as YYYY-MM-DD, or null": [
+  "rs/src/groups.rs:139",
+  "rs/src/paths.rs:110"
+ ],
+ "that handle is not allowed; please choose another": [
+  "rs/src/routes.rs:142"
+ ],
+ "that handle is taken": [
+  "rs/src/auth.rs:76",
+  "rs/src/routes.rs:145"
+ ],
+ "That is a lot at once. Please try again later.": [
+  "rs/src/friends.rs:63"
+ ],
+ "That is a lot of messages at once. Please try again in a few minutes.": [
+  "rs/src/feedback.rs:77"
+ ],
+ "That is your own code": [
+  "rs/src/friends.rs:416"
+ ],
+ "That is your own handle": [
+  "rs/src/friends.rs:338",
+  "rs/src/friends.rs:569"
+ ],
+ "that link cannot be previewed": [
+  "rs/src/link_preview.rs:267"
+ ],
+ "that name is not allowed; please choose another": [
+  "rs/src/auth.rs:69",
+  "rs/src/routes.rs:136"
+ ],
+ "the chronological table is not part of this edition": [
+  "rs/src/routes.rs:80"
+ ],
+ "the handle cannot be changed": [
+  "rs/src/routes.rs:140"
+ ],
+ "the owner cannot leave; transfer ownership first": [
+  "rs/src/groups.rs:167"
+ ],
+ "the owner stays admin": [
+  "rs/src/groups.rs:176"
+ ],
+ "the verse index is not in this pack": [
+  "rs/src/ministry_offline.rs:264"
+ ],
+ "this account has been suspended": [
+  "rs/src/friends.rs:537",
+  "rs/src/google.rs:88",
+  "rs/src/google.rs:93",
+  "rs/src/routes.rs:120"
+ ],
+ "This friend is not taking reactions": [
+  "rs/src/friends.rs:496"
+ ],
+ "this voice has no sample yet": [
+  "rs/src/tts.rs:460"
+ ],
+ "title required": [
+  "rs/src/outlines.rs:138"
+ ],
+ "title: 1-160 characters": [
+  "rs/src/outlines.rs:130"
+ ],
+ "token rejected": [
+  "rs/src/google.rs:46"
+ ],
+ "too many items": [
+  "rs/src/outlines.rs:172"
+ ],
+ "unknown signing key": [
+  "rs/src/google.rs:41"
+ ],
+ "unknown voice": [
+  "rs/src/tts.rs:331",
+  "rs/src/tts.rs:336",
+  "rs/src/tts.rs:353",
+  "rs/src/tts.rs:359",
+  "rs/src/tts.rs:372",
+  "rs/src/tts.rs:456"
+ ],
+ "unknown voice or number": [
+  "rs/src/tts.rs:364",
+  "rs/src/tts.rs:368"
+ ],
+ "verdict": [
+  "rs/src/moderation.rs:144"
+ ],
+ "verses: a verse, a range or a list, as 16, 16-18 or 1,3,7-9": [
+  "rs/src/ministry.rs:462"
+ ],
+ "visibility": [
+  "rs/src/groups.rs:249",
+  "rs/src/outlines.rs:132"
+ ],
+ "weights: 0 to 100": [
+  "rs/src/groups.rs:244"
+ ],
+ "wrong handle or password": [
+  "rs/src/auth.rs:83",
+  "rs/src/auth.rs:85",
+  "rs/src/auth.rs:86"
+ ],
+ "you cannot ban yourself": [
+  "rs/src/moderation.rs:342"
+ ],
+ "you cannot block yourself": [
+  "rs/src/moderation.rs:285"
+ ],
+ "you cannot report your own content": [
+  "rs/src/moderation.rs:48"
+ ]
+}

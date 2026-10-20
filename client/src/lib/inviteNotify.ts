@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications'
 import { Platform } from 'react-native'
+import { N_, t } from '@shared/i18n'
 import { planNotices, type InviteLite } from './inviteNoticePlan'
 
 /**
@@ -8,11 +9,11 @@ import { planNotices, type InviteLite } from './inviteNoticePlan'
  * background) and by the background check (`inviteTask.ts`). Native only; `inviteNotify.web.ts` is inert.
  */
 export const INVITES_ROUTE = '/friends'
-const CHANNEL = { id: 'friend-invites', name: 'Friend invites', description: 'When someone invites you to be friends.' }
+const CHANNEL = { id: 'friend-invites', name: N_('Friend invites'), description: N_('When someone invites you to be friends.') }
 
 export async function ensureInviteChannel() {
   if (Platform.OS !== 'android') return
-  await Notifications.setNotificationChannelAsync(CHANNEL.id, { name: CHANNEL.name, description: CHANNEL.description, importance: Notifications.AndroidImportance.DEFAULT })
+  await Notifications.setNotificationChannelAsync(CHANNEL.id, { name: t(CHANNEL.name), description: t(CHANNEL.description), importance: Notifications.AndroidImportance.DEFAULT })
 }
 
 export async function notifyAllowed(): Promise<boolean> {

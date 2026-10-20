@@ -3,6 +3,7 @@ import { View } from 'react-native'
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router'
 import type { Badge } from '@shared/types'
 import { presentFriendStreak, streakMilestone, type ReactionKind } from '@shared/friends'
+import { t, tc, tn } from '@shared/i18n'
 import { useAuth } from '../../src/store/auth'
 import { useToast } from '../../src/store/toast'
 import { useColors } from '../../src/hooks/useTheme'
@@ -31,7 +32,7 @@ export default function FriendScreen() {
   const moments = useKeptMoments(user?.id, friendItems(f ? [f] : null))
   return (
     <Screen animate={false}>
-      <Stack.Screen options={{ title: f ? f.display_name : 'Friend' }} />
+      <Stack.Screen options={{ title: f ? f.display_name : t('Friend') }} />
       {state.kind === 'loading' ? <Spinner /> : null}
       {state.kind === 'error' ? <ErrorText>{state.message}</ErrorText> : null}
       {f && moments ? <Body f={f} moment={moments[f.id] ?? null} onSent={(target, kind, at) => mutate(d => ({ ...d, reactions: { ...d.reactions, sent: [...d.reactions.sent, { target, kind, created_at: at }] } }))} /> : null}
@@ -48,13 +49,13 @@ function Body({ f, moment, onSent }: { f: Friend; moment: { play: boolean; from:
   const [busy, setBusy] = useState(false)
   const leave = async (block: boolean) => {
     const ok = block
-      ? await confirmAsync(`Block @${f.handle}?`, 'You stop being friends and they can no longer invite you. Their posts disappear from your feeds. They are not told.', 'Block')
-      : await confirmAsync(`Remove ${f.display_name} from your friends?`, 'Your friend streak and the reactions between you go too. They are not told, but will no longer see you in their friends.', 'Remove')
+      ? await confirmAsync(t('Block @{handle}?', { handle: f.handle }), t('You stop being friends and they can no longer invite you. Their posts disappear from your feeds. They are not told.'), tc('verb', 'Block'))
+      : await confirmAsync(t('Remove {name} from your friends?', { name: f.display_name }), t('Your friend streak and the reactions between you go too. They are not told, but will no longer see you in their friends.'), t('Remove'))
     if (!ok) return
     setBusy(true)
     try {
       if (block) await blockUser(f.id); else await removeFriend(f.id)
-      toast.show(block ? `Blocked @${f.handle}` : `Removed ${f.display_name}`)
+      toast.show(block ? t('Blocked @{handle}', { handle: f.handle }) : t('Removed {name}', { name: f.display_name }))
       router.back()
     } catch (e) { toast.show(errMsg(e)) } finally { setBusy(false) }
   }
@@ -65,7 +66,7 @@ function Body({ f, moment, onSent }: { f: Friend; moment: { play: boolean; from:
           <Avatar name={f.display_name} avatar={f.avatar} size={56} />
           <View style={{ flex: 1, gap: 2 }}>
             <H style={{ fontSize: 24, marginBottom: 0 }}>{f.display_name}</H>
-            <T small muted>@{f.handle} · friends since {fmtDay(f.since)}</T>
+            <T small muted>@{f.handle} · {t('friends since {date}', { date: fmtDay(f.since) })}</T>
           </View>
         </Card>
       </Enter>
@@ -74,8 +75,8 @@ function Body({ f, moment, onSent }: { f: Friend; moment: { play: boolean; from:
       <Badges f={f} name={name} onSent={onSent} />
       <Enter delay={260}>
         <Row style={{ marginTop: 8 }}>
-          <Button small title="Remove friend" disabled={busy} onPress={() => { void leave(false) }} />
-          <Button small danger title="Block" disabled={busy} onPress={() => { void leave(true) }} />
+          <Button small title={t('Remove friend')} disabled={busy} onPress={() => { void leave(false) }} />
+          <Button small danger title={tc('verb', 'Block')} disabled={busy} onPress={() => { void leave(true) }} />
         </Row>
       </Enter>
     </>
@@ -90,7 +91,7 @@ function FriendStreakCard({ f, moment, onSent }: { f: Friend; moment: { play: bo
   const milestone = streakMilestone(f.friend_streak)
   const sealRef = useRef<View>(null)
   if (!p.show) {
-    return <Enter delay={80}><Card><T small muted>{f.friend_streak === null ? `Friend streaks need you both to share your streak.` : ''}</T></Card></Enter>
+    return <Enter delay={80}><Card><T small muted>{f.friend_streak === null ? t('Friend streaks need you both to share your streak.') : ''}</T></Card></Enter>
   }
   const received = milestone ? f.reactions.received.filter(r => r.target === milestone.target) : []
   const sent = milestone ? f.reactions.sent.find(r => r.target === milestone.target) : undefined
@@ -102,16 +103,16 @@ function FriendStreakCard({ f, moment, onSent }: { f: Friend; moment: { play: bo
           <View style={{ flex: 1, gap: 2 }}>
             <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
               <T bold style={{ fontSize: 34, fontVariant: ['tabular-nums'], color: p.tone === 'lapsed' ? c.muted : c.text }}>{count}</T>
-              <T muted>{p.tone === 'lapsed' ? 'days, your best together' : `day${p.count === 1 ? '' : 's'} together`}</T>
+              <T muted>{p.tone === 'lapsed' ? tn(p.count, 'days, your best together', 'days, your best together') : tn(p.count, 'day together', 'days together')}</T>
             </View>
             <T small muted>{p.line}</T>
           </View>
         </View>
         {milestone ? (
           <View style={{ gap: 8 }}>
-            <T small bold>{milestone.days === 7 ? 'A week together' : `${milestone.days}-day milestone`}</T>
+            <T small bold>{milestone.days === 7 ? t('A week together') : t('{days}-day milestone', { days: milestone.days })}</T>
             {received.length ? <ReactionStack items={received.map(r => ({ key: `${r.target}`, kind: r.kind, from: f }))} /> : null}
-            {f.reactions.open ? <SendReaction to={f.id} target={milestone.target} label={`your ${milestone.days}-day friend streak with ${f.display_name}`} sent={sent?.kind ?? null} landOn={() => sealRef.current} onSent={onSent} /> : null}
+            {f.reactions.open ? <SendReaction to={f.id} target={milestone.target} label={t('your {days}-day friend streak with {name}', { days: milestone.days, name: f.display_name })} sent={sent?.kind ?? null} landOn={() => sealRef.current} onSent={onSent} /> : null}
           </View>
         ) : null}
       </Card>
@@ -123,21 +124,21 @@ function FriendStreakCard({ f, moment, onSent }: { f: Friend; moment: { play: bo
 function Their({ f, name }: { f: Friend; name: string }) {
   const n = useCountUp(f.streak?.current ?? 0, undefined, undefined, 160)
   const ch = useCountUp(f.chapters_week ?? 0, undefined, undefined, 160)
-  if (!f.streak && f.chapters_week === null) return <Enter delay={140}><T small muted>{name} keeps their reading to themselves.</T></Enter>
+  if (!f.streak && f.chapters_week === null) return <Enter delay={140}><T small muted>{t('{name} keeps their reading to themselves.', { name })}</T></Enter>
   return (
     <Enter delay={140} style={{ gap: 12 }}>
-      <H2>{name}’s reading</H2>
+      <H2>{t('{name}’s reading', { name })}</H2>
       <Card>
         {f.streak ? (
           <>
             <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
               <T style={{ fontSize: 30, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{n}</T>
-              <T muted style={{ flex: 1 }}>day streak · longest {f.streak.longest}</T>
+              <T muted style={{ flex: 1 }}>{tn(f.streak.current, 'day streak · longest {longest}', 'day streak · longest {longest}', { longest: f.streak.longest })}</T>
             </View>
             <WeekStrip days={f.streak.week.map(date => ({ date, met: 1 as const }))} today={f.streak.today} delay={200} />
           </>
-        ) : <T small muted>{name} keeps their streak to themselves.</T>}
-        {f.chapters_week !== null ? <T small muted>{ch} {f.chapters_week === 1 ? 'chapter' : 'chapters'} read this week</T> : null}
+        ) : <T small muted>{t('{name} keeps their streak to themselves.', { name })}</T>}
+        {f.chapters_week !== null ? <T small muted>{tn(f.chapters_week, '{n} chapter read this week', '{n} chapters read this week', { n: ch })}</T> : null}
       </Card>
     </Enter>
   )
@@ -147,7 +148,7 @@ function Their({ f, name }: { f: Friend; name: string }) {
 function Badges({ f, name, onSent }: { f: Friend; name: string; onSent: Sent }) {
   const marks = useRef(new Map<string, View | null>()).current
   const [landed, setLanded] = useState<ReadonlySet<string>>(new Set())
-  if (f.badges === null) return <Enter delay={200}><T small muted>{name} keeps their badges to themselves.</T></Enter>
+  if (f.badges === null) return <Enter delay={200}><T small muted>{t('{name} keeps their badges to themselves.', { name })}</T></Enter>
   const earned = f.badges.filter(b => b.earned_at)
   const footer = (b: Badge) => {
     const target = `badge:${b.code}`
@@ -155,14 +156,14 @@ function Badges({ f, name, onSent }: { f: Friend; name: string; onSent: Sent }) 
     return (
       <View style={{ gap: 6, marginTop: 4 }}>
         <T small muted>{b.earned_at ? fmtDay(b.earned_at) : ''}</T>
-        {f.reactions.open ? <SendReaction to={f.id} target={target} label={`${f.display_name}’s badge ${b.name}`} sent={sent?.kind ?? null} landOn={() => marks.get(b.code) ?? null} onSent={onSent} onLand={() => setLanded(s => new Set([...s, b.code]))} /> : null}
+        {f.reactions.open ? <SendReaction to={f.id} target={target} label={t('{name}’s badge {badge}', { name: f.display_name, badge: b.name })} sent={sent?.kind ?? null} landOn={() => marks.get(b.code) ?? null} onSent={onSent} onLand={() => setLanded(s => new Set([...s, b.code]))} /> : null}
       </View>
     )
   }
   return (
     <Enter delay={200} style={{ gap: 12 }}>
-      <H2>Badges</H2>
-      {earned.length === 0 ? <T small muted>No badges yet.</T> : null}
+      <H2>{t('Badges')}</H2>
+      {earned.length === 0 ? <T small muted>{t('No badges yet.')}</T> : null}
       <BadgeGrid badges={earned} fresh={landed} footer={footer} markRef={(code, v) => { marks.set(code, v) }} />
     </Enter>
   )

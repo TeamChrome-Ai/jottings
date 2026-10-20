@@ -11,6 +11,16 @@ import { place } from '../lib/readAloudLogCore'
 import { chapterAudioUrl, fetchMarks, numberAudioUrl, PAUSE_MS, positionAt, type ChapterMarks } from '../lib/tts'
 import { usePrefsStore } from './prefs'
 import { BRAND } from '@shared/brand'
+import { peekLang, t } from '@shared/i18n'
+import { formatRef } from '@shared/ref'
+import { ownNumber, peekShownText } from '@shared/texts'
+
+/** The recordings are of the English Darby: another Bible is read by the device's own voice, in its language. */
+const deviceOnly = (chosen: boolean) => chosen || peekShownText() !== 'en'
+const speechLanguage = (): string | undefined => {
+  const x = peekShownText()
+  return x === 'fr' ? 'fr-FR' : x === 'de' ? 'de-DE' : peekLang() === 'en' ? undefined : 'en-GB'
+}
 
 /**
  * Read-aloud. One recorded chapter plays verse by verse from its word timings: an optional spoken verse number
@@ -244,7 +254,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // Darby's [supplied words] are read as words: some engines say "bracket" or stop dead at the marks
   const speakDevice = (text: string, token: number) => new Promise<void>((resolve, reject) => {
-    Speech.speak(text.replace(/[[\]]/g, ''), { rate: prefs.get().ttsSpeed, onDone: () => resolve(), onStopped: () => reject(new Error(STOPPED)), onError: () => reject(new Error('device voice failed')) })
+    Speech.speak(text.replace(/[[\]]/g, ''), { rate: prefs.get().ttsSpeed, language: speechLanguage(), onDone: () => resolve(), onStopped: () => reject(new Error(STOPPED)), onError: () => reject(new Error('device voice failed')) })
     const guard = () => { if (run.current !== token) { Speech.stop(); return } setTimeout(guard, 200) }
     guard()
   })
@@ -334,14 +344,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     } else {
       // device voice: verse by verse
-      if (c.heading && p.ttsHeading) await speakDevice(`${bookMeta(c.book).name}, chapter ${c.chapter}.`, token)
+      // in the language of the Bible being read, as the voice reads it: the English Darby's heading is English whatever the screens are in
+      if (c.heading && p.ttsHeading) await speakDevice(peekShownText() === 'en' ? `${bookMeta(c.book).nameEn}, chapter ${c.chapter}.` : t('{book}, chapter {chapter}.', { book: bookMeta(c.book).name, chapter: ownNumber(c.book, c.chapter, 1).c }), token)
       c.heading = false
       for (; c.index < c.verses.length; c.index++) {
         p = prefs.get()
         const v = c.verses[c.index]
         if (!v.t.trim()) continue
         setState(s => ({ ...s, spoken: { book: c.book, chapter: c.chapter, v: v.v, off: null } }))
-        await speakDevice(`${p.ttsNumbers ? `${v.v}. ` : ''}${v.t}`, token)
+        await speakDevice(`${p.ttsNumbers ? `${v.nv ?? v.v}. ` : ''}${v.t}`, token)
         if (run.current === token) heard(c.book, c.chapter, v.v)
         if (c.stopAfter !== null && v.v >= c.stopAfter) { c.index++; break }
         if (c.index < c.verses.length - 1) await wait(PAUSE_MS[p.ttsPause], token)
@@ -387,13 +398,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const voice = prefs.get().ttsVoice
       const data = await fetchChapter(book, chapter)
       let marks: ChapterMarks | null = null
-      if (!prefs.get().ttsDevice) {
+      if (!deviceOnly(prefs.get().ttsDevice)) {
         try {
           marks = await marksFor(voice, book, chapter)
           if (!player.current) player.current = createAudioPlayer(null, { updateInterval: POLL_MS })
           await loadAudio(chapterAudioUrl(voice, book, chapter))
           if (run.current !== token) return
-          if (Platform.OS !== 'web') player.current.setActiveForLockScreen(true, { title: `${bookMeta(book).name} ${chapter}`, artist: `${BRAND.name} · Darby`, artworkUrl: await mediaArt() })
+          if (Platform.OS !== 'web') player.current.setActiveForLockScreen(true, { title: formatRef({ book, chapter }), artist: `${BRAND.name} · Darby`, artworkUrl: await mediaArt() })
         } catch (e) { marks = null; note('load', `the device voice: ${(e as Error).message}`) }   // not recorded (yet) or offline: the device voice reads instead
       }
       if (run.current !== token) return
@@ -468,7 +479,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const marksOf = useCallback((book: number, chapter: number) => { const c = current.current; return c.book === book && c.chapter === chapter ? c.marks : null }, [])
   const warm = useCallback((book: number, chapter: number) => {
     warmChapter(book, chapter)
-    if (prefs.get().ttsDevice) return
+    if (deviceOnly(prefs.get().ttsDevice)) return
     const voice = prefs.get().ttsVoice
     marksFor(voice, book, chapter).then(() => fetchWhole(chapterAudioUrl(voice, book, chapter)), () => {})
   }, [])

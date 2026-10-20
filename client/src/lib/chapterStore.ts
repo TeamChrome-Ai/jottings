@@ -1,13 +1,12 @@
 /** Native chapter storage: one file per chapter under <documentDirectory>/bible/<book>/<chapter>.json, the 1890
  *  edition's under bible1890/ (editionCore.ts): a chapter of one edition is never read as the other's. */
 import { Directory, File, Paths } from 'expo-file-system'
-import type { Edition } from './editionCore'
+import { SOURCES, type Source } from './editionCore'
 
-const EDITIONS: readonly Edition[] = ['1961', '1890']
-const root = (e: Edition) => new Directory(Paths.document, e === '1961' ? 'bible' : 'bible1890')
-const fileFor = (book: number, chapter: number, e: Edition) => new File(root(e), String(book), `${chapter}.json`)
+const root = (e: Source) => new Directory(Paths.document, e === '1961' ? 'bible' : e === '1890' ? 'bible1890' : `bible-${e}`)
+const fileFor = (book: number, chapter: number, e: Source) => new File(root(e), String(book), `${chapter}.json`)
 
-export async function readChapterFile(book: number, chapter: number, e: Edition): Promise<string | null> {
+export async function readChapterFile(book: number, chapter: number, e: Source): Promise<string | null> {
   try {
     const f = fileFor(book, chapter, e)
     if (!f.exists) return null
@@ -15,7 +14,7 @@ export async function readChapterFile(book: number, chapter: number, e: Edition)
   } catch { return null }
 }
 
-export async function writeChapterFile(book: number, chapter: number, json: string, e: Edition): Promise<void> {
+export async function writeChapterFile(book: number, chapter: number, json: string, e: Source): Promise<void> {
   const dir = new Directory(root(e), String(book))
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true })
   const f = fileFor(book, chapter, e)
@@ -23,7 +22,7 @@ export async function writeChapterFile(book: number, chapter: number, json: stri
 }
 
 /** The edition's stored chapter keys as "book.chapter". */
-export async function listChapterFiles(e: Edition): Promise<string[]> {
+export async function listChapterFiles(e: Source): Promise<string[]> {
   const r = root(e)
   if (!r.exists) return []
   const out: string[] = []
@@ -40,7 +39,7 @@ export async function listChapterFiles(e: Edition): Promise<string[]> {
 }
 
 /** Every stored chapter of the edition as [key, json]. */
-export async function readAllChapterFiles(e: Edition): Promise<[string, string][]> {
+export async function readAllChapterFiles(e: Source): Promise<[string, string][]> {
   const out: [string, string][] = []
   for (const k of await listChapterFiles(e)) {
     const [b, c] = k.split('.').map(Number)
@@ -51,6 +50,6 @@ export async function readAllChapterFiles(e: Edition): Promise<[string, string][
 }
 
 /** The edition's stored chapters, or every edition's. */
-export async function removeAllChapterFiles(e?: Edition): Promise<void> {
-  for (const x of e ? [e] : EDITIONS) { const r = root(x); if (r.exists) r.delete() }
+export async function removeAllChapterFiles(e?: Source): Promise<void> {
+  for (const x of e ? [e] : SOURCES) { const r = root(x); if (r.exists) r.delete() }
 }

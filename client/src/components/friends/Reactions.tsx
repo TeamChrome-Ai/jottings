@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, type Ref } from 'react'
 import { Animated, Easing, Platform, View, type GestureResponderEvent } from 'react-native'
-import { REACTION_KINDS, REACTION_WORDS, summariseReactions, type ReactionKind } from '@shared/friends'
+import { REACTION_KINDS, summariseReactions, type ReactionKind } from '@shared/friends'
+import { t, tc } from '@shared/i18n'
 import type { Person } from '../../lib/friends'
 import { useColors, useFill, useSurface } from '../../hooks/useTheme'
 import { usePrefsStore, useReduceMotion } from '../../store/prefs'
@@ -70,6 +71,20 @@ function Arrive({ delay, children }: { delay: number; children: React.ReactNode 
   return <Animated.View style={style}><>{children}</></Animated.View>
 }
 
+/** A reaction's button and its sent state, each a whole phrase: the reaction's words take a different article and case by language. */
+const REACT_FOR: Record<ReactionKind, (what: string) => string> = {
+  heart: what => t('Heart for {what}', { what }),
+  smile: what => t('Smile for {what}', { what }),
+  clap: what => t('Applause for {what}', { what }),
+  seal: what => t('Well done for {what}', { what }),
+}
+const YOU_SENT: Record<ReactionKind, () => string> = {
+  heart: () => t('You sent a heart'),
+  smile: () => t('You sent a smile'),
+  clap: () => t('You sent a round of applause'),
+  seal: () => t('You sent a well-done seal'),
+}
+
 type Point = { x: number; y: number }
 /** Where a press happened, in window coordinates (the overlay's). */
 export const pressPoint = (e: GestureResponderEvent): Point => ({ x: e.nativeEvent.pageX, y: e.nativeEvent.pageY })
@@ -105,17 +120,17 @@ export function ReactionPicker({ sent, onPick, busy, label }: { sent: ReactionKi
   }])) as Record<ReactionKind, object>, [vals])
   return (
     // wraps in a narrow badge cell (a half-width card on a small phone) rather than cutting the last choice off
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', rowGap: 4 }} accessibilityLabel={sent ? `You sent a ${REACTION_WORDS[sent].one}` : undefined}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', rowGap: 4 }} accessibilityLabel={sent ? YOU_SENT[sent]() : undefined}>
       {REACTION_KINDS.map(k => (
         <Animated.View key={k} style={[{ overflow: 'hidden', alignItems: 'flex-start' }, styles[k]]}>
           <Tap disabled={!!sent || busy} onPress={e => onPick(k, pressPoint(e))} scaleTo={0.86} accessibilityRole="button"
-            accessibilityLabel={`${REACTION_WORDS[k].label} for ${label}`} hitSlop={4}
+            accessibilityLabel={REACT_FOR[k](label)} hitSlop={4}
             style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: sent === k ? c.accent : fill }}>
             <ReactionGlyph kind={k} size={16} color={sent === k ? c.accentText : c.accent} />
           </Tap>
         </Animated.View>
       ))}
-      {sent ? <FadeSwap k="sent"><T small muted>Sent</T></FadeSwap> : null}
+      {sent ? <FadeSwap k="sent"><T small muted>{tc('reaction', 'Sent')}</T></FadeSwap> : null}
     </View>
   )
 }

@@ -9,6 +9,14 @@ import { Button, Grow, Tap } from './ui'
 import { DockedBar } from './motion/reader'
 import { tourRef } from '../store/tour'
 import { NOUN } from '@shared/brand'
+import { N_, t, tc } from '@shared/i18n'
+
+/** Each swatch as a screen reader says it, whole, so a translation names the colour in its own order. */
+const SWATCH_LABEL: Record<HlColor, string> = {
+  yellow: N_('Highlight yellow'), green: N_('Highlight green'), blue: N_('Highlight blue'), pink: N_('Highlight pink'),
+  orange: N_('Highlight orange'), red: N_('Highlight red'), purple: N_('Highlight purple'), teal: N_('Highlight teal'),
+  sky: N_('Highlight sky'), lime: N_('Highlight lime'), brown: N_('Highlight brown'), grey: N_('Highlight grey'),
+}
 
 /** From this width (in the system's text scale) the eight extra colours sit on the first row with the core four;
  *  under it they have a row of their own. All twelve, Clear and the close need ~620 pt beside the shortest reference. */
@@ -37,7 +45,7 @@ export default function ActionBar({ open, label, shortLabel, lift = 0, bookmarke
   const more = usePref('moreColours')
   const offered = hlPicker(more), own = extraColoursHeight(more, width, fontScale) > 0
   const first = own ? offered.slice(0, HL_CORE.length) : offered, second = own ? offered.slice(HL_CORE.length) : []
-  const swatch = (h: HlColor) => <Tap key={h} accessibilityRole="button" accessibilityLabel={`Highlight ${h}`} onPress={() => onHighlight(h)} scaleTo={0.86} hitSlop={6} style={[styles.swatch, { backgroundColor: c.hl[h], borderColor: c.border }]} />
+  const swatch = (h: HlColor) => <Tap key={h} accessibilityRole="button" accessibilityLabel={t(SWATCH_LABEL[h])} onPress={() => onHighlight(h)} scaleTo={0.86} hitSlop={6} style={[styles.swatch, { backgroundColor: c.hl[h], borderColor: c.border }]} />
   // Ministry known as the bar opens rises with it; found a moment later (the quiet check), it pops in where it goes.
   // It sits last, on the row Listen already wraps to on a phone, so it never changes the bar's height there.
   const ministryAtOpen = useRef(false)
@@ -48,7 +56,7 @@ export default function ActionBar({ open, label, shortLabel, lift = 0, bookmarke
   const lastMinistry = useRef(onMinistry)
   if (open) lastMinistry.current = onMinistry
   const ministryFn = open ? onMinistry : lastMinistry.current
-  const ministry = ministryFn ? <Button small title="Ministry" accessibilityLabel={`Ministry on ${shown.current.label}`} onPress={ministryFn} /> : null
+  const ministry = ministryFn ? <Button small title={t('Ministry')} accessibilityLabel={t('Ministry on {ref}', { ref: shown.current.label })} onPress={ministryFn} /> : null
   return (
     // docked on top of the player bar (`lift`), it rides down with it when read-aloud stops
     <DockedBar open={open} edge="bottom" lift={lift} style={[styles.bar, { backgroundColor: c.card, borderColor: c.border, paddingBottom: lift ? 10 : Math.max(bottom, 8) }]}>
@@ -59,17 +67,17 @@ export default function ActionBar({ open, label, shortLabel, lift = 0, bookmarke
         <View style={styles.tools}>
           {/* the swatches arrive with the bar, whose rise is their entrance: a pop staggered after it kept them out of reach for 90-225 ms */}
           {first.map(swatch)}
-          <Button small title="Clear" onPress={() => onHighlight(null)} />
-          <Tap onPress={onClose} hitSlop={10} scaleTo={0.86} accessibilityRole="button" accessibilityLabel="Deselect" style={styles.close}><Icon name="x" size={20} color={c.muted} /></Tap>
+          <Button small title={tc('verb', 'Clear')} onPress={() => onHighlight(null)} />
+          <Tap onPress={onClose} hitSlop={10} scaleTo={0.86} accessibilityRole="button" accessibilityLabel={t('Deselect')} style={styles.close}><Icon name="x" size={20} color={c.muted} /></Tap>
         </View>
       </View>
       {second.length ? <View style={styles.extra}>{second.map(swatch)}</View> : null}
       <View ref={tourRef('action-buttons')} style={styles.row}>
         <Button small lead="jot" title={NOUN.verb} onPress={onJot} />
-        <Button small title="Copy" onPress={onCopy} />
-        <Button small title={bookmarked ? 'Remove bookmark' : 'Bookmark'} onPress={onBookmark} />
-        <Button small title="Share" onPress={onShare} />
-        <Button small title="Listen" onPress={onListen} />
+        <Button small title={tc('verb', 'Copy')} onPress={onCopy} />
+        <Button small title={bookmarked ? t('Remove bookmark') : tc('verb', 'Bookmark')} onPress={onBookmark} />
+        <Button small title={tc('verb', 'Share')} onPress={onShare} />
+        <Button small title={t('Listen')} onPress={onListen} />
         {ministryFn ? ministryAtOpen.current ? ministry : <Grow from={0.86}>{ministry}</Grow> : null}
       </View>
     </DockedBar>

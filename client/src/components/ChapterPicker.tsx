@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Animated, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native'
 import { BOOKS } from '@shared/books'
+import { ownChapters } from '@shared/texts'
+import { N_, t } from '@shared/i18n'
 import { useColors, useInks } from '../hooks/useTheme'
 import { bookmarkKey, type BookmarkTarget } from '../lib/bookmarks'
 import Icon from './Icon'
@@ -18,7 +20,7 @@ const PAD = 12
 const NOTCH = 12
 /** How far the New Testament's chips lean toward the accent. */
 const NT_TINT = 0.08
-const TESTAMENTS = [{ testament: 'OT', label: 'Old Testament' }, { testament: 'NT', label: 'New Testament' }] as const
+const TESTAMENTS = [{ testament: 'OT', label: N_('Old Testament') }, { testament: 'NT', label: N_('New Testament') }] as const
 
 const NO_MARKS: ReadonlyMap<string, number> = new Map()
 
@@ -26,7 +28,7 @@ const NO_MARKS: ReadonlyMap<string, number> = new Map()
  * Books, then a book's chapters. With `onMark`, a long press on a book or a chapter toggles its bookmark; bookmarked
  * ones (`marks`, by `bookmarkKey`) carry the accent-soft fill and a small ribbon in the corner.
  */
-export default function ChapterPicker({ open, book, chapter, readSet, marks = NO_MARKS, onMark, onClose, onPick }: { open: boolean; book: number; chapter: number; readSet: ReadonlySet<string>; marks?: ReadonlyMap<string, number>; onMark?: (t: BookmarkTarget) => void; onClose: () => void; onPick: (b: number, c: number) => void }) {
+export default function ChapterPicker({ open, book, chapter, readSet, marks = NO_MARKS, onMark, onClose, onPick }: { open: boolean; book: number; chapter: number; readSet: ReadonlySet<string>; marks?: ReadonlyMap<string, number>; onMark?: (t: BookmarkTarget) => void; onClose: () => void; onPick: (b: number, c: number, v?: number) => void }) {
   const c = useColors()
   const ink = useInks()
   const reduce = useReduceMotion()
@@ -45,7 +47,7 @@ export default function ChapterPicker({ open, book, chapter, readSet, marks = NO
   const reset = () => { setB(null); setPickedBook(null); setPickedCh(null) }
   const close = () => { if (pending.current) clearTimeout(pending.current); reset(); onClose() }
   const openBook = (n: number) => { setPickedBook(n); later(() => { setB(n); setPickedCh(null) }) }
-  const pick = (n: number) => { setPickedCh(n); later(() => { onPick(cur, n); reset() }) }
+  const pick = (n: number, v = 1) => { setPickedCh(n); later(() => { onPick(cur, n, v > 1 ? v : undefined); reset() }) }
   const selBook = pickedBook ?? book
   const bookIdx = BOOKS.findIndex(bk => bk.n === selBook)
   const selCh = pickedCh ?? (cur === book ? chapter : null)
@@ -55,14 +57,14 @@ export default function ChapterPicker({ open, book, chapter, readSet, marks = NO
   // the New Testament's books carry a faint wash of the accent, under their own label
   const ntFill = mix(c.card, c.accent, NT_TINT), ntBorder = mix(c.border, c.accent, NT_TINT * 3)
   return (
-    <Sheet open={open} onClose={close} onBack={b ? toBooks : undefined} title={b ? meta.name : 'Books'}>
+    <Sheet open={open} onClose={close} onBack={b ? toBooks : undefined} title={b ? meta.name : t('Books')}>
       <ScrollView contentContainerStyle={{ padding: PAD }}>
         <FadeSwap k={b ?? 'books'}>
           {b === null ? (
             <Grid>{wait => <View style={{ gap: SPACE.l }}>
               {TESTAMENTS.map(({ testament, label }) => (
                 <View key={testament} style={{ gap: SPACE.s }}>
-                  <Text style={[pickerStyles.group, { color: c.muted }]}>{label}</Text>
+                  <Text style={[pickerStyles.group, { color: c.muted }]}>{t(label)}</Text>
                   <View style={pickerStyles.wrap}>
                     {BOOKS.map((bk, i) => {
                       if (bk.testament !== testament) return null
@@ -81,13 +83,14 @@ export default function ChapterPicker({ open, book, chapter, readSet, marks = NO
             </View>}</Grid>
           ) : (
             <Grid>{wait => <View style={{ gap: 10 }}>
-              <Button small lead="back" title="All books" onPress={toBooks} style={pickerStyles.back} />
+              <Button small lead="back" title={t('All books')} onPress={toBooks} style={pickerStyles.back} />
               <View style={pickerStyles.wrap}>
-                {Array.from({ length: meta.chapters }, (_, i) => i + 1).map((n, i) => {
+                {/* the chapters as the Bible shown prints them (French Joel has four); each opens at the English verse it begins at */}
+                {ownChapters(cur).map(({ n: own, c: n, v }, i, all) => {
                   const marked = marks.has(bookmarkKey({ book: cur, chapter: n }))
                   return (
-                    <PopIn key={n} index={i} cap={cap} step={stepFor(meta.chapters)} base={wait}>
-                      <Choice label={String(n)} name={`${meta.name} ${n}`} selected={n === selCh} fillDelay={pickedCh ? 0 : settle(i, stepFor(meta.chapters), wait)} onPress={() => pick(n)} style={pickerStyles.num} fontSize={15}
+                    <PopIn key={own} index={i} cap={cap} step={stepFor(all.length)} base={wait}>
+                      <Choice label={String(own)} name={`${meta.name} ${own}`} selected={n === selCh && (v === 1 || pickedCh === n)} fillDelay={pickedCh ? 0 : settle(i, stepFor(all.length), wait)} onPress={() => pick(n, v)} style={pickerStyles.num} fontSize={15}
                         bg={marked ? ink.accentSoft : readSet.has(`${cur}.${n}`) ? ink.selected : ink.card} marked={marked} onLongPress={onMark ? () => onMark({ book: cur, chapter: n }) : undefined} />
                     </PopIn>
                   )
@@ -120,8 +123,8 @@ export function Grid({ children }: { children: (wait: number) => ReactNode }) {
 export function Choice({ label, name = label, selected, fillDelay, onPress, onLongPress, marked = false, order, style, fontSize, bg, border }: { label: string; name?: string; selected: boolean; fillDelay: number; onPress: () => void; onLongPress?: () => void; marked?: boolean; order?: number; style: StyleProp<ViewStyle>; fontSize: number; bg: string; border?: string }) {
   const c = useInks()
   return (
-    <Tap onPress={onPress} onLongPress={onLongPress} scaleTo={0.9} accessibilityRole="button" aria-label={marked ? `${name}, bookmarked` : name} aria-selected={selected}
-      accessibilityHint={onLongPress ? marked ? 'Hold to remove the bookmark' : 'Hold to bookmark' : undefined} style={[style, { backgroundColor: bg, borderColor: border ?? c.border }]}>
+    <Tap onPress={onPress} onLongPress={onLongPress} scaleTo={0.9} accessibilityRole="button" aria-label={marked ? t('{name}, bookmarked', { name }) : name} aria-selected={selected}
+      accessibilityHint={onLongPress ? marked ? t('Hold to remove the bookmark') : t('Hold to bookmark') : undefined} style={[style, { backgroundColor: bg, borderColor: border ?? c.border }]}>
       <Text style={{ color: c.text, fontSize }}>{label}</Text>
       {selected ? <Fill label={label} delay={fillDelay} fontSize={fontSize} /> : null}
       {marked ? <View pointerEvents="none" style={pickerStyles.notch}><Icon name="bookmark" fill size={NOTCH} color={selected ? c.accentText : c.accent} /></View> : null}

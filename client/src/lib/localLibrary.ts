@@ -13,6 +13,7 @@ import { get, post, put } from './api'
 import { adoptLocalHighlights, localHighlightChapters, type HighlightMap } from './highlights'
 import { bookmarkKey, type BookmarkTarget } from './bookmarks'
 import { NOUN } from '@shared/brand'
+import { t, tn } from '@shared/i18n'
 
 const BOOKMARKS_KEY = 'berean_local_bookmarks'
 const OUTLINES_KEY = 'berean_local_outlines'
@@ -117,7 +118,7 @@ const numberItems = (outlineId: number, items: readonly ItemInput[]): OutlineIte
 
 export function createLocalOutline(meta: OutlineMeta & { title: string }, items: readonly ItemInput[] = []): Promise<Outline> {
   const title = meta.title.trim()
-  if (!title || title.length > 160) return Promise.reject(new Error('A title needs 1 to 160 characters'))
+  if (!title || title.length > 160) return Promise.reject(new Error(t('A title needs 1 to 160 characters')))
   return update<LocalOutline, Outline>(OUTLINES_KEY, box => {
     const id = nextId(box)
     const t = now()
@@ -134,7 +135,7 @@ export function createLocalOutline(meta: OutlineMeta & { title: string }, items:
 function editLocalOutline(id: number, fn: (o: LocalOutline) => LocalOutline): Promise<Outline> {
   return update<LocalOutline, Outline>(OUTLINES_KEY, box => {
     const i = box.rows.findIndex(r => r.id === id)
-    if (i < 0) throw new Error(`This ${NOUN.one} is no longer on this device`)
+    if (i < 0) throw new Error(t('This {one} is no longer on this device', { one: NOUN.one }))
     const o = { ...fn(box.rows[i]), updated_at: now() }
     box.rows[i] = o
     return { ...o, items: [...(o.items ?? [])] }
@@ -225,6 +226,9 @@ async function run(uid: number): Promise<MergeResult> {
 
 /** "2 bookmarks, 1 jotting" for the sign-in toast. */
 export function describeMerge(r: MergeResult): string {
-  const part = (n: number, one: string, many: string) => (n ? `${n} ${n === 1 ? one : many}` : '')
-  return [part(r.bookmarks, 'bookmark', 'bookmarks'), part(r.highlights, 'highlight', 'highlights'), part(r.outlines, NOUN.one, NOUN.many)].filter(Boolean).join(', ')
+  return [
+    r.bookmarks ? tn(r.bookmarks, '{n} bookmark', '{n} bookmarks') : '',
+    r.highlights ? tn(r.highlights, '{n} highlight', '{n} highlights') : '',
+    r.outlines ? tn(r.outlines, '{n} {one}', '{n} {many}', { one: NOUN.one, many: NOUN.many }) : '',
+  ].filter(Boolean).join(', ')
 }

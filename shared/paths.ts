@@ -8,6 +8,7 @@
  */
 import { BOOKS } from './books.js'
 import { sectionsFor, type AuthorId, type CompanionIndex } from './companion.js'
+import { N_, t, tn } from './i18n.js'
 import orders from './pathOrders.json'
 
 export type PathId = 'gospels' | 'life-of-christ' | 'psalms-proverbs' | 'new-testament' | 'bible' | 'in-order' | 'synopsis' | 'coates'
@@ -61,14 +62,14 @@ const range = (from: number, to: number) => Array.from({ length: to - from + 1 }
 
 interface Def { title: string; blurb: string; chapters: () => Ch[] }
 const DEFS: Record<PathId, Def> = {
-  'gospels': { title: 'The Gospels', blurb: 'Matthew, Mark, Luke and John, a chapter at a time.', chapters: () => bookChapters(range(40, 43)) },
-  'life-of-christ': { title: 'The life of Christ', blurb: 'The four Gospels in the order of events, as Darby’s harmony sets them.', chapters: () => ORDERS['life-of-christ'] },
-  'psalms-proverbs': { title: 'Psalms and Proverbs', blurb: 'The hundred and fifty psalms, then the thirty-one chapters of Proverbs.', chapters: () => bookChapters([19, 20]) },
-  'new-testament': { title: 'The New Testament', blurb: 'Matthew to Revelation.', chapters: () => bookChapters(range(40, 66)) },
-  'bible': { title: 'The whole Bible', blurb: 'Genesis to Revelation, every chapter in its place.', chapters: () => bookChapters(range(1, 66)) },
-  'in-order': { title: 'In the order it happened', blurb: 'The Bible in the order of its events: Job beside the patriarchs, the prophets among the kings, the letters as Acts unfolds.', chapters: () => ORDERS['in-order'] },
-  'synopsis': { title: 'With Darby’s Synopsis', blurb: 'Genesis to Revelation, each chapter followed by the Synopsis on it.', chapters: () => bookChapters(range(1, 66)) },
-  'coates': { title: 'With Coates’s Outlines', blurb: 'The books Coates outlined, each chapter followed by his reading on it.', chapters: () => bookChapters(COATES_BOOKS) },
+  'gospels': { title: N_('The Gospels'), blurb: N_('Matthew, Mark, Luke and John, a chapter at a time.'), chapters: () => bookChapters(range(40, 43)) },
+  'life-of-christ': { title: N_('The life of Christ'), blurb: N_('The four Gospels in the order of events, as Darby’s harmony sets them.'), chapters: () => ORDERS['life-of-christ'] },
+  'psalms-proverbs': { title: N_('Psalms and Proverbs'), blurb: N_('The hundred and fifty psalms, then the thirty-one chapters of Proverbs.'), chapters: () => bookChapters([19, 20]) },
+  'new-testament': { title: N_('The New Testament'), blurb: N_('Matthew to Revelation.'), chapters: () => bookChapters(range(40, 66)) },
+  'bible': { title: N_('The whole Bible'), blurb: N_('Genesis to Revelation, every chapter in its place.'), chapters: () => bookChapters(range(1, 66)) },
+  'in-order': { title: N_('In the order it happened'), blurb: N_('The Bible in the order of its events: Job beside the patriarchs, the prophets among the kings, the letters as Acts unfolds.'), chapters: () => ORDERS['in-order'] },
+  'synopsis': { title: N_('With Darby’s Synopsis'), blurb: N_('Genesis to Revelation, each chapter followed by the Synopsis on it.'), chapters: () => bookChapters(range(1, 66)) },
+  'coates': { title: N_('With Coates’s Outlines'), blurb: N_('The books Coates outlined, each chapter followed by his reading on it.'), chapters: () => bookChapters(COATES_BOOKS) },
 }
 /** Which companion the path pairs each chapter with. */
 const COMPANION: Partial<Record<PathId, AuthorId>> = { synopsis: 'darby', coates: 'coates' }
@@ -98,14 +99,14 @@ export const pathLength = (p: PathLike): number => pathChapters(p).length
 export const pathBooks = (p: PathLike): number[] => [...new Set(pathChapters(p).map(([b]) => b))]
 
 export function pathTitle(p: PathLike): string {
-  if (typeof p === 'string') return DEFS[p].title
-  return p.id === 'custom' ? (p.custom?.title.trim() || 'Your path') : DEFS[p.id].title
+  if (typeof p === 'string') return t(DEFS[p].title)
+  return p.id === 'custom' ? (p.custom?.title.trim() || t('Your path')) : t(DEFS[p.id].title)
 }
 export function pathBlurb(p: PathLike): string {
-  if (typeof p === 'string') return DEFS[p].blurb
-  if (p.id !== 'custom') return DEFS[p.id].blurb
+  if (typeof p === 'string') return t(DEFS[p].blurb)
+  if (p.id !== 'custom') return t(DEFS[p.id].blurb)
   const books = (p.custom?.books ?? []).map(b => BOOKS[b - 1]?.name).filter(Boolean)
-  return books.length === 0 ? 'No books chosen yet.' : books.length <= 3 ? books.join(', ') : `${books.slice(0, 2).join(', ')} and ${books.length - 2} more books`
+  return books.length === 0 ? t('No books chosen yet.') : books.length <= 3 ? books.join(', ') : tn(books.length - 2, '{books} and {n} more book', '{books} and {n} more books', { books: books.slice(0, 2).join(', ') })
 }
 
 /** The companion's outline sections on a chapter (walks through the book only; addresses are not part of a path). */

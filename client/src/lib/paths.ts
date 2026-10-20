@@ -14,6 +14,7 @@ import {
   chapterKey, defaultWithMinistry, nextOnPath, nextPortion, onPath as isOnPath, paceFor, pathCompanion, portionOf, progress as progressOf, readSetOf, readSetSince, standing, withMinistry,
   type CustomPath, type GroupPath, type PathAccount, type PathHistoryEntry, type PathId, type PathState, type Portion, type Progress, type Standing,
 } from '@shared/paths'
+import { t } from '@shared/i18n'
 import { cachedGet, del, getToken, put } from './api'
 import { loadCompanionIndex } from './companion'
 import { useAuth } from '../store/auth'
@@ -149,7 +150,7 @@ function load(uid: number | undefined): Promise<void> {
   })().catch(e => { if (snap.account === undefined) set({ uid, account: { path: null, history: [], read: [] } }); set({ error: errText(e) }) })
   return loading
 }
-const errText = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong')
+const errText = (e: unknown) => (e instanceof Error ? e.message : t('Something went wrong'))
 
 /**
  * Re-reads the account's path and marks without clearing what is shown (Home and the Paths screen on focus). The card

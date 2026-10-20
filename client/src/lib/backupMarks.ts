@@ -3,6 +3,7 @@
  * under `chapter_marks` as `[{ book, chapter, marked_at }]`, the shape the account export gives them, outside the
  * signed reading history: a mark earns nothing, so there is nothing for the server to verify. Pure.
  */
+import { tn } from '@shared/i18n'
 import { readMarkList, type Mark } from './readMarksCore'
 
 export const MARKS_FIELD = 'chapter_marks'
@@ -23,4 +24,4 @@ export function withBackupMarks(doc: Record<string, unknown>, marks: readonly Ma
 }
 
 /** "12 chapters marked as read", or "" for none. */
-export const describeMarks = (n: number): string => (n ? `${n.toLocaleString()} ${n === 1 ? 'chapter' : 'chapters'} marked as read` : '')
+export const describeMarks = (n: number): string => (n ? tn(n, '{n} chapter marked as read', '{n} chapters marked as read', { n: n.toLocaleString() }) : '')

@@ -5,6 +5,7 @@ import { useBottomInset } from '../hooks/useBottomInset'
 import { useDesktop } from '../hooks/useDesktop'
 import { DIALOG_MAX_W, DIALOG_RISE } from '../lib/layout'
 import * as Haptics from 'expo-haptics'
+import { t, tc } from '@shared/i18n'
 import { SurfaceContext, useColors, useInkFill, useInks } from '../hooks/useTheme'
 import { ALIGN_SELF, WIDTH_PX, usePref, usePrefsStore, useReduceMotion } from '../store/prefs'
 import { face } from '../theme'
@@ -481,11 +482,11 @@ export function Sheet({ open, onClose, onBack, title, children, maxHeight = '80%
         {/* the translucent-bar Modal window opts out of adjustResize on Android, so the sheet lifts itself above the keyboard */}
         <KeyboardAvoidingView behavior={Platform.OS === 'web' ? undefined : 'padding'} enabled={Platform.OS !== 'web'} style={{ flex: 1, justifyContent: desktop ? 'center' : 'flex-end' }}>
           <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', opacity: scrim }}>
-            <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityLabel="Close" />
+            <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityLabel={tc('verb', 'Close')} />
           </Animated.View>
           <Animated.View onLayout={onPanel} testID={desktop ? 'sheet-dialog' : 'sheet-panel'} style={[{ backgroundColor: c.bg, maxHeight, width: '100%', alignSelf: 'center', transform: [{ translateY: rise }] }, panel, desktop ? { opacity: v } : null]}>
             <>
-              <View {...(desktop ? null : pan.panHandlers)} accessibilityLabel={desktop ? undefined : 'Drag down to close'} style={{ paddingBottom: title ? 0 : 8 }}>
+              <View {...(desktop ? null : pan.panHandlers)} accessibilityLabel={desktop ? undefined : t('Drag down to close')} style={{ paddingBottom: title ? 0 : 8 }}>
                 {desktop ? null : <View style={{ alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: c.border, marginTop: 10 }} />}
                 {title ? <Text accessibilityRole="header" style={{ color: c.text, fontSize: TYPE.heading + 2, fontWeight: '700', paddingHorizontal: GUTTER, paddingTop: desktop ? 20 : 12, paddingBottom: 4 }}>{title}</Text> : null}
               </View>
@@ -527,7 +528,7 @@ export function Spinner({ label, color }: { label?: string; color?: string }) {
     return () => loop.stop()
   }, [dots, reduce])
   return (
-    <Animated.View style={{ alignItems: 'center', paddingVertical: 20, gap: 8, opacity: shown }} accessibilityRole="progressbar" accessibilityLabel={label ?? 'Loading'}>
+    <Animated.View style={{ alignItems: 'center', paddingVertical: 20, gap: 8, opacity: shown }} accessibilityRole="progressbar" accessibilityLabel={label ?? t('Loading')}>
       <View style={{ flexDirection: 'row', gap: 6 }}>
         {dots.map((d, i) => <Animated.View key={i} style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color ?? c.accent, opacity: d, transform: [{ scale: scales[i] }] }} />)}
       </View>

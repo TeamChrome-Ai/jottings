@@ -1,4 +1,5 @@
-import { book as bookMeta } from './bible'
+import { formatRef } from '@shared/ref'
+import { TEXT_SHORT, peekShownText } from '@shared/texts'
 import { getApiBase } from './api'
 import { siteOrigin } from './outlines'
 import { shareText } from './share'
@@ -8,6 +9,6 @@ export const chapterUrl = (book: number, chapter: number) => `${getApiBase() || 
 
 /** Shares a chapter by its link (the share sheet, or the clipboard where there is none). */
 export function shareChapter(book: number, chapter: number) {
-  const label = `${bookMeta(book).name} ${chapter}`
-  return shareText({ title: label, message: `${label} (Darby)`, url: chapterUrl(book, chapter) })
+  const label = formatRef({ book, chapter })
+  return shareText({ title: label, message: `${label} (${TEXT_SHORT[peekShownText()]})`, url: chapterUrl(book, chapter) })
 }

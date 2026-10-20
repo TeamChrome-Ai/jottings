@@ -77,7 +77,7 @@ fn previous(path: &str, h: &HeaderMap) -> Option<Response> {
 fn lookup(path: &str, accepts_br: bool, h: &HeaderMap) -> Option<Response> {
     // expo export hashes everything under _expo/ and assets/; chapter bundles only change with a data rebuild; a
     // changed face in fonts/ takes a new file name (client/src/lib/appFonts.web.ts)
-    let immutable = path.starts_with("_expo/") || path.starts_with("assets/") || path.starts_with("bible/") || path.starts_with("bible1890/") || path.starts_with("fonts/");
+    let immutable = path.starts_with("_expo/") || path.starts_with("assets/") || path.starts_with("bible/") || path.starts_with("bible1890/") || path.starts_with("bible-fr/") || path.starts_with("bible-de/") || path.starts_with("fonts/");
     if accepts_br {
         if let Some(f) = Assets::get(&format!("{path}.br")) { return Some(file_response(path, f, immutable, true, h)); }
     }

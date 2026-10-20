@@ -1,6 +1,7 @@
 import { createRef, memo, useCallback, useMemo, useRef, type RefObject } from 'react'
 import { Animated, Platform, ScrollView, StyleSheet, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native'
 import { paragraphsOf, type WorkKind } from '@shared/companion'
+import { t } from '@shared/i18n'
 import type { MinistrySection, MinistrySectionMeta } from '@shared/ministry'
 import type { Ref, RefHome } from '@shared/ref'
 import type { WordTap } from '@shared/wordTap'
@@ -88,8 +89,8 @@ export default memo(function LibraryPage({ place, line, section, home, unavailab
       </View>
       </PageScrollCtx.Provider>
       <View style={styles.nav}>
-        {prevLabel ? <Button title={`← ${prevLabel}`} accessibilityLabel={`Previous: ${prevLabel}`} onPress={() => go(-1)} style={styles.navButton} /> : <View />}
-        {nextLabel ? <Button title={`${nextLabel} →`} accessibilityLabel={`Next: ${nextLabel}`} onPress={() => go(1)} style={styles.navButton} /> : <View />}
+        {prevLabel ? <Button title={`← ${prevLabel}`} accessibilityLabel={t('Previous: {title}', { title: prevLabel })} onPress={() => go(-1)} style={styles.navButton} /> : <View />}
+        {nextLabel ? <Button title={`${nextLabel} →`} accessibilityLabel={t('Next: {title}', { title: nextLabel })} onPress={() => go(1)} style={styles.navButton} /> : <View />}
       </View>
     </Scroller>
   )

@@ -6,6 +6,7 @@ import { type EventStatus } from '../lib/community'
 import { RADIUS, T, Tap, TYPE, useFill } from './ui'
 import Icon from './Icon'
 import { BRAND } from '@shared/brand'
+import { t, tc } from '@shared/i18n'
 
 /**
  * A small flat label on a card (a role, a member count, an event's state): the opposite fill of its surface, no border;
@@ -28,16 +29,16 @@ export function Tag({ label, accent, style }: { label: string; accent?: boolean;
 export function AdminBadge({ style }: { style?: StyleProp<ViewStyle> }) {
   const c = useColors()
   return (
-    <View accessibilityLabel={`${BRAND.name} developer`} style={[{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingLeft: 6, paddingRight: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: c.accent, alignSelf: 'center' }, style]}>
+    <View accessibilityLabel={t('{brand} developer', { brand: BRAND.name })} style={[{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingLeft: 6, paddingRight: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: c.accent, alignSelf: 'center' }, style]}>
       <Icon name="jot" size={12} color={c.accentText} />
-      <T small bold style={{ color: c.accentText, fontSize: TYPE.caption }}>Developer</T>
+      <T small bold style={{ color: c.accentText, fontSize: TYPE.caption }}>{t('Developer')}</T>
     </View>
   )
 }
 
-const STATUS_LABEL: Record<EventStatus, string> = { live: 'Live', upcoming: 'Upcoming', ended: 'Ended' }
+const STATUS_LABEL: Record<EventStatus, () => string> = { live: () => tc('event', 'Live'), upcoming: () => tc('event', 'Upcoming'), ended: () => tc('event', 'Ended') }
 export function StatusTag({ status }: { status: EventStatus }) {
-  return <Tag label={STATUS_LABEL[status]} accent={status === 'live'} />
+  return <Tag label={STATUS_LABEL[status]()} accent={status === 'live'} />
 }
 
 /** Tappable name that opens the public profile. */

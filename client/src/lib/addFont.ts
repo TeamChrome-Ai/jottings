@@ -1,5 +1,6 @@
 import type { PrefsStore } from '../store/prefs'
 import { Platform } from 'react-native'
+import { t } from '@shared/i18n'
 import { pickFontFile, removeFontFiles, storeBytes, storeFromUrl } from './customFontFiles'
 import { customKey, lineFloorOf, nameFromFile, newFontId, sniffFont, type CustomFont, type FaceKey } from './customFonts'
 import { forgetFont, lazyFontState, loadCustomFont } from './fonts'
@@ -14,7 +15,7 @@ async function finish(font: CustomFont): Promise<CustomFont> {
   if (lazyFontState(customKey(font.id)) !== 'ready') {
     forgetFont(customKey(font.id))
     await removeFontFiles(font.id)
-    throw new FontAddError('That font could not be used on this device.')
+    throw new FontAddError(t('That font could not be used on this device.'))
   }
   return font
 }
@@ -36,13 +37,13 @@ export async function addGoogleFont(input: string): Promise<CustomFont> {
     try { res = await fetch(googleCssUrl(name), { headers }) } catch { continue }
     answered = true
     if (res.status === 400) continue
-    if (!res.ok) throw new FontAddError(`Google Fonts answered ${res.status}. Try again later.`)
+    if (!res.ok) throw new FontAddError(t('Google Fonts answered {status}. Try again later.', { status: res.status }))
     const p = parseGoogleCss(await res.text())
     if (p.regular) { parsed = p; family = p.family ?? name; break }
   }
   if (!parsed?.regular) {
-    if (!answered && !(await googleReachable(headers))) throw new FontAddError('Google Fonts could not be reached. Check the connection and try again.')
-    throw new FontAddError(`No Google font called “${input.trim()}”. Check the spelling on fonts.google.com.`)
+    if (!answered && !(await googleReachable(headers))) throw new FontAddError(t('Google Fonts could not be reached. Check the connection and try again.'))
+    throw new FontAddError(t('No Google font called “{name}”. Check the spelling on fonts.google.com.', { name: input.trim() }))
   }
   const id = newFontId(family)
   const src = parsed
@@ -50,7 +51,7 @@ export async function addGoogleFont(input: string): Promise<CustomFont> {
   const [regular, bold, italic] = await Promise.allSettled([get('regular'), get('bold'), get('italic')])
   if (regular.status === 'rejected') {
     await removeFontFiles(id)
-    throw new FontAddError('The font files did not download. Check the connection and try again.')
+    throw new FontAddError(t('The font files did not download. Check the connection and try again.'))
   }
   const faces: CustomFont['faces'] = { regular: regular.value.path }
   if (bold.status === 'fulfilled') faces.bold = bold.value.path
@@ -66,11 +67,11 @@ export async function addFontFromFile(onPicked?: () => void): Promise<CustomFont
   if (!picked) return null
   onPicked?.()
   const kind = sniffFont(picked.bytes)
-  if (kind !== 'ttf' && kind !== 'otf') throw new FontAddError('That file is not a TrueType or OpenType font (.ttf or .otf).')
+  if (kind !== 'ttf' && kind !== 'otf') throw new FontAddError(t('That file is not a TrueType or OpenType font (.ttf or .otf).'))
   const name = nameFromFile(picked.name)
   const id = newFontId(name)
   let regular: string
-  try { regular = await storeBytes(id, 'regular', picked.bytes) } catch { await removeFontFiles(id); throw new FontAddError('The font could not be saved on this device.') }
+  try { regular = await storeBytes(id, 'regular', picked.bytes) } catch { await removeFontFiles(id); throw new FontAddError(t('The font could not be saved on this device.')) }
   const minLine = lineFloorOf(picked.bytes)
   return finish({ id, name, source: 'file', faces: { regular }, ...(minLine ? { minLine } : null) })
 }

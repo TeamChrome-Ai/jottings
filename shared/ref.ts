@@ -1,31 +1,55 @@
-import { BOOKS, findBook, findBookFuzzy, type BookMeta } from './books.js'
+import { BOOKS, findBook, findBookFuzzy, peekNamesLang, type BookMeta } from './books.js'
+import { englishNumber, ownNumber, peekShownText, type Own } from './texts.js'
+import { VERSE_COUNTS } from './verseCounts.js'
+
+const verseCount = (b: number, c: number): number => VERSE_COUNTS[b - 1]?.[c - 1] ?? 1
 
 /** A verse range within a single chapter (chapter-only when v1 is undefined). */
 export interface Ref { book: number; chapter: number; v1?: number; v2?: number }
 
-const REF_RE = /^\s*((?:[1-3]|i{1,3}|first|second|third)?\s*[a-z][a-z .]*?)\s*(\d+)?(?:\s*[:.v]\s*(\d+)(?:\s*[-–]\s*(\d+))?)?\s*$/i
+const REF_RE = /^\s*((?:[1-3]\.?|i{1,3}|first|second|third)?\s*\p{L}[\p{L} .]*?)\s*(\d+)?(?:\s*[:.,v]\s*(\d+)(?:\s*[-–]\s*(\d+))?)?\s*$/iu
 
-/** Parse "jn 3:16", "jn 3v16", "1 cor 13", "ps 23:1-4", "gen" -> Ref | null. `fuzzy` also accepts a misspelt book ("Jhon 3:16"). */
-export function parseRef(input: string, opts: { fuzzy?: boolean } = {}): Ref | null {
+/**
+ * Parse "jn 3:16", "jn 3v16", "1 cor 13", "ps 23:1-4", "gen", "Jean 3:16", "Joh 3,16" -> Ref | null, in the English
+ * numbering. What a person types is in the numbering of the Bible they read ("Psaume 51:3" is English Psalm 51:1);
+ * `english` reads English material (the chronology, the ministry's figures) as it is. `fuzzy` also accepts a misspelt
+ * book ("Jhon 3:16").
+ */
+export function parseRef(input: string, opts: { fuzzy?: boolean; english?: boolean } = {}): Ref | null {
   const m = REF_RE.exec(input)
   if (!m) return null
   const book = opts.fuzzy ? findBookFuzzy(m[1]) : findBook(m[1])
   if (!book) return null
   // "1 john" without a chapter but the leading digit already consumed: fine
-  let chapter = m[2] ? parseInt(m[2], 10) : 1
+  const chapter = m[2] ? parseInt(m[2], 10) : 1
   // "jude 3", "phlm 10": single-chapter books take the number as a verse
-  if (book.chapters === 1 && m[2] && !m[3]) {
-    const ref: Ref = { book: book.n, chapter: 1, v1: chapter }
-    return ref
-  }
-  if (chapter < 1 || chapter > book.chapters) return null
-  const ref: Ref = { book: book.n, chapter }
+  if (book.chapters === 1 && m[2] && !m[3]) return { book: book.n, chapter: 1, v1: chapter }
+  let ref: Ref = { book: book.n, chapter }
   if (m[3]) {
     ref.v1 = parseInt(m[3], 10)
     if (m[4]) ref.v2 = parseInt(m[4], 10)
     if (ref.v2 !== undefined && ref.v2 < ref.v1) return null
   }
-  return ref
+  if (!opts.english && peekShownText() !== 'en') {
+    const r = toEnglish(ref)
+    if (!r) return null
+    ref = r
+  }
+  return ref.chapter < 1 || ref.chapter > book.chapters ? null : ref
+}
+
+/** A reference in the shown Bible's numbering, in the English: its own chapter that begins inside an English one opens at
+ *  that verse ("Joël 3" is Joel 2:28); a psalm's numbered title is the psalm. */
+export function toEnglish(r: Ref): Ref | null {
+  const a = englishNumber(r.book, r.chapter, r.v1 ?? 1)
+  if (!a) return r.v1 === undefined || r.v1 <= 2 ? { book: r.book, chapter: r.chapter } : null
+  if (r.v1 === undefined) return a.v === 1 ? { book: r.book, chapter: a.c } : { book: r.book, chapter: a.c, v1: a.v }
+  const out: Ref = { book: r.book, chapter: a.c, v1: a.v }
+  if (r.v2 !== undefined) {
+    const z = englishNumber(r.book, r.chapter, r.v2)
+    out.v2 = z && z.c === a.c ? z.v : verseCount(r.book, a.c)
+  }
+  return out
 }
 
 /**
@@ -42,14 +66,47 @@ export function looksLikeRef(input: string): boolean {
   return /^\s*(?:[1-3]\s*)?[a-z]{2,}[a-z .]*\s*\d/i.test(input) || (!!findBook(input.trim()) && input.trim().length >= 2)
 }
 
+/**
+ * A reference as the reader reads it: the book in the app's language (books.ts) and the numbers of the Bible shown
+ * (texts.ts ownNumber), so English Psalm 51:1 is "Psaume 51:3" to a reader of the French. `r` is always in the English
+ * numbering everything is kept in. German separates chapter and verse with a comma, as its Bibles print them.
+ */
 export function formatRef(r: Ref, style: 'full' | 'abbr' = 'full'): string {
   const b = BOOKS[r.book - 1]
-  const name = style === 'abbr' ? b.abbr : b.name
+  const name = style === 'abbr' ? b.abbr : b.refName
   const single = b.chapters === 1
+  const sep = peekNamesLang() === 'de' ? ',' : ':'
+  if (peekShownText() !== 'en') {
+    const own = ownRange(r)
+    if (own) {
+      if (!own.from) return `${name} ${own.c}`
+      const [a, z] = [own.from, own.to ?? own.from]
+      const head = single ? `${name} ${a.v}` : `${name} ${a.c}${sep}${a.v}`
+      return z.c !== a.c ? `${head}–${z.c}${sep}${z.v}` : z.v !== a.v ? `${head}-${z.v}` : head
+    }
+  }
   let s = single && r.v1 !== undefined ? `${name}` : `${name} ${r.chapter}`
-  if (r.v1 !== undefined) s += single ? ` ${r.v1}` : `:${r.v1}`
+  if (r.v1 !== undefined) s += single ? ` ${r.v1}` : `${sep}${r.v1}`
   if (r.v2 !== undefined && r.v2 !== r.v1) s += `-${r.v2}`
   return s
+}
+
+/** `r` in the shown Bible's numbering: a whole chapter that is part of one of its own ("Malachi 4" is Malachie 3:19-24) as
+ *  that range; null when nothing in it is numbered differently. */
+function ownRange(r: Ref): { c: number; from?: Own; to?: Own } | null {
+  const last = verseCount(r.book, r.chapter)
+  const [v1, v2] = r.v1 === undefined ? [1, last] : [r.v1, r.v2 ?? r.v1]
+  const a = ownNumber(r.book, r.chapter, v1), z = ownNumber(r.book, r.chapter, v2)
+  if (a.c === r.chapter && a.v === v1 && z.c === r.chapter && z.v === v2) return null
+  // a whole chapter that begins one of its own is named by that one ("Joël 2", though its last verses are Joël 3), and so
+  // is one that is all of its own but the title verses before it ("Psaume 51" begins at its verse 3); one that is the end
+  // of an own chapter it shares with the chapter before is that range ("Malachie 3:19-24")
+  if (r.v1 === undefined) {
+    if (a.v === 1) return { c: a.c }
+    const shared = r.chapter > 1 && ownNumber(r.book, r.chapter - 1, verseCount(r.book, r.chapter - 1)).c === a.c
+    if (z.c === a.c && !shared) return { c: a.c }
+  }
+  return { c: a.c, from: a, to: z }
 }
 
 /**
@@ -81,10 +138,30 @@ export interface RefSpan { start: number; end: number; ref: Ref }
  *   "Ex 3:14,15" (each verse its own link), and with `ctx` (the chapter the text sits in) "ch. 5:25",
  *   "ver. 15", "vers. 13,14,25". Every span is a tappable range; lists yield one span per item.
  */
-export function scanRefs(text: string, ctx?: RefContext): RefSpan[] {
+export function scanRefs(text: string, ctxIn?: RefContext, opts: { english?: boolean } = {}): RefSpan[] {
+  // text by or for a reader of another Bible is in its numbering ("Psaume 51:3", German "Joh 3,16"): read in it, kept in English
+  const convert = !opts.english && peekShownText() !== 'en'
+  const ctx = ctxIn && convert ? { book: ctxIn.book, chapter: ownNumber(ctxIn.book, ctxIn.chapter, 1).c } : ctxIn
+  const comma = !opts.english && (peekShownText() === 'de' || peekNamesLang() === 'de')
+  const spans = scanOwn(text, ctx, convert ? 1 : 0, comma ? SCAN_DE : convert || peekNamesLang() !== 'en' ? SCAN_INTL : SCAN_EN)
+  if (!convert) return spans
+  return spans.flatMap(s => {
+    const r = toEnglish(s.ref)
+    return r && r.chapter >= 1 && r.chapter <= BOOKS[r.book - 1].chapters ? [{ ...s, ref: r }] : []
+  })
+}
+
+// The English as it always read; any alphabet's capitals for other languages ("Ésaïe 53. 5"); German also takes a comma
+// between chapter and verse ("Joh 3,16", "1. Mose 3,15") and "Kap."
+const SCAN_EN = /((?:[1-3]\s?)?[A-Z][a-z]+\.?(?:\s(?:of\s)?[A-Z][a-z]+)?)\s?(\d{1,3})(?:\s?[:.]\s?(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?)?|\b(chs?|vers?s?|vv?)\.?\s?(\d{1,3})(?:\s?[:.]\s?(\d{1,3}))?(?:\s?[-–]\s?(\d{1,3}))?|(\d{1,3})\s?[:.]\s?(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?|(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?/g
+const SCAN_INTL = /((?:[1-3]\s?)?\p{Lu}\p{Ll}+\.?(?:\s(?:of\s)?\p{Lu}\p{Ll}+)?)\s?(\d{1,3})(?:\s?[:.]\s?(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?)?|\b(chs?|vers?s?|vv?)\.?\s?(\d{1,3})(?:\s?[:.]\s?(\d{1,3}))?(?:\s?[-–]\s?(\d{1,3}))?|(\d{1,3})\s?[:.]\s?(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?|(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?/gu
+const SCAN_DE = /((?:[1-3]\.?\s?)?\p{Lu}\p{Ll}+\.?(?:\s\p{Lu}\p{Ll}+)?)\s?(\d{1,3})(?:\s?[:.,]\s?(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?)?|\b(Kap|chs?|vers?s?|vv?)\.?\s?(\d{1,3})(?:\s?[:.,]\s?(\d{1,3}))?(?:\s?[-–]\s?(\d{1,3}))?|(\d{1,3})\s?[:.,]\s?(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?|(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?/gu
+
+/** scanRefs in the text's own numbering, with `slack` more chapters than the English has (French Joel has four). */
+function scanOwn(text: string, ctx: RefContext | undefined, slack: number, pattern: RegExp): RefSpan[] {
   const out: RefSpan[] = []
   // one pass, left to right; the book (and chapter) of the last hit carry into bare continuations
-  const re = /((?:[1-3]\s?)?[A-Z][a-z]+\.?(?:\s(?:of\s)?[A-Z][a-z]+)?)\s?(\d{1,3})(?:\s?[:.]\s?(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?)?|\b(chs?|vers?s?|vv?)\.?\s?(\d{1,3})(?:\s?[:.]\s?(\d{1,3}))?(?:\s?[-–]\s?(\d{1,3}))?|(\d{1,3})\s?[:.]\s?(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?|(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?/g
+  const re = new RegExp(pattern.source, pattern.flags)
   let m: RegExpExecArray | null
   let cur: { book: BookMeta; chapter: number } | null = null
   let lastEnd = -1
@@ -103,7 +180,7 @@ export function scanRefs(text: string, ctx?: RefContext): RefSpan[] {
       if (!book && /\s/.test(name)) { const last = name.split(/\s+/).pop()!; book = findBook(last); if (book) start = m.index + m[0].indexOf(last) }
       if (!book) { cur = null; continue }
       const chapter = parseInt(m[2], 10)
-      if (chapter < 1 || chapter > book.chapters) { cur = null; continue }
+      if (chapter < 1 || chapter > book.chapters + slack) { cur = null; continue }
       const ref: Ref = { book: book.n, chapter }
       if (m[3]) { ref.v1 = parseInt(m[3], 10); if (m[4]) ref.v2 = parseInt(m[4], 10) }
       cur = { book, chapter }
@@ -115,7 +192,7 @@ export function scanRefs(text: string, ctx?: RefContext): RefSpan[] {
       const kind = m[5].startsWith('c') ? 'ch' : 'v'
       const a = parseInt(m[6], 10), b = m[7] ? parseInt(m[7], 10) : undefined, c = m[8] ? parseInt(m[8], 10) : undefined
       let ref: Ref
-      if (kind === 'ch') { if (a < 1 || a > book.chapters) continue; ref = { book: ctx.book, chapter: a }; if (b !== undefined) { ref.v1 = b; if (c !== undefined) ref.v2 = c } }
+      if (kind === 'ch') { if (a < 1 || a > book.chapters + slack) continue; ref = { book: ctx.book, chapter: a }; if (b !== undefined) { ref.v1 = b; if (c !== undefined) ref.v2 = c } }
       else { ref = { book: ctx.book, chapter: ctx.chapter, v1: a }; if (c !== undefined) ref.v2 = c; else if (b !== undefined) ref.v2 = b }
       cur = { book, chapter: ref.chapter }
       push(m.index, m.index + m[0].length, ref)
@@ -123,7 +200,7 @@ export function scanRefs(text: string, ctx?: RefContext): RefSpan[] {
       // bare "c.v" continuing the previous book: "Gen 9:26 and 24.7", "chs. 6:12; 7.8"
       if (!cur || !gapOk(lastEnd, m.index, false)) continue
       const chapter = parseInt(m[9], 10)
-      if (chapter < 1 || chapter > cur.book.chapters) continue
+      if (chapter < 1 || chapter > cur.book.chapters + slack) continue
       const ref: Ref = { book: cur.book.n, chapter, v1: parseInt(m[10], 10) }
       if (m[11]) ref.v2 = parseInt(m[11], 10)
       cur = { book: cur.book, chapter }

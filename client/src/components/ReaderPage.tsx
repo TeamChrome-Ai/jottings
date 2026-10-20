@@ -1,6 +1,8 @@
 import { memo, type ComponentProps, type RefObject } from 'react'
 import { ScrollView, StyleSheet, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native'
-import { book as bookMeta, nextChapter, prevChapter, type ChapterData } from '../lib/bible'
+import { nextChapter, prevChapter, type ChapterData } from '../lib/bible'
+import { formatRef } from '@shared/ref'
+import { useSecondText } from '../hooks/useSecondText'
 import ChapterView, { type ParaLayout } from './ChapterView'
 import ChapterEndLine from './ChapterEndLine'
 import type { CreditWait } from '../hooks/useActivity'
@@ -55,17 +57,18 @@ interface Props extends ChapterProps {
  */
 export default memo(function ReaderPage({ book, chapter, data, err, layout, padBottom, go, scrollRef, onScroll, onDragStart, onViewport, offscreen = false, next: nextGiven, then, credited = false, toCredit, goToVerse, ...view }: Props) {
   const prev = prevChapter(book, chapter), next = nextGiven === undefined ? nextChapter(book, chapter) : nextGiven
+  const { second, wide } = useSecondText(book, chapter)
   return (
     // the drag and momentum ends report the resting offset too: the edge pull needs to know the text has reached an end
     <ScrollView ref={scrollRef} onScroll={onScroll} onScrollBeginDrag={onDragStart} onScrollEndDrag={onScroll} onMomentumScrollEnd={onScroll} scrollEventThrottle={100} contentContainerStyle={{ paddingBottom: padBottom }}
       onContentSizeChange={layout.onSize} onLayout={onViewport}>
       {err ? <View style={{ padding: 16 }}><ErrorText>{err}</ErrorText></View> : null}
       {!data && !err ? <Spinner /> : null}
-      {data ? <InkPage offscreen={offscreen}><ChapterView data={data} onParaLayout={layout.onPara} onVerseLayout={layout.onVerse} {...view} /></InkPage> : null}
+      {data ? <InkPage offscreen={offscreen}><ChapterView data={data} onParaLayout={layout.onPara} onVerseLayout={layout.onVerse} second={second} wide={wide} {...view} /></InkPage> : null}
       {/* the chapter's end, where the full tour tells of the pull on to the next */}
       <View ref={offscreen ? undefined : tourRef('reader-end')} style={styles.nav}>
-        {prev ? <Button title={`← ${bookMeta(prev.book).abbr} ${prev.chapter}`} onPress={() => go(-1)} /> : <View />}
-        {next ? <Button title={`${bookMeta(next.book).abbr} ${next.chapter} →`} onPress={() => go(1)} /> : <View />}
+        {prev ? <Button title={`← ${formatRef(prev, 'abbr')}`} onPress={() => go(-1)} /> : <View />}
+        {next ? <Button title={`${formatRef(next, 'abbr')} →`} onPress={() => go(1)} /> : <View />}
       </View>
       {/* one line under the turn buttons, the same height on a neighbour as on the page being read, so a page measured
           offscreen keeps its length when it slides in */}

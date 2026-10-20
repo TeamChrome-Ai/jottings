@@ -10,6 +10,7 @@ import { sectionsFor, type AuthorId, type CompanionIndex, type Reading, type Sec
 import { get } from './api'
 import { isStored, readCompanionIndex, readSection } from './offlineMinistry'
 import { authorShown } from './editionCore'
+import { N_ } from '@shared/i18n'
 
 const indexes = new Map<AuthorId, Promise<CompanionIndex | null>>()
 const sections = new Map<string, Section>()
@@ -71,4 +72,4 @@ export async function loadCompanionChapter(author: AuthorId, book: number, chapt
 }
 
 /** What to say when a reading cannot be had. */
-export const companionUnavailable = 'This needs a connection to the server.'
+export const companionUnavailable = N_('This needs a connection to the server.')

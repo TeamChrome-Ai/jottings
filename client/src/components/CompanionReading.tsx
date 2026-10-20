@@ -4,6 +4,7 @@ import { formatPassages, paragraphsOf, passageStart, titleIsPassage, workLine, t
 import type { MinistrySectionMeta } from '@shared/ministry'
 import { formatRef, type Ref, type RefHome } from '@shared/ref'
 import { isLookupWord } from '@shared/cbd'
+import { t } from '@shared/i18n'
 import { proseWords, wordTapAt, type WordTap } from '@shared/wordTap'
 import { wordAtPoint } from '../lib/wordAtPoint'
 import { inlineSpans, superscript, type Span } from '../lib/intro'
@@ -44,7 +45,7 @@ export function CompanionHeading({ place, size = 22, title = true, line, onPassa
       {sent ? <T small muted>{sent}</T> : null}
       {section.subtitle ? <Text style={{ color: c.muted, fontSize: TYPE.small, lineHeight: 20, ...f.italic }}>{section.subtitle}</Text> : null}
       {passages ? onPassage
-        ? <Text accessibilityRole="link" accessibilityLabel={`Read ${passages}`} onPress={() => onPassage(passageStart(section.passages[0]))} style={{ color: c.accent, fontSize: TYPE.small, alignSelf: 'flex-start' }}>{passages}</Text>
+        ? <Text accessibilityRole="link" accessibilityLabel={t('Read {passage}', { passage: passages })} onPress={() => onPassage(passageStart(section.passages[0]))} style={{ color: c.accent, fontSize: TYPE.small, alignSelf: 'flex-start' }}>{passages}</Text>
         : <T small muted>{passages}</T> : null}
     </View>
   )
@@ -68,7 +69,7 @@ function Spans({ spans, ink, onWord, links }: { spans: Span[]; ink: Ink; onWord?
     at += s.text.length
     if (s.note !== undefined) {
       const id = s.note
-      return <InkText key={i} ink="accent" accessibilityRole="button" accessibilityLabel={`Footnote ${id}`} onPress={() => ink.onNote(id)} style={style}>{s.text}</InkText>
+      return <InkText key={i} ink="accent" accessibilityRole="button" accessibilityLabel={t('Footnote {marker}', { marker: id })} onPress={() => ink.onNote(id)} style={style}>{s.text}</InkText>
     }
     if (s.ref) {
       const ref = s.ref
@@ -83,7 +84,7 @@ function Spans({ spans, ink, onWord, links }: { spans: Span[]; ink: Ink; onWord?
     quoted.forEach((l, k) => {
       const a = Math.max(l.a, start), b = Math.min(l.b, end)
       if (a > pos) parts.push(<Fragment key={`p${k}`}>{prose(pos, a)}</Fragment>)
-      parts.push(<InkText key={`q${k}`} ink="accent" accessibilityRole="link" accessibilityHint={`Opens ${formatRef(l.ref)}`} onPress={() => ink.onRef(l.ref)}>{s.text.slice(a - start, b - start)}</InkText>)
+      parts.push(<InkText key={`q${k}`} ink="accent" accessibilityRole="link" accessibilityHint={t('Opens {ref}', { ref: formatRef(l.ref) })} onPress={() => ink.onRef(l.ref)}>{s.text.slice(a - start, b - start)}</InkText>)
       pos = b
     })
     if (pos < end) parts.push(<Fragment key="p">{prose(pos, end)}</Fragment>)

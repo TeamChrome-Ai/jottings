@@ -3,7 +3,7 @@
  * Same interface as the native file store. Keys are editionCore.ts chapterStoreKey: "book.chapter" for the 1961
  * edition, as they always were, "1890:book.chapter" for the 1890 edition.
  */
-import { chapterStoreKey, parseStoreKey, type Edition } from './editionCore'
+import { chapterStoreKey, parseStoreKey, type Source } from './editionCore'
 
 const DB = 'berean'
 const STORE = 'chapters'
@@ -30,20 +30,20 @@ function tx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<
   }))
 }
 
-export async function readChapterFile(book: number, chapter: number, e: Edition): Promise<string | null> {
+export async function readChapterFile(book: number, chapter: number, e: Source): Promise<string | null> {
   try { return (await tx<string | undefined>('readonly', s => s.get(chapterStoreKey(e, book, chapter)))) ?? null } catch { return null }
 }
-export async function writeChapterFile(book: number, chapter: number, json: string, e: Edition): Promise<void> {
+export async function writeChapterFile(book: number, chapter: number, json: string, e: Source): Promise<void> {
   try { await tx('readwrite', s => s.put(json, chapterStoreKey(e, book, chapter))) } catch { /* quota or private mode: stays online-only */ }
 }
 /** The edition's stored chapter keys as "book.chapter". */
-export async function listChapterFiles(e: Edition): Promise<string[]> {
+export async function listChapterFiles(e: Source): Promise<string[]> {
   try {
     return (await tx<IDBValidKey[]>('readonly', s => s.getAllKeys())).map(k => parseStoreKey(String(k))).filter(k => k?.edition === e).map(k => `${k!.book}.${k!.chapter}`)
   } catch { return [] }
 }
 /** The edition's stored chapters, or every edition's. */
-export async function removeAllChapterFiles(e?: Edition): Promise<void> {
+export async function removeAllChapterFiles(e?: Source): Promise<void> {
   try {
     if (!e) { await tx('readwrite', s => s.clear()); return }
     const keys = (await tx<IDBValidKey[]>('readonly', s => s.getAllKeys())).filter(k => parseStoreKey(String(k))?.edition === e)
@@ -51,7 +51,7 @@ export async function removeAllChapterFiles(e?: Edition): Promise<void> {
   } catch { /* nothing stored */ }
 }
 /** Every stored chapter of the edition as ["book.chapter", json], in one transaction. */
-export async function readAllChapterFiles(e: Edition): Promise<[string, string][]> {
+export async function readAllChapterFiles(e: Source): Promise<[string, string][]> {
   try {
     const db = await open()
     const all: [string, string][] = await new Promise((resolve, reject) => {

@@ -25,6 +25,7 @@ import {
   type BackupColor, type BackupContent, type BackupItem, type BackupPrefs, type ParsedBackup,
 } from './backupFile'
 import { NOUN } from '@shared/brand'
+import { N_, t, tn } from '@shared/i18n'
 import { describeMarks, withBackupMarks } from './backupMarks'
 import { addMarks, allMarks } from './readMarks'
 import type { Mark } from './readMarksCore'
@@ -61,7 +62,7 @@ export async function backupText(signedIn: boolean, prefs: Prefs): Promise<strin
   // they are the account's own plus any still waiting here
   if (!signedIn) return JSON.stringify(withBackupMarks(JSON.parse(buildDeviceBackup(await deviceContent(prefs), now, appVersion())) as Record<string, unknown>, await allMarks(), now))
   const doc: unknown = JSON.parse(await fetchExport())
-  if (doc === null || typeof doc !== 'object') throw new Error('Unexpected response from the server')
+  if (doc === null || typeof doc !== 'object') throw new Error(t('Unexpected response from the server'))
   return JSON.stringify(withBackupMarks({ ...doc, device_settings: readPrefs(prefs), app_version: appVersion() }, await allMarks(), now))
 }
 
@@ -78,10 +79,10 @@ export async function saveBackup(signedIn: boolean, prefs: Prefs): Promise<SaveO
     setTimeout(() => URL.revokeObjectURL(url), 1000)
     return 'downloaded'
   }
-  if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is not available on this device')
+  if (!(await Sharing.isAvailableAsync())) throw new Error(t('Sharing is not available on this device'))
   const f = new File(Paths.cache, name)
   f.write(text)
-  await Sharing.shareAsync(f.uri, { mimeType: 'application/json', UTI: 'public.json', dialogTitle: 'Save your backup' })
+  await Sharing.shareAsync(f.uri, { mimeType: 'application/json', UTI: 'public.json', dialogTitle: t('Save your backup') })
   return 'shared'
 }
 
@@ -107,7 +108,7 @@ export async function pickBackupText(): Promise<string | null> {
   const r = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple: false })
   const asset = r.canceled ? null : r.assets[0]
   if (!asset) return null
-  if (asset.size != null && asset.size > MAX_FILE_BYTES) throw new Error('This file is too large to be a backup.')
+  if (asset.size != null && asset.size > MAX_FILE_BYTES) throw new Error(t('This file is too large to be a backup.'))
   const f = new File(asset.uri)
   try { return await f.text() } finally { try { f.delete() } catch { /* the cache is cleared by the system anyway */ } }
 }
@@ -123,7 +124,7 @@ function pickInBrowser(): Promise<string | null> {
     input.addEventListener('change', () => {
       const file = input.files?.[0]
       if (!file) return done(() => resolve(null))
-      if (file.size > MAX_FILE_BYTES) return done(() => reject(new Error('This file is too large to be a backup.')))
+      if (file.size > MAX_FILE_BYTES) return done(() => reject(new Error(t('This file is too large to be a backup.'))))
       file.text().then(t => done(() => resolve(t)), e => done(() => reject(e as Error)))
     })
     document.body.appendChild(input)
@@ -142,7 +143,7 @@ export interface RestoreResult {
   /** One sentence about the streak and reading history, or null when the file held none. */
   history: string | null
 }
-export const HISTORY_NEEDS_ACCOUNT = 'Your streak and reading history were not restored: sign in, then restore this file again.'
+export const HISTORY_NEEDS_ACCOUNT = N_('Your streak and reading history were not restored: sign in, then restore this file again.')
 
 /** A refusal about this one record (scan, limit, validation) rather than the connection or the session. */
 const refusedByServer = (e: unknown) => e instanceof ApiError && e.status >= 400 && e.status < 500 && e.status !== 401 && e.status !== 408 && e.status !== 429
@@ -154,7 +155,7 @@ export async function applyBackup(p: ParsedBackup, user: { id: number } | null, 
   const { content } = p
 
   if (content.bookmarks.length) {
-    onStep?.('Bookmarks…')
+    onStep?.(t('Bookmarks…'))
     const have = new Set((await listBookmarks()).map(bookmarkKey))
     for (const b of content.bookmarks) {
       if (have.has(bookmarkKey(b))) continue
@@ -164,7 +165,7 @@ export async function applyBackup(p: ParsedBackup, user: { id: number } | null, 
   }
 
   if (content.highlights.length) {
-    onStep?.('Highlights…')
+    onStep?.(t('Highlights…'))
     const byChapter = new Map<string, typeof content.highlights>()
     for (const h of content.highlights) {
       const { book, chapter } = chapterOf(h.verse_id), k = `${book}.${chapter}`
@@ -174,7 +175,7 @@ export async function applyBackup(p: ParsedBackup, user: { id: number } | null, 
     for (const rows of byChapter.values()) {
       const { book, chapter } = chapterOf(rows[0].verse_id)
       const have = uid === null ? await cachedHighlights(null, book, chapter) : await syncHighlights(uid, book, chapter)
-      if (!have) throw new Error('Could not reach the server. What was restored so far is kept; restore the file again to finish.')
+      if (!have) throw new Error(t('Could not reach the server. What was restored so far is kept; restore the file again to finish.'))
       for (const h of rows) {
         if (have.has(h.verse_id)) continue
         await setHighlight(uid, h.verse_id, h.color)
@@ -184,7 +185,7 @@ export async function applyBackup(p: ParsedBackup, user: { id: number } | null, 
   }
 
   if (content.jottings.length) {
-    onStep?.(`${NOUN.Many}…`)
+    onStep?.(t('{Many}…', { Many: NOUN.Many }))
     const mine = await listOutlines()
     const known = new Set<string>()
     for (const j of content.jottings) {
@@ -225,7 +226,7 @@ export async function applyBackup(p: ParsedBackup, user: { id: number } | null, 
     if (res.settings) prefs.set(settings)
   }
 
-  if (p.history) res.history = uid === null ? HISTORY_NEEDS_ACCOUNT : await restoreHistory(p.history)
+  if (p.history) res.history = uid === null ? t(HISTORY_NEEDS_ACCOUNT) : await restoreHistory(p.history)
   return res
 }
 
@@ -244,22 +245,22 @@ interface Restored { restored: { days: number; credits: number; chapters: number
 async function restoreHistory(h: NonNullable<ParsedBackup['history']>): Promise<string> {
   try {
     const { restored: r } = await post<Restored>('/me/restore-activity', h)
-    return r.days + r.credits + r.chapters + r.badges > 0 ? 'Your streak and reading history are restored.' : 'Your streak and reading history were already up to date.'
+    return r.days + r.credits + r.chapters + r.badges > 0 ? t('Your streak and reading history are restored.') : t('Your streak and reading history were already up to date.')
   } catch (e) {
     if (e instanceof ApiError && (e.status === 400 || e.status === 403)) return e.message
-    return 'Your streak and reading history could not be restored just now. Restore the file again later; nothing else is added twice.'
+    return t('Your streak and reading history could not be restored just now. Restore the file again later; nothing else is added twice.')
   }
 }
 
 /** "Added 12 bookmarks, 3 jottings." and what else happened, one sentence each. */
 export function describeRestore(r: RestoreResult, skipped: number, describe: (c: { bookmarks: number; highlights: number; jottings: number }) => string): string {
   const added = [describe(r), describeMarks(r.marks)].filter(Boolean).join(', ')
-  const out = [added ? `Added ${added}.` : 'Nothing new to add: everything in this file is already here.']
-  if (r.position && r.settings) out.push('Your place and reading settings are back.')
-  else if (r.position) out.push('Your place is back.')
-  else if (r.settings) out.push('Your reading settings are back.')
-  if (r.refused) out.push(`${r.refused} ${r.refused === 1 ? `${NOUN.one} was` : `${NOUN.many} were`} not accepted.`)
-  if (skipped) out.push(`${skipped} ${skipped === 1 ? 'entry' : 'entries'} in the file could not be read.`)
+  const out = [added ? t('Added {list}.', { list: added }) : t('Nothing new to add: everything in this file is already here.')]
+  if (r.position && r.settings) out.push(t('Your place and reading settings are back.'))
+  else if (r.position) out.push(t('Your place is back.'))
+  else if (r.settings) out.push(t('Your reading settings are back.'))
+  if (r.refused) out.push(tn(r.refused, '{n} {one} was not accepted.', '{n} {many} were not accepted.', { one: NOUN.one, many: NOUN.many }))
+  if (skipped) out.push(tn(skipped, '{n} entry in the file could not be read.', '{n} entries in the file could not be read.'))
   if (r.history) out.push(r.history)
   return out.join(' ')
 }

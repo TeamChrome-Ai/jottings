@@ -1,6 +1,7 @@
 import { FlexWidget, SvgWidget, TextWidget, type HexColor } from 'react-native-android-widget'
 import { iconPath } from '../components/Icon'
 import { mix, type Colors } from '../theme'
+import { tn } from '@shared/i18n'
 import { VERSE_GAP, VERSE_PAD, VERSE_REF_LINE, verseFit, type SealTone, type StreakCard, type VerseCard, type WeekDot } from './model'
 
 /**
@@ -99,7 +100,7 @@ export function StreakWidget({ card, c, width, height }: { card: StreakCard; c: 
         style={{ ...root, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, flexGap: 12 }}>
         <Seal tone={card.tone} c={c} size={seal} />
         <FlexWidget style={{ flex: 1, flexDirection: 'column' }}>
-          <TextWidget text={`${count} ${card.current === 1 ? 'day' : 'days'}`} maxLines={1} truncate="END" allowFontScaling={false} style={{ fontSize: 16, fontWeight: 'bold', color: hex(c.text) }} />
+          <TextWidget text={tn(card.current, '{n} day', '{n} days', { n: count })} maxLines={1} truncate="END" allowFontScaling={false} style={{ fontSize: 16, fontWeight: 'bold', color: hex(c.text) }} />
           <TextWidget text={card.state} maxLines={1} truncate="END" allowFontScaling={false} style={{ fontSize: 13, color: hex(c.muted) }} />
         </FlexWidget>
         {wide ? <FlexWidget style={{ width: 7 * 18 + 6 * 4 }}><Week week={card.week} c={c} dot={10} letters={false} /></FlexWidget> : null}
@@ -123,7 +124,7 @@ export function StreakWidget({ card, c, width, height }: { card: StreakCard; c: 
         <Seal tone={card.tone} c={c} size={seal} />
         <FlexWidget style={{ flex: 1, flexDirection: 'column' }}>
           <TextWidget text={count} maxLines={1} allowFontScaling={false} style={{ fontSize: seal >= 44 ? 28 : 24, fontWeight: 'bold', color: hex(c.text) }} />
-          <TextWidget text="day streak" maxLines={1} truncate="END" allowFontScaling={false} style={{ fontSize: 13, color: hex(c.muted) }} />
+          <TextWidget text={tn(card.current, 'day streak', 'day streak')} maxLines={1} truncate="END" allowFontScaling={false} style={{ fontSize: 13, color: hex(c.muted) }} />
         </FlexWidget>
       </FlexWidget>
       {state ? <TextWidget text={card.state} maxLines={1} truncate="END" allowFontScaling={false} style={{ width: 'match_parent', fontSize: 14, color: hex(card.tone === 'kept' ? c.accent : c.text) }} /> : null}

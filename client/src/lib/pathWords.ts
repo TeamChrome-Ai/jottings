@@ -5,31 +5,35 @@
  */
 import { BOOKS } from '@shared/books'
 import { dayOf, type Portion, type Progress, type Standing } from '@shared/paths'
+import { t, tc } from '@shared/i18n'
 
 /** "Mark 4". */
 export const portionTitle = (p: Portion): string => `${BOOKS[p.book - 1]?.name ?? '?'} ${p.chapter}`
 /** The ministry courtesy under a portion: "then Darby on Mark 4" / "then Coates on Mark 4"; null when the portion stands alone. */
 export function thenLine(p: Portion): string | null {
-  const t = p.then?.[0]
-  if (!t) return null
-  return `then ${t.author === 'darby' ? 'Darby' : 'Coates'} on ${portionTitle(p)}`
+  const then = p.then?.[0]
+  if (!then) return null
+  return t('then {author} on {portion}', { author: then.author === 'darby' ? 'Darby' : 'Coates', portion: portionTitle(p) })
 }
 /** "12 of 89": the place of the next portion over the length; "89 of 89" once finished. */
-export const countWords = (pr: Progress): string => `${pr.position} of ${pr.total}`
+export const countWords = (pr: Progress): string => t('{position} of {total}', { position: pr.position, total: pr.total })
 
 /** "on track", "2 ahead", "5 behind"; null without a target. */
 export function standingWords(s: Standing | null | undefined): string | null {
   if (!s || s.delta == null) return null
-  if (s.delta === 0) return 'on track'
-  return s.delta > 0 ? `${s.delta} ahead` : `${-s.delta} behind`
+  if (s.delta === 0) return t('on track')
+  return s.delta > 0 ? t('{n} ahead', { n: s.delta }) : t('{n} behind', { n: -s.delta })
 }
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const months = () => [tc('month', 'Jan'), tc('month', 'Feb'), tc('month', 'Mar'), tc('month', 'Apr'), tc('month', 'May'), tc('month', 'Jun'), tc('month', 'Jul'), tc('month', 'Aug'), tc('month', 'Sep'), tc('month', 'Oct'), tc('month', 'Nov'), tc('month', 'Dec')]
+/** A list the screens index as it is, each entry read in the reader's language when it is read (an array of getters). */
+const shownList = (words: () => readonly string[]): readonly string[] =>
+  Object.defineProperties([] as string[], Object.fromEntries(words().map((_, i) => [i, { get: () => words()[i], enumerable: true }])))
+export const MONTH_NAMES = shownList(() => [tc('month', 'January'), tc('month', 'February'), tc('month', 'March'), tc('month', 'April'), tc('month', 'May'), tc('month', 'June'), tc('month', 'July'), tc('month', 'August'), tc('month', 'September'), tc('month', 'October'), tc('month', 'November'), tc('month', 'December')])
 /** "31 Dec", with the year when it is not this year's ("31 Dec 2027"). */
 export function fmtTargetDay(day: string, today: string = dayOf()): string {
   const [y, m, d] = day.split('-').map(Number)
   if (!y || !m || !d) return day
-  return `${d} ${MONTHS[m - 1]}${y === Number(today.slice(0, 4)) ? '' : ` ${y}`}`
+  return `${d} ${months()[m - 1]}${y === Number(today.slice(0, 4)) ? '' : ` ${y}`}`
 }
 /**
  * The one line under the count while a target is set: "3 a day to finish by 31 Dec · 2 ahead". Null without a target;
@@ -38,10 +42,10 @@ export function fmtTargetDay(day: string, today: string = dayOf()): string {
 export function paceLine(paceNeeded: number | null, standing: Standing | null, target_date: string | null | undefined, today: string = dayOf()): string | null {
   if (!target_date || paceNeeded == null) return null
   const s = standingWords(standing)
-  return `${paceNeeded} a day to finish by ${fmtTargetDay(target_date, today)}${s ? ` · ${s}` : ''}`
+  return `${t('{n} a day to finish by {day}', { n: paceNeeded, day: fmtTargetDay(target_date, today) })}${s ? ` · ${s}` : ''}`
 }
 /** The words for a pace with no target: "3 a week". */
-export const paceWords = (pace_per_week: number | null | undefined): string | null => pace_per_week ? `${pace_per_week} a week` : null
+export const paceWords = (pace_per_week: number | null | undefined): string | null => pace_per_week ? t('{n} a week', { n: pace_per_week }) : null
 
 // ---------------- the calendar ----------------
 
@@ -77,4 +81,4 @@ export function monthGrid(y: number, m: number, today: string = dayOf()): MonthC
   for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7))
   return rows
 }
-export const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+export const WEEKDAY_LETTERS = shownList(() => [tc('Sunday', 'S'), tc('Monday', 'M'), tc('Tuesday', 'T'), tc('Wednesday', 'W'), tc('Thursday', 'T'), tc('Friday', 'F'), tc('Saturday', 'S')])

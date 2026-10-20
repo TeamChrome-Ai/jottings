@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { defaultApiBase } from './config'
 import { deviceId } from './device'
 import { withEdition } from './editionCore'
+import { peekLang, t } from '@shared/i18n'
 
 export const API_BASE_KEY = 'berean_api_base'
 
@@ -44,12 +45,12 @@ export const isNetworkError = (e: unknown) => !(e instanceof ApiError)
 /** React Native's Android HTTP client has no timeouts of its own, so a stalled connection would otherwise never settle. */
 export const DEFAULT_TIMEOUT_MS = 15_000
 export class TimeoutError extends Error {
-  constructor() { super('The server did not answer in time. Check your connection and try again.') }
+  constructor() { super(t('The server did not answer in time. Check your connection and try again.')) }
 }
 /** The request never reached the server (no connection, DNS, TLS): the platform's wording ("Network request failed",
  *  "Failed to fetch") is replaced so every screen shows the same plain sentence. */
 export class NetworkError extends Error {
-  constructor() { super('No internet connection. Check Wi‑Fi or mobile data and try again.') }
+  constructor() { super(t('No internet connection. Check Wi‑Fi or mobile data and try again.')) }
 }
 
 /** `fetch` that gives up after `ms` with a TimeoutError (a network error to `isNetworkError`); the caller's own signal still aborts it. */
@@ -82,6 +83,8 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
     if (token) headers['Authorization'] = `Bearer ${token}`
     // bans only (lib/device.ts): signed-in and signing-in requests, never a reader without an account
     if (token || path.startsWith('/auth/')) { const d = await deviceId(); if (d) headers['x-jottings-device'] = d }
+    // the server's error messages in the app's language (rs/src/i18n.rs)
+    if (peekLang() !== 'en') headers['x-jottings-lang'] = peekLang()
     let res: Response
     try {
       // a read whose answer depends on the edition names it (editionCore.ts withEdition)

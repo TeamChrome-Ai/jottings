@@ -2,8 +2,11 @@
  * Weeks begin on the Lord's day (Sunday). Day keys are the reader's local calendar dates, `YYYY-MM-DD`, the same keys
  * streak `days[].date` carries; the arithmetic here reads a key as a plain date, whatever zone the device is in.
  */
+import { N_, t } from '@shared/i18n'
+import { shownLocale } from './format'
+
 const DAY_MS = 86_400_000
-export const LORDS_DAY = 'Lord’s day'
+export const LORDS_DAY = N_('Lord’s day')
 
 const ms = (day: string) => Date.parse(day + 'T00:00:00Z')
 const key = (t: number) => new Date(t).toISOString().slice(0, 10)
@@ -18,15 +21,15 @@ export function weekOf(day: string): string[] {
 }
 
 /** Weekday written out, Sunday as the Lord's day. A `Date` is read in local time, a day key as the date it names. */
-export function dayName(d: Date | string, locale?: string): string {
+export function dayName(d: Date | string, locale: string | undefined = shownLocale()): string {
   const utc = typeof d === 'string'
   const date = utc ? new Date(ms(d)) : d
-  if ((utc ? date.getUTCDay() : date.getDay()) === 0) return LORDS_DAY
+  if ((utc ? date.getUTCDay() : date.getDay()) === 0) return t(LORDS_DAY)
   return date.toLocaleDateString(locale, { weekday: 'long', timeZone: utc ? 'UTC' : undefined })
 }
 
 /** One-letter weekday for a day key ("S" for the Lord's day). */
-export const dayLetter = (day: string, locale?: string): string =>
+export const dayLetter = (day: string, locale: string | undefined = shownLocale()): string =>
   new Date(ms(day)).toLocaleDateString(locale, { weekday: 'narrow', timeZone: 'UTC' })
 
 /** Morning from 5, afternoon from 12, evening from 17, night from 22 (local time). */
@@ -35,9 +38,19 @@ export function partOfDay(d: Date): 'morning' | 'afternoon' | 'evening' | 'night
   return h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 17 ? 'afternoon' : h >= 17 && h < 22 ? 'evening' : 'night'
 }
 
-/** Home's date line: "Thursday", or with the reader's name "Thursday evening, Anna". */
-export function dayLine(d: Date, name: string, locale?: string): string {
+/** Home's date line: "Thursday", or with the reader's name "Thursday evening, Anna". The Lord's day has lines of its
+ *  own (French says "Matin du jour du Seigneur", not "Jour du Seigneur matin"); a weekday a language writes in lower
+ *  case ("jeudi") still begins the line with a capital. */
+export function dayLine(d: Date, name: string, locale: string | undefined = shownLocale()): string {
   const day = dayName(d, locale)
   const who = name.trim()
-  return who ? `${day} ${partOfDay(d)}, ${who}` : day
+  const cap = (s: string) => s.charAt(0).toLocaleUpperCase(locale) + s.slice(1)
+  if (!who) return cap(day)
+  const part = partOfDay(d), v = { day, name: who }
+  if (d.getDay() === 0) {
+    return cap(part === 'morning' ? t('Lord’s day morning, {name}', v) : part === 'afternoon' ? t('Lord’s day afternoon, {name}', v)
+      : part === 'evening' ? t('Lord’s day evening, {name}', v) : t('Lord’s day night, {name}', v))
+  }
+  return cap(part === 'morning' ? t('{day} morning, {name}', v) : part === 'afternoon' ? t('{day} afternoon, {name}', v)
+    : part === 'evening' ? t('{day} evening, {name}', v) : t('{day} night, {name}', v))
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { Fragment, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 // first: every Animated timing and spring from here on runs at the chosen animation speed
 import '../src/components/motion/speed'
 import { Platform } from 'react-native'
@@ -35,6 +35,10 @@ import { setMotionSpeed } from '../src/lib/motionSpeed'
 import { useLocalLibraryMerge } from '../src/hooks/useLocalLibraryMerge'
 import { useWidgets } from '../src/widgets'
 import { NOUN } from '@shared/brand'
+import { langOf, loadLanguage, peekLang, type Lang } from '../src/i18n'
+import { setText } from '../src/lib/text'
+import { textOf } from '@shared/texts'
+import { t } from '@shared/i18n'
 
 SplashScreen.preventAutoHideAsync().catch(() => {})
 // The Google sign-in popup returns to the site root with the token in the URL; whichever page loads there must
@@ -95,8 +99,21 @@ function Shell() {
   // the edition (lib/edition.ts) is read before the first render as well, so a chapter never shows the other's notes first
   const editionLoaded = useEditionLoaded()
   useEffect(() => { void loadEdition(); return watchEdition() }, [])
+  // the app's language (src/i18n): its words are in before the first render, and a change remounts every screen in it
+  // with the Bible it reads by default (lib/text.ts), set before the screens first render and on every change after
+  const langPref = usePref('lang'), biblePref = usePref('bible')
+  const [lang, setLang] = useState<Lang | null>(null)
+  useEffect(() => {
+    if (!loaded) return
+    let live = true
+    void loadLanguage(langOf(langPref)).then(() => { if (live) { setText(textOf(store.get().bible, peekLang())); setLang(peekLang()) } })
+    return () => { live = false }
+  }, [loaded, langPref, store])
+  // the screens remount on a new Bible only after it is set, so none renders with the last one's numbers
+  const [shownText, setShownText] = useState<string>('')
+  useEffect(() => { if (lang) { const x = textOf(biblePref, lang); setText(x); setShownText(x) } }, [biblePref, lang])
   const [shellReady, setShellReady] = useState(Platform.OS === 'web')
-  useEffect(() => { if (loaded && facesReady && editionLoaded) setShellReady(true) }, [loaded, facesReady, editionLoaded])
+  useEffect(() => { if (loaded && facesReady && editionLoaded && lang) setShellReady(true) }, [loaded, facesReady, editionLoaded, lang])
   // after the commit that mounts the navigator, so the splash never lifts onto an empty frame
   useEffect(() => { if (shellReady && loaded && facesReady) SplashScreen.hideAsync().catch(() => {}) }, [shellReady, loaded, facesReady])
   // read by every motion as it starts; a plain assignment, so it is in force before this render's children animate
@@ -116,9 +133,10 @@ function Shell() {
     const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void }
     if (w.requestIdleCallback) w.requestIdleCallback(go, { timeout: 8000 }); else setTimeout(go, 4000)
   }, [])
-  if (!shellReady) return null
+  if (!shellReady || !lang) return null
   return (
-    <>
+    // a new language or Bible remounts every screen: names, numbers and the words themselves are read as they render
+    <Fragment key={`${lang}:${shownText}`}>
       <ThemeChrome />
       <Navigator />
       <Tour />
@@ -133,7 +151,7 @@ function Shell() {
       <ForcedRename />
       <LibraryMerge />
       <Widgets />
-    </>
+    </Fragment>
   )
 }
 
@@ -180,24 +198,24 @@ function Navigator() {
     <ThemeProvider value={navTheme}>
       <Stack screenOptions={screenOptions}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ title: 'Sign in', presentation: 'modal' }} />
-        <Stack.Screen name="bookmarks" options={{ title: 'Bookmarks' }} />
+        <Stack.Screen name="login" options={{ title: t('Sign in'), presentation: 'modal' }} />
+        <Stack.Screen name="bookmarks" options={{ title: t('Bookmarks') }} />
         <Stack.Screen name="outlines/index" options={{ title: NOUN.Many }} />
         <Stack.Screen name="outlines/[id]" options={{ title: NOUN.One }} />
         {/* named before the screen sets its own title, so a push never shows the route's file name for a frame */}
-        <Stack.Screen name="friends/index" options={{ title: 'Friends' }} />
-        <Stack.Screen name="groups/index" options={{ title: 'Groups' }} />
-        <Stack.Screen name="companion" options={{ title: 'Ministry' }} />
-        <Stack.Screen name="paths" options={{ title: 'Paths' }} />
-        <Stack.Screen name="themes" options={{ title: 'Themes' }} />
-        <Stack.Screen name="credits" options={{ title: 'Credits' }} />
+        <Stack.Screen name="friends/index" options={{ title: t('Friends') }} />
+        <Stack.Screen name="groups/index" options={{ title: t('Groups') }} />
+        <Stack.Screen name="companion" options={{ title: t('Ministry') }} />
+        <Stack.Screen name="paths" options={{ title: t('Paths') }} />
+        <Stack.Screen name="themes" options={{ title: t('Themes') }} />
+        <Stack.Screen name="credits" options={{ title: t('Credits') }} />
         {/* second addresses (src/components/Alias): each replaces itself with the real route at once, so no header */}
         <Stack.Screen name="ministry" options={ALIAS} />
         <Stack.Screen name="chronological" options={ALIAS} />
         <Stack.Screen name="plans" options={ALIAS} />
         <Stack.Screen name="jottings/index" options={ALIAS} />
         <Stack.Screen name="jottings/[id]" options={ALIAS} />
-        <Stack.Screen name="+not-found" options={{ title: 'Not found' }} />
+        <Stack.Screen name="+not-found" options={{ title: t('Not found') }} />
       </Stack>
     </ThemeProvider>
   )

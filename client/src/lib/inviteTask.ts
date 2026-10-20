@@ -8,6 +8,7 @@ import { notifyAllowed, postInviteNotices } from './inviteNotify'
 import type { IncomingReply } from './inviteNoticePlan'
 import { topUpVerseNotify } from './verseNotify'
 import { readVerseNotify } from './verseNotifyPlan'
+import { ensureStoredLanguage } from '../i18n'
 
 /**
  * The background check for friend invites, with no push service: Android's WorkManager wakes the app about every 15
@@ -47,6 +48,7 @@ export async function syncInviteTask(on: boolean) {
 }
 
 export async function backgroundCheck() {
+  await ensureStoredLanguage()
   const [[, prefsRaw], [, userRaw]] = await AsyncStorage.multiGet([PREFS_KEY, USER_KEY])
   const prefs = parse(prefsRaw) as { inviteNotify?: unknown; verseNotify?: unknown } | null
   const verseOn = readVerseNotify(prefs?.verseNotify).items.length > 0

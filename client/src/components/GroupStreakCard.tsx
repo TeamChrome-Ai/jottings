@@ -1,6 +1,7 @@
 import { View } from 'react-native'
 import type { User } from '@shared/types'
 import { groupAsStreak, presentGroupStreak } from '@shared/friends'
+import { t, tn } from '@shared/i18n'
 import type { GroupDetail } from '../lib/community'
 import { useColors } from '../hooks/useTheme'
 import Avatar from './Avatar'
@@ -23,14 +24,14 @@ export default function GroupStreakCard({ group, me, delay = 0 }: { group: Group
   if (!g || !moments) return null
   const byId = new Map(group.members.map(m => [m.id, m]))
   return (
-    <Card accessibilityLabel={`Group streak. ${p.label}`} style={{ gap: 14 }}>
+    <Card accessibilityLabel={t('Group streak. {label}', { label: p.label })} style={{ gap: 14 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
         <StreakSeal fs={fs} size={56} moment={moment} delay={delay + 60} />
         <View style={{ flex: 1, gap: 2 }}>
           {p.tone === 'none' ? <T bold>{p.headline}</T> : (
             <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
               <T bold style={{ fontSize: 32, fontVariant: ['tabular-nums'], color: p.tone === 'lapsed' ? c.muted : c.text }}>{count}</T>
-              <T muted>{p.tone === 'lapsed' ? 'days, the group’s best' : `day${p.count === 1 ? '' : 's'} together`}</T>
+              <T muted>{p.tone === 'lapsed' ? tn(p.count, 'days, the group’s best', 'days, the group’s best') : tn(p.count, 'day together', 'days together')}</T>
             </View>
           )}
           <T small muted>{p.line}</T>

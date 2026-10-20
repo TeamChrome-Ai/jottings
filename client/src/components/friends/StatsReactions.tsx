@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { View } from 'react-native'
 import type { Badge } from '@shared/types'
-import { REACTION_WORDS, targetName } from '@shared/friends'
+import { targetName, type ReactionKind } from '@shared/friends'
+import { t, tn } from '@shared/i18n'
 import type { ReceivedReaction } from '../../lib/friends'
 import { useInks } from '../../hooks/useTheme'
 import { Stagger } from '../motion/nav'
@@ -38,8 +39,8 @@ function Notice({ fresh, badges }: { fresh: ReceivedReaction[]; badges: Badge[] 
   const c = useInks()
   const name = (code: string) => badges.find(b => b.code === code)?.name
   return (
-    <Card tone="soft" style={{ gap: 8 }} accessibilityLabel="New from friends">
-      <T small bold>New from friends</T>
+    <Card tone="soft" style={{ gap: 8 }} accessibilityLabel={t('New from friends')}>
+      <T small bold>{t('New from friends')}</T>
       {fresh.slice(0, LINES).map((r, i) => (
         <Stagger key={r.id} index={i} base={180}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -53,15 +54,34 @@ function Notice({ fresh, badges }: { fresh: ReceivedReaction[]; badges: Badge[] 
                 <ReactionGlyph kind={r.kind} size={10} color={c.accentText} />
               </View>
             </View>
-            <T small style={{ flex: 1 }}>{r.from.display_name} sent {article(REACTION_WORDS[r.kind].one)} for {r.target.startsWith('streak:') ? 'your ' : ''}{targetName(r.target, name)}</T>
+            <T small style={{ flex: 1 }}>{sentLine(r.kind, r.from.display_name, r.target, name)}</T>
           </View>
         </Stagger>
       ))}
-      {fresh.length > LINES ? <T small muted>and {fresh.length - LINES} more, on your badges below</T> : null}
+      {fresh.length > LINES ? <T small muted>{tn(fresh.length - LINES, 'and {n} more, on your badges below', 'and {n} more, on your badges below')}</T> : null}
     </Card>
   )
 }
-const article = (noun: string) => `a ${noun}`
+/** "Anna sent a heart for One week", "… for your 7-day friend streak": one whole phrase for each reaction, a badge or a streak. */
+function sentLine(kind: ReactionKind, name: string, target: string, badgeName: (code: string) => string | undefined): string {
+  const streak = /^streak:(\d+):/.exec(target)
+  if (streak) {
+    const v = { name, days: streak[1] }
+    switch (kind) {
+      case 'heart': return t('{name} sent a heart for your {days}-day friend streak', v)
+      case 'smile': return t('{name} sent a smile for your {days}-day friend streak', v)
+      case 'clap': return t('{name} sent a round of applause for your {days}-day friend streak', v)
+      case 'seal': return t('{name} sent a well-done seal for your {days}-day friend streak', v)
+    }
+  }
+  const v = { name, what: targetName(target, badgeName) }
+  switch (kind) {
+    case 'heart': return t('{name} sent a heart for {what}', v)
+    case 'smile': return t('{name} sent a smile for {what}', v)
+    case 'clap': return t('{name} sent a round of applause for {what}', v)
+    case 'seal': return t('{name} sent a well-done seal for {what}', v)
+  }
+}
 
 /**
  * The footer BadgeGrid draws under each badge: the reactions friends left on it. Those new on this visit drop in as

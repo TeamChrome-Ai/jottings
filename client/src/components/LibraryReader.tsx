@@ -3,6 +3,7 @@ import { AppState, Platform, Pressable, ScrollView, StyleSheet, View, useWindowD
 import { Stack, useFocusEffect, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { homeOf } from '@shared/companion'
+import { t, tc } from '@shared/i18n'
 import type { Library, MinistrySection, WorkContents } from '@shared/ministry'
 import type { Ref } from '@shared/ref'
 import SwipePager, { type Page, type SwipePagerHandle } from './SwipePager'
@@ -388,8 +389,8 @@ export default function LibraryReader({ author, work, link }: { author: string; 
   const title = contents ? toolbarTitle(contents.work, contents.sections[n - 1], n) : shortTitle(summaryOf(work)?.title ?? '')
   const unit = shelf && shelf.collection.works.length > 1 ? shelf.collection.title : shortTitle(workOf(work).title)
   const cue = {
-    next: nextSpot ? `Next: ${labelOf(nextSpot)}` : `The end of ${unit}`,
-    prev: prevSpot ? `Previous: ${labelOf(prevSpot)}` : `The start of ${unit}`,
+    next: nextSpot ? t('Next: {title}', { title: labelOf(nextSpot) ?? '' }) : t('The end of {title}', { title: unit }),
+    prev: prevSpot ? t('Previous: {title}', { title: labelOf(prevSpot) ?? '' }) : t('The start of {title}', { title: unit }),
   }
   const verse = from ? fromLabel(from) : ''
   const size = (d: 1 | -1) => set({ fontSize: prefs.fontSize + d })
@@ -397,46 +398,46 @@ export default function LibraryReader({ author, work, link }: { author: string; 
 
   return (
     <View style={[styles.fill, { backgroundColor: colors.bg }]}>
-      <Stack.Screen options={{ headerShown: false, title: title || 'Ministry' }} />
+      <Stack.Screen options={{ headerShown: false, title: title || t('Ministry') }} />
       <View style={[styles.toolbar, { paddingTop: insets.top + 6, backgroundColor: colors.bar, borderBottomColor: colors.border }]}>
-        {from ? <Button ref={tourRef('library-back')} lead="back" title={compact ? fromLabel(from, 'abbr') : verse} accessibilityLabel={`Back to the verse, ${verse}`} onPress={back} style={{ flexShrink: 0 }} />
-          : <Button ref={tourRef('library-back')} iconName="back" title="Back" onPress={back} />}
-        <Button title={title} trail="disclose" accessibilityLabel={`${title}, contents`} onPress={() => setPicker(true)} style={styles.title} disabled={!contents} />
+        {from ? <Button ref={tourRef('library-back')} lead="back" title={compact ? fromLabel(from, 'abbr') : verse} accessibilityLabel={t('Back to the verse, {ref}', { ref: verse })} onPress={back} style={{ flexShrink: 0 }} />
+          : <Button ref={tourRef('library-back')} iconName="back" title={tc('verb', 'Back')} onPress={back} />}
+        <Button title={title} trail="disclose" accessibilityLabel={t('{title}, contents', { title })} onPress={() => setPicker(true)} style={styles.title} disabled={!contents} />
         <View style={{ flex: 1 }} />
-        {!compact ? <Button icon title="A−" accessibilityLabel="Smaller text" disabled={fs <= FONT_MIN} onPress={() => size(-1)} textStyle={{ fontSize: 14 }} /> : null}
-        {!compact ? <Button icon title="A+" accessibilityLabel="Larger text" disabled={fs >= FONT_MAX} onPress={() => size(1)} textStyle={{ fontSize: 18 }} /> : null}
-        {!compact ? <ToggleButton on={lookup} title="Aa" accessibilityLabel={lookup ? 'Word lookup off' : 'Word lookup'} onPress={() => setWordLookup(!lookup)} textStyle={{ fontSize: 14 }} /> : null}
-        {!compact ? <Button iconName="palette" title="Theme" onPress={() => setThemes(true)} /> : null}
-        {!compact ? <Button iconName="sliders" title="Reading settings" onPress={() => router.push('/settings')} /> : null}
-        {compact ? <Button iconName="more" title="More" primary={lookup} onPress={() => setMore(true)} /> : null}
+        {!compact ? <Button icon title="A−" accessibilityLabel={t('Smaller text')} disabled={fs <= FONT_MIN} onPress={() => size(-1)} textStyle={{ fontSize: 14 }} /> : null}
+        {!compact ? <Button icon title="A+" accessibilityLabel={t('Larger text')} disabled={fs >= FONT_MAX} onPress={() => size(1)} textStyle={{ fontSize: 18 }} /> : null}
+        {!compact ? <ToggleButton on={lookup} title="Aa" accessibilityLabel={lookup ? t('Word lookup off') : t('Word lookup')} onPress={() => setWordLookup(!lookup)} textStyle={{ fontSize: 14 }} /> : null}
+        {!compact ? <Button iconName="palette" title={t('Theme')} onPress={() => setThemes(true)} /> : null}
+        {!compact ? <Button iconName="sliders" title={t('Reading settings')} onPress={() => router.push('/settings')} /> : null}
+        {compact ? <Button iconName="more" title={t('More')} primary={lookup} onPress={() => setMore(true)} /> : null}
       </View>
 
       {!target ? <Spinner /> : failedWork ? <View style={{ padding: 20 }}><ErrorText>{unavailableFor(author)}</ErrorText></View> : (
         <SwipePager ref={pager} reduce={reduce} width={width} onTurn={onTurn} cue={cue} onPull={onPull} edges={edgesNow}
           prev={prevSpot ? pageFor(prevSpot, false) : null} next={nextSpot ? pageFor(nextSpot, false) : null} page={pageFor({ work, n }, true)} />
       )}
-      {prevSpot ? <Pressable accessibilityLabel="Previous section" onPress={() => go(-1)} style={[styles.edge, { left: 0 }]} /> : null}
-      {nextSpot ? <Pressable accessibilityLabel="Next section" onPress={() => go(1)} style={[styles.edge, { right: 0 }]} /> : null}
+      {prevSpot ? <Pressable accessibilityLabel={t('Previous section')} onPress={() => go(-1)} style={[styles.edge, { left: 0 }]} /> : null}
+      {nextSpot ? <Pressable accessibilityLabel={t('Next section')} onPress={() => go(1)} style={[styles.edge, { right: 0 }]} /> : null}
       <FontLoading state={fontState} size={52} />
 
       <ContentsPicker open={picker} author={author} shelf={shelf} work={work} contents={contents} n={n} load={w => loadContents(author, w)}
         onClose={() => setPicker(false)} onPick={pick} />
       <Sheet open={more} onClose={() => setMore(false)} title={title}>
         <View style={{ padding: 16, gap: 12 }}>
-          <Button lead="list" title="Contents" disabled={!contents} onPress={() => { setMore(false); setTimeout(() => setPicker(true), reduce ? 0 : 220) }} />
+          <Button lead="list" title={t('Contents')} disabled={!contents} onPress={() => { setMore(false); setTimeout(() => setPicker(true), reduce ? 0 : 220) }} />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <T style={{ flex: 1 }}>Text size</T>
-            <Button icon title="A−" accessibilityLabel="Smaller text" disabled={fs <= FONT_MIN} onPress={() => size(-1)} textStyle={{ fontSize: 14 }} />
+            <T style={{ flex: 1 }}>{t('Text size')}</T>
+            <Button icon title="A−" accessibilityLabel={t('Smaller text')} disabled={fs <= FONT_MIN} onPress={() => size(-1)} textStyle={{ fontSize: 14 }} />
             <T muted style={{ minWidth: 28, textAlign: 'center' }}>{fs}</T>
-            <Button icon title="A+" accessibilityLabel="Larger text" disabled={fs >= FONT_MAX} onPress={() => size(1)} textStyle={{ fontSize: 18 }} />
+            <Button icon title="A+" accessibilityLabel={t('Larger text')} disabled={fs >= FONT_MAX} onPress={() => size(1)} textStyle={{ fontSize: 18 }} />
           </View>
-          <SwitchRow label="Word lookup" hint="Tap a word: Darby’s usage, Strong’s concordance and Morrish" value={lookup} onChange={setWordLookup} />
-          <Button lead="palette" title="Theme" onPress={() => { setMore(false); setTimeout(() => setThemes(true), reduce ? 0 : 220) }} />
-          <Button lead="sliders" title="Reading settings" onPress={() => { setMore(false); router.push('/settings') }} />
+          <SwitchRow label={t('Word lookup')} hint={t('Tap a word: Darby’s usage, Strong’s concordance and Morrish')} value={lookup} onChange={setWordLookup} />
+          <Button lead="palette" title={t('Theme')} onPress={() => { setMore(false); setTimeout(() => setThemes(true), reduce ? 0 : 220) }} />
+          <Button lead="sliders" title={t('Reading settings')} onPress={() => { setMore(false); router.push('/settings') }} />
         </View>
       </Sheet>
       <WordSheet target={wordTarget} onClose={() => setWordTarget(null)} />
-      <Sheet open={themes} onClose={() => setThemes(false)} title="Theme">
+      <Sheet open={themes} onClose={() => setThemes(false)} title={t('Theme')}>
         <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 8 }}><ThemeGallery compact /></ScrollView>
       </Sheet>
     </View>

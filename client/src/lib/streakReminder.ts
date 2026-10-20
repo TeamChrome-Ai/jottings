@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Notifications from 'expo-notifications'
 import { Platform } from 'react-native'
 import type { StreakInfo } from '@shared/types'
+import { N_, t } from '@shared/i18n'
 import { EMPTY_LOG, planReminders, readLog, summarizeStreak, type NudgeLog, type FireKind } from './reminderPlan'
 import { localDay } from './localDay'
 
@@ -18,9 +19,9 @@ export interface ReminderConfig { enabled: boolean; hour: number; minute: number
 export const REMINDER_ROUTE = '/read'
 // One Android channel per kind, so each can be switched off on its own in the system's notification settings.
 const CHANNELS: Record<FireKind, { id: string; name: string; description: string }> = {
-  daily: { id: 'streak-daily', name: 'Daily streak reminder', description: 'The evening reminder on days you have not read yet.' },
-  start: { id: 'streak-start', name: 'Start a streak', description: 'A monthly invitation when no streak is running.' },
-  lapse: { id: 'streak-lapse', name: 'Streak paused', description: 'A note when a streak lapses, at most once a month.' },
+  daily: { id: 'streak-daily', name: N_('Daily streak reminder'), description: N_('The evening reminder on days you have not read yet.') },
+  start: { id: 'streak-start', name: N_('Start a streak'), description: N_('A monthly invitation when no streak is running.') },
+  lapse: { id: 'streak-lapse', name: N_('Streak paused'), description: N_('A note when a streak lapses, at most once a month.') },
 }
 const ID_PREFIX = 'streak-'
 const LOG_KEY = 'berean_streak_nudges'
@@ -96,7 +97,7 @@ async function cancelOurs() {
 /** Android 13 shows the permission prompt only once the app has a channel, so this runs before any request. */
 async function ensureChannel() {
   if (Platform.OS !== 'android') return
-  for (const ch of Object.values(CHANNELS)) await Notifications.setNotificationChannelAsync(ch.id, { name: ch.name, description: ch.description, importance: Notifications.AndroidImportance.DEFAULT })
+  for (const ch of Object.values(CHANNELS)) await Notifications.setNotificationChannelAsync(ch.id, { name: t(ch.name), description: t(ch.description), importance: Notifications.AndroidImportance.DEFAULT })
 }
 
 export async function notifyPermission(): Promise<NotifyPermission> {

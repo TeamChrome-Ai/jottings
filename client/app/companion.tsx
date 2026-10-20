@@ -19,6 +19,7 @@ import { TURN_DX } from '../src/lib/motionTiming'
 import { useReadingFont } from '../src/hooks/useReadingFont'
 import { useColors } from '../src/hooks/useTheme'
 import { Card, ErrorText, H2, Input, ListRow, Screen, SPACE, Spinner, T, Tap, TYPE } from '../src/components/ui'
+import { t, tn } from '@shared/i18n'
 
 /** Rows per page of search results: the dictionary's. */
 const ROWS = 30
@@ -86,14 +87,14 @@ function IndexView({ initialQuery }: { initialQuery: string }) {
   const last = useLastRead()
   return (
     <Screen animate={false} scrollRef={scroll}>
-      <Stack.Screen options={{ title: 'Ministry' }} />
-      <Input value={q} onChangeText={setQ} placeholder="Search by passage or title" autoCorrect={false} autoCapitalize="none" returnKeyType="search" accessibilityLabel="Search the ministry by passage or title" />
-      {query ? <Results works={works} hits={hits} pending={found.query !== query} places={places} library={library} query={query} scroll={scroll} /> : library === undefined ? <Spinner /> : !library?.authors.length ? <ErrorText>{libraryUnavailable}</ErrorText> : (
+      <Stack.Screen options={{ title: t('Ministry') }} />
+      <Input value={q} onChangeText={setQ} placeholder={t('Search by passage or title')} autoCorrect={false} autoCapitalize="none" returnKeyType="search" accessibilityLabel={t('Search the ministry by passage or title')} />
+      {query ? <Results works={works} hits={hits} pending={found.query !== query} places={places} library={library} query={query} scroll={scroll} /> : library === undefined ? <Spinner /> : !library?.authors.length ? <ErrorText>{t(libraryUnavailable)}</ErrorText> : (
         <>
           {last ? (
             <Stagger index={0}>
               <Card style={{ gap: 0, paddingVertical: 8 }}>
-                <ListRow icon="book" label="Continue reading" detail={[library.authors.find(a => a.id === last.author)?.short, last.detail].filter(Boolean).join(' · ')} onPress={() => router.push(openWork(last.author, last.work))} />
+                <ListRow icon="book" label={t('Continue reading')} detail={[library.authors.find(a => a.id === last.author)?.short, last.detail].filter(Boolean).join(' · ')} onPress={() => router.push(openWork(last.author, last.work))} />
               </Card>
             </Stagger>
           ) : null}
@@ -150,14 +151,14 @@ function Results({ works, hits, pending, places, library, query, scroll }: { wor
         </Card>
       ) : null}
       <Rows items={hits} listKey={`t:${query}`} entrance="results" scroll={scroll} empty=""
-        title={hits.length ? `${hits.length} ${hits.length === 1 ? 'title' : 'titles'}` : ''}
+        title={hits.length ? tn(hits.length, '{n} title', '{n} titles') : ''}
         row={h => ({ key: `${h.author}/${h.work.id}/${h.n}`, title: h.title, detail: sectionHitDetail(h, library), onPress: () => router.push(openWork(h.author, h.work.id, h.n)) })} />
       <Rows items={places} listKey={`q:${query}`} entrance="results" scroll={scroll} empty=""
-        title={places.length ? `${places.length} ${places.length === 1 ? 'section' : 'sections'}` : ''} row={p => {
+        title={places.length ? tn(places.length, '{n} section', '{n} sections') : ''} row={p => {
           const passage = p.section.passages.length && !titleIsPassage(p.section.title) ? formatPassages(p.section.passages) : ''
           return { key: `${p.author}/${p.work.id}/${p.n}`, title: p.section.title, detail: [`${authorOf(p.author)!.short} · ${workLine(p)}`, passage].filter(Boolean).join(' · '), onPress: () => router.push(openWork(p.author, p.work.id, p.n)) }
         }} />
-      {none ? <T muted>{pending ? 'Searching…' : `Nothing for “${query}”.`}</T> : null}
+      {none ? <T muted>{pending ? t('Searching…') : t('Nothing for “{query}”.', { query })}</T> : null}
     </View>
   )
 }
@@ -233,18 +234,18 @@ function AuthorView({ author, collection, kind }: { author: string; collection?:
     if (reduce) go(); else pending.current = setTimeout(go, CONFIRM_MS)
   }
   const name = a?.name ?? authorOf(author)?.name ?? ''
-  if (library === undefined) return <Screen><Stack.Screen options={{ title: name || 'Ministry' }} /><Spinner /></Screen>
-  if (!a) return <Screen><Stack.Screen options={{ title: 'Ministry' }} /><ErrorText>{`No author “${author}”.`}</ErrorText></Screen>
+  if (library === undefined) return <Screen><Stack.Screen options={{ title: name || t('Ministry') }} /><Spinner /></Screen>
+  if (!a) return <Screen><Stack.Screen options={{ title: t('Ministry') }} /><ErrorText>{t('No author “{author}”.', { author })}</ErrorText></Screen>
   if (!c) {
     return (
       <Screen animate={false}>
         <Stack.Screen options={{ title: a.name }} />
-        {collection ? <ErrorText>{`No collection “${collection}” by ${a.name}.`}</ErrorText> : null}
+        {collection ? <ErrorText>{t('No collection “{collection}” by {author}.', { collection, author: a.name })}</ErrorText> : null}
         <Card style={{ gap: 0, paddingVertical: 8 }}>
           {a.collections.map((x, i) => <Stagger key={x.id} index={i}><ListRow label={x.works.length === 1 ? x.works[0].title : x.title} detail={collectionDetail(x, a.id)}
             onPress={() => router.push(goCollection(a.id, x))} /></Stagger>)}
         </Card>
-        <T small muted>{a.source}</T>
+        <T small muted>{t(a.source)}</T>
       </Screen>
     )
   }
@@ -253,7 +254,7 @@ function AuthorView({ author, collection, kind }: { author: string; collection?:
       <Stack.Screen options={{ title: c.title }} />
       <T small muted>{`${a.name} · ${collectionDetail(c, a.id)}`}</T>
       <WorksChooser author={a.id} works={c.works} current={current} picked={picked} onWork={pick} />
-      <T small muted>{a.source}</T>
+      <T small muted>{t(a.source)}</T>
     </Screen>
   )
 }
@@ -287,14 +288,14 @@ function ContentsView({ author, work }: { author: string; work: string }) {
   }
   const meta = contents?.work ?? summary
   const heading = meta ? contentsHeading(shelf, { title: meta.title, kind: meta.kind, count: contents?.sections.length ?? summary?.count ?? 0 }, author) : null
-  if (library === undefined && !contents) return <Screen><Stack.Screen options={{ title: 'Ministry' }} /><Spinner /></Screen>
+  if (library === undefined && !contents) return <Screen><Stack.Screen options={{ title: t('Ministry') }} /><Spinner /></Screen>
   return (
     <Screen animate={false}>
-      <Stack.Screen options={{ title: heading?.title || 'Ministry' }} />
+      <Stack.Screen options={{ title: heading?.title || t('Ministry') }} />
       {heading?.line ? <T small muted>{heading.line}</T> : null}
       {contents === undefined ? <Spinner /> : contents === null ? <ErrorText>{unavailableFor(author)}</ErrorText>
         : <SectionsList key={work} contents={contents} current={current} picked={picked} onPick={pick} />}
-      {shelf ? <T small muted>{shelf.author.source}</T> : null}
+      {shelf ? <T small muted>{t(shelf.author.source)}</T> : null}
     </Screen>
   )
 }

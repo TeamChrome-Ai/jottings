@@ -3,11 +3,11 @@ import { ScrollView, StyleSheet, View } from 'react-native'
 import { BOOKS } from '@shared/books'
 import { dayOf, defaultWithMinistry, pathBlurb, pathCompanion, pathLength, pathTitle, type CustomPath, type PathId, type PathState } from '@shared/paths'
 import type { AuthorId } from '@shared/companion'
+import { t, tc, tn } from '@shared/i18n'
 import { useInks } from '../hooks/useTheme'
 import { useReduceMotion } from '../store/prefs'
 import { MONTH_NAMES, WEEKDAY_LETTERS, addMonths, endOfYear, fmtTargetDay, monthGrid, paceWords } from '../lib/pathWords'
 import type { StartOptions } from '../lib/paths'
-import { plural } from '../lib/community'
 import { CONFIRM_MS, Choice, Grid, pickerStyles } from './ChapterPicker'
 import { FadeSwap, PopIn } from './motion/nav'
 import { Button, Chip, Input, ListRow, Row, SPACE, Segmented, Sheet, SwitchRow, T, TYPE } from './ui'
@@ -41,9 +41,9 @@ export function MonthPicker({ value, onPick, today = dayOf() }: { value: string 
   return (
     <View style={{ gap: SPACE.m }}>
       <Row style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
-        <Button iconName="prev" title="Previous month" small onPress={() => move(-1)} disabled={atFirst} />
+        <Button iconName="prev" title={t('Previous month')} small onPress={() => move(-1)} disabled={atFirst} />
         <T bold>{MONTH_NAMES[ym.m - 1]} {ym.y}</T>
-        <Button iconName="next" title="Next month" small onPress={() => move(1)} />
+        <Button iconName="next" title={t('Next month')} small onPress={() => move(1)} />
       </Row>
       <FadeSwap k={`${ym.y}-${ym.m}`}>
         <Grid>{wait => (
@@ -56,7 +56,7 @@ export function MonthPicker({ value, onPick, today = dayOf() }: { value: string 
                 {row.map((cell, i) => cell.day ? (
                   <PopIn key={cell.day} index={r * 7 + i} cap={42} step={6} base={wait} style={{ flex: 1, opacity: cell.past ? 0.35 : 1 }}>
                     <View pointerEvents={cell.past ? 'none' : 'auto'}>
-                      <Choice label={String(cell.n)} name={`${cell.n} ${MONTH_NAMES[ym.m - 1]}${cell.today ? ', today' : ''}`} selected={cell.day === sel} fillDelay={0} onPress={() => pick(cell.day)}
+                      <Choice label={String(cell.n)} name={cell.today ? t('{day} {month}, today', { day: cell.n, month: MONTH_NAMES[ym.m - 1] }) : t('{day} {month}', { day: cell.n, month: MONTH_NAMES[ym.m - 1] })} selected={cell.day === sel} fillDelay={0} onPress={() => pick(cell.day)}
                         style={month.cell} fontSize={15} bg={cell.today ? c.selected : c.card} />
                     </View>
                   </PopIn>
@@ -67,9 +67,9 @@ export function MonthPicker({ value, onPick, today = dayOf() }: { value: string 
         )}</Grid>
       </FadeSwap>
       <Row>
-        <Chip label="In a month" detail={fmtTargetDay(inMonth, today)} on={sel === inMonth} onPress={() => pick(inMonth)} tab />
-        <Chip label="By the end of the year" on={sel === eoy} onPress={() => pick(eoy)} tab />
-        <Chip label="No date" on={sel === null} onPress={() => pick(null)} tab />
+        <Chip label={t('In a month')} detail={fmtTargetDay(inMonth, today)} on={sel === inMonth} onPress={() => pick(inMonth)} tab />
+        <Chip label={t('By the end of the year')} on={sel === eoy} onPress={() => pick(eoy)} tab />
+        <Chip label={t('No date')} on={sel === null} onPress={() => pick(null)} tab />
       </Row>
     </View>
   )
@@ -79,7 +79,7 @@ const month = StyleSheet.create({ cell: { flex: 1, height: 40, borderRadius: 8, 
 // ---------------- the options a path carries ----------------
 
 type PaceChoice = 'none' | '3' | '5' | '7' | 'other'
-const PACE_OPTIONS: { value: PaceChoice; label: string }[] = [{ value: 'none', label: 'None' }, { value: '3', label: '3 a week' }, { value: '5', label: '5' }, { value: '7', label: '7' }, { value: 'other', label: 'Other' }]
+const paceOptions = (): { value: PaceChoice; label: string }[] => [{ value: 'none', label: tc('pace', 'None') }, { value: '3', label: t('3 a week') }, { value: '5', label: '5' }, { value: '7', label: '7' }, { value: 'other', label: t('Other') }]
 const paceChoice = (p: number | null): PaceChoice => p == null ? 'none' : p === 3 || p === 5 || p === 7 ? String(p) as PaceChoice : 'other'
 
 export interface Options { target_date: string | null; pace_per_week: number | null; with_ministry: boolean }
@@ -99,21 +99,21 @@ export function PathOptions({ value, onChange, onPickDate, companion }: { value:
   const commitOther = () => { const n = Math.round(Number(other)); if (n >= 1 && n <= 200) onChange({ pace_per_week: n }) }
   return (
     <View style={{ gap: 4 }}>
-      <ListRow label="Finish by" detail={value.target_date ? `${fmtTargetDay(value.target_date)} · the app says exactly how many a day` : 'No date · a path is an order, not a calendar'} onPress={onPickDate} />
+      <ListRow label={t('Finish by')} detail={value.target_date ? t('{day} · the app says exactly how many a day', { day: fmtTargetDay(value.target_date) }) : t('No date · a path is an order, not a calendar')} onPress={onPickDate} />
       {!value.target_date ? (
         <View style={{ gap: 8, paddingVertical: 6 }}>
-          <T>Pace <T muted>{paceWords(value.pace_per_week) ? `· ${paceWords(value.pace_per_week)}` : ''}</T></T>
-          <Segmented value={otherOpen ? 'other' : choice} options={PACE_OPTIONS} onChange={setChoice} />
+          <T>{t('Pace')} <T muted>{paceWords(value.pace_per_week) ? `· ${paceWords(value.pace_per_week)}` : ''}</T></T>
+          <Segmented value={otherOpen ? 'other' : choice} options={paceOptions()} onChange={setChoice} />
           {otherOpen ? (
             <Row style={{ flexWrap: 'nowrap' }}>
-              <Input value={other} onChangeText={setOther} placeholder="Chapters a week" keyboardType="number-pad" inputMode="numeric" maxLength={3} style={{ flex: 1, minWidth: 0 }} onSubmitEditing={commitOther} onBlur={commitOther} />
-              <Button title="Set" small onPress={commitOther} disabled={!(Number(other) >= 1)} />
+              <Input value={other} onChangeText={setOther} placeholder={t('Chapters a week')} keyboardType="number-pad" inputMode="numeric" maxLength={3} style={{ flex: 1, minWidth: 0 }} onSubmitEditing={commitOther} onBlur={commitOther} />
+              <Button title={tc('verb', 'Set')} small onPress={commitOther} disabled={!(Number(other) >= 1)} />
             </Row>
           ) : null}
         </View>
       ) : null}
       {companion ? (
-        <SwitchRow label={companion === 'darby' ? 'With Darby’s Synopsis' : 'With Coates’s Outlines'} hint={value.with_ministry ? 'Each chapter, then the section on it' : 'The chapters alone, in the same order'} value={value.with_ministry} onChange={v => onChange({ with_ministry: v })} />
+        <SwitchRow label={companion === 'darby' ? t('With Darby’s Synopsis') : t('With Coates’s Outlines')} hint={value.with_ministry ? t('Each chapter, then the section on it') : t('The chapters alone, in the same order')} value={value.with_ministry} onChange={v => onChange({ with_ministry: v })} />
       ) : null}
     </View>
   )
@@ -122,7 +122,7 @@ export function PathOptions({ value, onChange, onPickDate, companion }: { value:
 /** A sheet with two views, its options and the month grid, swapped in place; Back (and the header's own) returns. */
 function TwoViewSheet({ open, onClose, title, view, setView, options, month: monthView }: { open: boolean; onClose: () => void; title: string; view: 'options' | 'date'; setView: (v: 'options' | 'date') => void; options: ReactNode; month: ReactNode }) {
   return (
-    <Sheet open={open} onClose={onClose} onBack={view === 'date' ? () => setView('options') : undefined} title={view === 'date' ? 'Finish by' : title} maxHeight="88%">
+    <Sheet open={open} onClose={onClose} onBack={view === 'date' ? () => setView('options') : undefined} title={view === 'date' ? t('Finish by') : title} maxHeight="88%">
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: SPACE.l, paddingBottom: SPACE.s, gap: SPACE.m }}>
         <FadeSwap k={view}>{view === 'date' ? monthView : options}</FadeSwap>
       </ScrollView>
@@ -143,7 +143,7 @@ export function StartPathSheet({ id, open, onClose, active, resumes, onStart }: 
   useEffect(() => { if (open) { setView('options'); setOpts({ target_date: null, pace_per_week: null, with_ministry: id ? defaultWithMinistry(id) : false }) } }, [open, id])
   if (!id) return null
   const isActive = active?.id === id
-  const verb = isActive ? 'Keep going' : resumes ? 'Resume' : active ? 'Switch to it' : 'Start'
+  const verb = isActive ? t('Keep going') : resumes ? t('Resume') : active ? t('Switch to it') : t('Start')
   const go = async () => {
     setBusy(true)
     try { await onStart(id, opts); onClose() } finally { setBusy(false) }
@@ -153,11 +153,11 @@ export function StartPathSheet({ id, open, onClose, active, resumes, onStart }: 
       month={<MonthPicker value={opts.target_date} onPick={d => { setOpts(o => ({ ...o, target_date: d })); setView('options') }} />}
       options={(
         <View style={{ gap: SPACE.m }}>
-          <T muted>{pathBlurb(id)} <T muted bold>{pathLength(id)} chapters.</T></T>
+          <T muted>{pathBlurb(id)} <T muted bold>{tn(pathLength(id), '{n} chapter.', '{n} chapters.')}</T></T>
           {!isActive ? <PathOptions value={opts} onChange={p => setOpts(o => ({ ...o, ...p }))} onPickDate={() => setView('date')} companion={pathCompanion(id)} /> : null}
-          {active && !isActive ? <T small muted>{resumes ? `You began this path before; it goes on from where you left it. ${pathTitle(active)} waits in your history.` : `${pathTitle(active)} keeps its start and waits in your history.`}</T> : null}
+          {active && !isActive ? <T small muted>{resumes ? t('You began this path before; it goes on from where you left it. {path} waits in your history.', { path: pathTitle(active) }) : t('{path} keeps its start and waits in your history.', { path: pathTitle(active) })}</T> : null}
           <Row style={{ justifyContent: 'flex-end' }}>
-            <Button title="Cancel" onPress={onClose} disabled={busy} />
+            <Button title={t('Cancel')} onPress={onClose} disabled={busy} />
             <Button title={verb} primary onPress={isActive ? onClose : go} disabled={busy} />
           </Row>
         </View>
@@ -181,22 +181,22 @@ export function CustomPathSheet({ open, onClose, initial, onStart }: { open: boo
     try { await onStart({ title: title.trim(), books }); onClose() } finally { setBusy(false) }
   }
   return (
-    <Sheet open={open} onClose={onClose} title="Your own path" maxHeight="90%">
+    <Sheet open={open} onClose={onClose} title={t('Your own path')} maxHeight="90%">
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: SPACE.l, paddingBottom: SPACE.s, gap: SPACE.m }}>
-        <Input placeholder="A name for it (optional)" value={title} onChangeText={setTitle} maxLength={60} />
-        <T small muted>{books.length ? `${plural(books.length, 'book')} · ${plural(chapters, 'chapter')}, in the order you tap them` : 'Tap the books to read, in order'}</T>
+        <Input placeholder={t('A name for it (optional)')} value={title} onChangeText={setTitle} maxLength={60} />
+        <T small muted>{books.length ? tn(chapters, '{books} · {n} chapter, in the order you tap them', '{books} · {n} chapters, in the order you tap them', { books: tn(books.length, '{n} book', '{n} books') }) : t('Tap the books to read, in order')}</T>
         <Grid>{wait => (
           <View style={{ gap: SPACE.l }}>
-            {(['OT', 'NT'] as const).map(t => (
-              <View key={t} style={{ gap: SPACE.s }}>
-                <T small muted style={pickerStyles.group}>{t === 'OT' ? 'Old Testament' : 'New Testament'}</T>
+            {(['OT', 'NT'] as const).map(testament => (
+              <View key={testament} style={{ gap: SPACE.s }}>
+                <T small muted style={pickerStyles.group}>{testament === 'OT' ? t('Old Testament') : t('New Testament')}</T>
                 <View style={pickerStyles.wrap}>
                   {BOOKS.map((bk, i) => {
-                    if (bk.testament !== t) return null
+                    if (bk.testament !== testament) return null
                     const at = books.indexOf(bk.n) + 1
                     return (
                       <PopIn key={bk.n} index={i} cap={66} step={4} base={wait}>
-                        <Choice label={bk.abbr} name={at ? `${bk.name}, ${at} of ${books.length}` : bk.name} selected={at > 0} order={at || undefined} fillDelay={0} onPress={() => toggle(bk.n)} style={pickerStyles.chip} fontSize={14} bg={c.card} />
+                        <Choice label={bk.abbr} name={at ? t('{book}, {at} of {count}', { book: bk.name, at, count: books.length }) : bk.name} selected={at > 0} order={at || undefined} fillDelay={0} onPress={() => toggle(bk.n)} style={pickerStyles.chip} fontSize={14} bg={c.card} />
                       </PopIn>
                     )
                   })}
@@ -205,10 +205,10 @@ export function CustomPathSheet({ open, onClose, initial, onStart }: { open: boo
             ))}
           </View>
         )}</Grid>
-        {books.length > 1 ? <T small muted>In this order: {books.map(n => BOOKS[n - 1]?.name).join(', ')}</T> : null}
+        {books.length > 1 ? <T small muted>{t('In this order: {books}', { books: books.map(n => BOOKS[n - 1]?.name).join(', ') })}</T> : null}
         <Row style={{ justifyContent: 'flex-end' }}>
-          <Button title="Cancel" onPress={onClose} disabled={busy} />
-          <Button title="Start" primary onPress={go} disabled={busy || books.length === 0} />
+          <Button title={t('Cancel')} onPress={onClose} disabled={busy} />
+          <Button title={t('Start')} primary onPress={go} disabled={busy || books.length === 0} />
         </Row>
       </ScrollView>
     </Sheet>

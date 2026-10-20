@@ -12,11 +12,13 @@ import { countWords, paceLine, paceWords, portionTitle, thenLine } from '../src/
 import { useAuth } from '../src/store/auth'
 import { useInks } from '../src/hooks/useTheme'
 import { face } from '../src/theme'
-import { confirmAsync, plural } from '../src/lib/community'
+import { confirmAsync } from '../src/lib/community'
 import PathStrip from '../src/components/PathStrip'
 import { CustomPathSheet, MonthPicker, PathOptions, StartPathSheet } from '../src/components/PathSheets'
 import { Button, Card, Enter, ErrorText, H2, ListRow, Row, SPACE, Screen, Sheet, Spinner, T, TYPE, Tap } from '../src/components/ui'
 import { FadeSwap } from '../src/components/motion/nav'
+import { t, tc, tn } from '@shared/i18n'
+import { dateLocale, tr } from '../src/i18n'
 
 type LocalRead = [book: number, chapter: number, at: string]
 const NO_READS = new Set<string>()
@@ -62,21 +64,22 @@ export default function PathsScreen() {
   }
   const stop = async () => {
     if (!state) return
-    if (!(await confirmAsync(`Stop ${pathTitle(state)}?`, 'The path and its history go; what you have read stays read.', 'Stop'))) return
+    if (!(await confirmAsync(t('Stop {path}?', { path: pathTitle(state) }), t('The path and its history go; what you have read stays read.'), tc('verb', 'Stop')))) return
     await path.stop()
   }
   const resumes = (id: PathId) => path.history.some(h => h.id === id)
-  const historyCount = (h: PathHistoryEntry): string => {
+  const historyCount = (h: PathHistoryEntry): { done: number; total: number } | null => {
     // signed out the device's own reads since that start are the truth; signed in the server keeps only the active path's
-    if (user || !ever) return ''
+    if (user || !ever) return null
     const pr = progressOf(h, readSetSince(ever.local, h.started_at))
-    return `, ${pr.done} of ${pr.total}`
+    return { done: pr.done, total: pr.total }
   }
+  const resume = { b: (s: string) => <T small accent bold>{s}</T> }
   const busy = !ready || path.loading || (!state && !ever)
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: 'Paths' }} />
+      <Stack.Screen options={{ title: t('Paths') }} />
       {busy ? <Spinner /> : (
         <>
           <Enter>
@@ -84,11 +87,11 @@ export default function PathsScreen() {
               <Card style={{ gap: SPACE.m }}>
                 {state && chapters && path.progress ? (
                   <PathStrip route={route} routeChapters={chapters} readSet={path.readSet} place={path.next?.portion ?? null} onBook={openBook} delay={120}
-                    accessibilityLabel={`${pathTitle(state)}: ${path.progress.done} of ${plural(path.progress.total, 'chapter')} read`} />
+                    accessibilityLabel={tn(path.progress.total, '{path}: {done} of {n} chapter read', '{path}: {done} of {n} chapters read', { path: pathTitle(state), done: path.progress.done })} />
                 ) : (
                   <>
-                    <PathStrip route={null} readSet={ever ? everRead : null} delay={120} accessibilityLabel={`The Bible: ${plural(ever ? everRead.size : 0, 'chapter')} read`} />
-                    <T small muted>{ever && everRead.size ? `What you have read so far: ${everRead.size} of 1,189 chapters. ` : ''}No path at the moment. A path is an order of chapters, never a calendar; set a date only if you want one.</T>
+                    <PathStrip route={null} readSet={ever ? everRead : null} delay={120} accessibilityLabel={tn(ever ? everRead.size : 0, 'The Bible: {n} chapter read', 'The Bible: {n} chapters read')} />
+                    <T small muted>{ever && everRead.size ? t('What you have read so far: {n} of 1,189 chapters.', { n: everRead.size }) + ' ' : ''}{t('No path at the moment. A path is an order of chapters, never a calendar; set a date only if you want one.')}</T>
                   </>
                 )}
               </Card>
@@ -103,22 +106,22 @@ export default function PathsScreen() {
                     <T bold style={{ fontSize: TYPE.heading }}>{pathTitle(state)}</T>
                     {path.next ? (
                       <>
-                        <T small muted style={{ marginTop: 6 }}>Next on your path</T>
+                        <T small muted style={{ marginTop: 6 }}>{t('Next on your path')}</T>
                         <Text style={{ color: c.text, fontSize: 22, ...face('serif', { bold: true }) }}>{portionTitle(path.next.portion)}</Text>
                         {thenLine(path.next.portion) ? <T small muted>{thenLine(path.next.portion)}</T> : null}
                       </>
-                    ) : <T style={{ marginTop: 6 }}>You have read it all.</T>}
+                    ) : <T style={{ marginTop: 6 }}>{t('You have read it all.')}</T>}
                   </View>
                   <T bold style={{ fontSize: 20, fontVariant: ['tabular-nums'] }}>{countWords(path.progress)}</T>
                 </Row>
                 {paceLine(path.paceNeeded, path.standing, state.target_date) ? <T small muted>{paceLine(path.paceNeeded, path.standing, state.target_date)}</T>
-                  : paceWords(state.pace_per_week) ? <T small muted>{paceWords(state.pace_per_week)}, by your own reckoning</T> : null}
-                {path.next ? <Button title={`Open ${portionTitle(path.next.portion)}`} primary onPress={() => openChapter(path.next!.portion.book, path.next!.portion.chapter)} style={{ alignSelf: 'flex-start' }} /> : null}
+                  : paceWords(state.pace_per_week) ? <T small muted>{t('{pace}, by your own reckoning', { pace: paceWords(state.pace_per_week) ?? '' })}</T> : null}
+                {path.next ? <Button title={t('Open {portion}', { portion: portionTitle(path.next.portion) })} primary onPress={() => openChapter(path.next!.portion.book, path.next!.portion.chapter)} style={{ alignSelf: 'flex-start' }} /> : null}
                 <PathOptions value={{ target_date: state.target_date, pace_per_week: state.pace_per_week, with_ministry: state.with_ministry }} companion={pathCompanion(state)} onPickDate={() => setDateOpen(true)}
                   onChange={p => { if (p.target_date !== undefined) void path.setTargetDate(p.target_date); if (p.pace_per_week !== undefined) void path.setPace(p.pace_per_week); if (p.with_ministry !== undefined) void path.setWithMinistry(p.with_ministry) }} />
                 <Row>
-                  {state.id === 'custom' ? <Button title="Change the books" small onPress={() => setCustom(true)} /> : null}
-                  <Button title="Stop this path" small danger onPress={stop} />
+                  {state.id === 'custom' ? <Button title={t('Change the books')} small onPress={() => setCustom(true)} /> : null}
+                  <Button title={t('Stop this path')} small danger onPress={stop} />
                 </Row>
                 {path.error ? <ErrorText>{path.error}</ErrorText> : null}
               </Card>
@@ -126,20 +129,23 @@ export default function PathsScreen() {
           ) : path.error ? <ErrorText>{path.error}</ErrorText> : null}
 
           <Enter delay={160} style={{ gap: SPACE.m }}>
-            <H2 hint="Reading plans, no dates unless you set one">Paths</H2>
+            <H2 hint={t('Reading plans, no dates unless you set one')}>{t('Paths')}</H2>
             <Card style={{ gap: 0, paddingVertical: 8 }}>
               {PATH_IDS.filter(id => pathOffered(id, edition)).map(id => (
-                <ListRow key={id} label={pathTitle(id)} icon={state?.id === id ? 'check' : undefined} detail={`${pathBlurb(id)} ${pathLength(id).toLocaleString('en')} chapters.`} onPress={() => setStartId(id)} />
+                <ListRow key={id} label={pathTitle(id)} icon={state?.id === id ? 'check' : undefined} detail={`${pathBlurb(id)} ${t('{n} chapters.', { n: pathLength(id).toLocaleString(dateLocale() ?? 'en') })}`} onPress={() => setStartId(id)} />
               ))}
-              <ListRow label="Your own" icon={state?.id === 'custom' ? 'check' : undefined} detail={state?.id === 'custom' ? `${pathTitle(state)}: ${pathBlurb(state)}` : 'Any books, in the order you choose'} onPress={() => setCustom(true)} />
+              <ListRow label={t('Your own')} icon={state?.id === 'custom' ? 'check' : undefined} detail={state?.id === 'custom' ? `${pathTitle(state)}: ${pathBlurb(state)}` : t('Any books, in the order you choose')} onPress={() => setCustom(true)} />
             </Card>
             {path.history.length ? (
               <View style={{ gap: 4 }}>
-                {path.history.map(h => (
-                  <Tap key={`${h.id}:${h.started_at}`} onPress={() => void path.start(h.id, h.id === 'custom' && h.custom ? { custom: h.custom } : undefined)} accessibilityRole="button" accessibilityLabel={`Resume ${pathTitle(h)}`} scaleTo={0.99} style={{ paddingHorizontal: 4 }}>
-                    <T small muted>Also started: {pathTitle(h)}{historyCount(h)} · <T small accent bold>Resume</T></T>
-                  </Tap>
-                ))}
+                {path.history.map(h => {
+                  const pr = historyCount(h)
+                  return (
+                    <Tap key={`${h.id}:${h.started_at}`} onPress={() => void path.start(h.id, h.id === 'custom' && h.custom ? { custom: h.custom } : undefined)} accessibilityRole="button" accessibilityLabel={t('Resume {path}', { path: pathTitle(h) })} scaleTo={0.99} style={{ paddingHorizontal: 4 }}>
+                      <T small muted>{pr ? tr('Also started: {path}, {done} of {total} · <b>Resume</b>', resume, { path: pathTitle(h), done: pr.done, total: pr.total }) : tr('Also started: {path} · <b>Resume</b>', resume, { path: pathTitle(h) })}</T>
+                    </Tap>
+                  )
+                })}
               </View>
             ) : null}
           </Enter>
@@ -148,7 +154,7 @@ export default function PathsScreen() {
 
       <StartPathSheet id={startId} open={startId !== null} onClose={() => setStartId(null)} active={state} resumes={startId ? resumes(startId) : false} onStart={(id, opts) => path.start(id, opts)} />
       <CustomPathSheet open={custom} onClose={() => setCustom(false)} initial={state?.id === 'custom' ? state.custom : null} onStart={cu => state?.id === 'custom' ? path.setCustom(cu) : path.start('custom', { custom: cu })} />
-      <Sheet open={dateOpen} onClose={() => setDateOpen(false)} title="Finish by">
+      <Sheet open={dateOpen} onClose={() => setDateOpen(false)} title={t('Finish by')}>
         <View style={{ paddingHorizontal: SPACE.l, paddingBottom: SPACE.s }}>
           {dateOpen ? <MonthPicker value={state?.target_date ?? null} onPick={d => { setDateOpen(false); void path.setTargetDate(d) }} /> : null}
         </View>

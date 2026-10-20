@@ -22,6 +22,7 @@ import { dropRecent, loadRecent, pushRecent, saveRecent } from '../../src/lib/re
 import { inScopeRanges, splitScope } from '@shared/bookGroups'
 import { tourRef } from '../../src/store/tour'
 import WordSheet, { type WordTarget } from '../../src/components/WordSheet'
+import { t, tn } from '@shared/i18n'
 
 type Scope = 'all' | 'OT' | 'NT'
 const MAX_OFFLINE_HITS = 200
@@ -159,7 +160,7 @@ export default function Search() {
   const listY = useMemo(() => listOut.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }), [listOut])
   const list = useMemo(() => res && res.hits.length > 0 && (
     <Animated.View key={res.gen} style={{ gap: 10, opacity: listOut, transform: [{ translateY: listY }] }}>
-      {res.book ? <Card style={{ paddingVertical: 6 }}><ListRow icon="book" label={BOOKS[res.book - 1].name} detail="Open the book" onPress={() => openRef(res.book!, 1)} /></Card> : null}
+      {res.book ? <Card style={{ paddingVertical: 6 }}><ListRow icon="book" label={BOOKS[res.book - 1].name} detail={t('Open the book')} onPress={() => openRef(res.book!, 1)} /></Card> : null}
       {res.hits.map((h, i) => {
         const card = (
           <Tap onPress={() => openRef(h.book, h.chapter, h.verse)} scaleTo={0.98} accessibilityRole="link">
@@ -171,7 +172,7 @@ export default function Search() {
         )
         const key = `${h.book}.${h.chapter}.${h.verse}`
         // one word looked up: the verses with the word itself come first, then the longer words it begins
-        const body = res.exact > 0 && i === res.exact ? <View style={{ gap: 10 }}><T small muted style={{ paddingTop: 8, paddingHorizontal: 4 }}>Longer words beginning “{res.query}”</T>{card}</View> : card
+        const body = res.exact > 0 && i === res.exact ? <View style={{ gap: 10 }}><T small muted style={{ paddingTop: 8, paddingHorizontal: 4 }}>{t('Longer words beginning “{query}”', { query: res.query })}</T>{card}</View> : card
         return res.first ? <Stagger key={key} index={i}>{body}</Stagger> : <View key={key}>{body}</View>
       })}
     </Animated.View>
@@ -179,33 +180,37 @@ export default function Search() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ), [res, listOut, listY, c, router])
   // a quick search keeps the last status line until its own result replaces it
-  const status = busy && slow ? 'Searching…'
-    : res ? (res.total === 0 ? `No verses match “${res.query}”${res.offline ? ' in the stored chapters' : ''}` : `${res.total.toLocaleString()} verse${res.total === 1 ? '' : 's'} · ${res.took} ms${res.offline ? ' · offline: stored chapters only' : ''}`)
+  const status = busy && slow ? t('Searching…')
+    : res ? (res.total === 0
+      ? (res.offline ? t('No verses match “{query}” in the stored chapters', { query: res.query }) : t('No verses match “{query}”', { query: res.query }))
+      : res.offline
+        ? tn(res.total, '{n} verse · {ms} ms · offline: stored chapters only', '{n} verses · {ms} ms · offline: stored chapters only', { n: res.total.toLocaleString(), ms: res.took })
+        : tn(res.total, '{n} verse · {ms} ms', '{n} verses · {ms} ms', { n: res.total.toLocaleString(), ms: res.took }))
     : ''
   return (
     <Screen safeTop>
-      <H>Search</H>
+      <H>{t('Search')}</H>
       <Row ref={tourRef('search-field')}>
         <View style={{ flex: 1 }}>
-          <FocusInput inputRef={field} placeholder="jn 3:16, words, or G1320" value={q} onChangeText={onChange} onSubmitEditing={() => run()} returnKeyType="search" autoCapitalize="none" autoCorrect={false} style={{ paddingRight: q ? 44 : 14 }} />
+          <FocusInput inputRef={field} placeholder={t('jn 3:16, words, or G1320')} value={q} onChangeText={onChange} onSubmitEditing={() => run()} returnKeyType="search" autoCapitalize="none" autoCorrect={false} style={{ paddingRight: q ? 44 : 14 }} />
           {q ? (
-            <Tap onPress={clearField} hitSlop={8} scaleTo={0.86} accessibilityRole="button" accessibilityLabel="Clear the search" style={{ position: 'absolute', right: 6, top: 0, bottom: 0, width: 36, alignItems: 'center', justifyContent: 'center' }}>
+            <Tap onPress={clearField} hitSlop={8} scaleTo={0.86} accessibilityRole="button" accessibilityLabel={t('Clear the search')} style={{ position: 'absolute', right: 6, top: 0, bottom: 0, width: 36, alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="x" size={18} color={c.muted} />
             </Tap>
           ) : null}
         </View>
-        <Button primary title="Go" onPress={() => run()} disabled={busy} />
+        <Button primary title={t('Go')} onPress={() => run()} disabled={busy} />
       </Row>
-      <View ref={tourRef('search-scope')}><Segmented value={scope} onChange={setScope} options={[{ value: 'all', label: 'All' }, { value: 'OT', label: 'Old Testament' }, { value: 'NT', label: 'New Testament' }]} /></View>
+      <View ref={tourRef('search-scope')}><Segmented value={scope} onChange={setScope} options={[{ value: 'all', label: t('All') }, { value: 'OT', label: t('Old Testament') }, { value: 'NT', label: t('New Testament') }]} /></View>
       {res?.order && res.hits.length > 0 ? (
-        <Enter rise={4}><Segmented value={res.order} onChange={pickOrder} options={[{ value: 'bible', label: 'Bible order' }, { value: 'match', label: 'Best match' }]} /></Enter>
+        <Enter rise={4}><Segmented value={res.order} onChange={pickOrder} options={[{ value: 'bible', label: t('Bible order') }, { value: 'match', label: t('Best match') }]} /></Enter>
       ) : null}
       {!q.trim() && !res && !busy ? <RecentSearches items={recent} onPick={x => { setQ(x); run(x) }} onRemove={forget} /> : null}
       {err ? <ErrorText>{err}</ErrorText> : null}
-      {suggest ? <Row><T small muted>Did you mean</T><Button small title={suggest} onPress={() => { setSuggest(null); setQ(suggest); run(suggest) }} /></Row> : null}
+      {suggest ? <Row><T small muted>{t('Did you mean')}</T><Button small title={suggest} onPress={() => { setSuggest(null); setQ(suggest); run(suggest) }} /></Row> : null}
       <FadeSwap k={status}>{status ? <T small muted>{status}</T> : null}</FadeSwap>
       {res?.within ? (
-        <Row><Chip label={`In ${res.within.label.replace(/^The /, 'the ')}  ✕`} accessibilityLabel={`Searching ${res.within.label} only. Search every book`} on onPress={() => { const words = res.within!.words; setQ(words); run(words) }} /></Row>
+        <Row><Chip label={t('In {books}  ✕', { books: res.within.label.replace(/^The /, 'the ') })} accessibilityLabel={t('Searching {books} only. Search every book', { books: res.within.label })} on onPress={() => { const words = res.within!.words; setQ(words); run(words) }} /></Row>
       ) : null}
       {res && !busy ? <BookGroupCard query={res.asked} /> : null}
       {res && !busy ? <SubjectLinks query={res.query} /> : null}

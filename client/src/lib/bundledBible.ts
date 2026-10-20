@@ -5,18 +5,26 @@
  * all, once, when it builds its index. bundledBible.web.ts returns null: the web fetches the same files instead.
  *
  * The 1890 edition (docs/EDITION.md) rides along as what differs: client/public/bible1890/notes/<book>.json holds each
- * chapter's notes (or, where its text differs, the whole chapter), laid over the 1961 chapter on first read.
+ * chapter's notes (or, where its text differs, the whole chapter), laid over the 1961 chapter on first read. The French
+ * and German Bibles ride along whole (client/public/bible-<lang>/, docs/LANGUAGES.md).
  */
 import type { ChapterData } from './bible'
-import { applyOverlay, peekEdition, type Edition, type OverlayEntry } from './editionCore'
+import { applyOverlay, type OverlayEntry, type Source } from './editionCore'
+import { peekSource } from './text'
 
 const files = require.context('../../public/bible', true, /^\.\/\d+\/\d+\.json$/)
 const overlays = require.context('../../public/bible1890/notes', false, /^\.\/\d+\.json$/)
+/** The French and German Bibles (docs/LANGUAGES.md), whole, in the same shape. */
+const own = {
+  fr: require.context('../../public/bible-fr', true, /^\.\/\d+\/\d+\.json$/),
+  de: require.context('../../public/bible-de', true, /^\.\/\d+\/\d+\.json$/),
+}
 const file = (book: number, chapter: number) => `./${book}/${chapter}.json`
 /** Each 1890 chapter made once, so a verse keeps one object (bible.ts caches its tokens by object). */
 const made = new Map<string, ChapterData>()
 
-export function bundledChapter(book: number, chapter: number, e: Edition = peekEdition()): ChapterData | null {
+export function bundledChapter(book: number, chapter: number, e: Source = peekSource()): ChapterData | null {
+  if (e === 'fr' || e === 'de') { try { return own[e](file(book, chapter)) as ChapterData } catch { return null } }
   let base: ChapterData & { ed?: string }
   try { base = files(file(book, chapter)) as ChapterData } catch { return null }
   // a neutered build (docs/EDITION.md, "Production build") bundles the 1890 chapters themselves: nothing to lay over
@@ -33,7 +41,7 @@ export function bundledChapter(book: number, chapter: number, e: Edition = peekE
 }
 /** Every bundled chapter as "book.chapter", without reading any of them. */
 export const bundledKeys = (): string[] => files.keys().map(k => k.slice(2, -5).replace('/', '.'))
-export function bundledChapters(e: Edition = peekEdition()): Map<string, ChapterData> {
+export function bundledChapters(e: Source = peekSource()): Map<string, ChapterData> {
   const out = new Map<string, ChapterData>()
   for (const k of files.keys()) {
     const m = /^\.\/(\d+)\/(\d+)\.json$/.exec(k)

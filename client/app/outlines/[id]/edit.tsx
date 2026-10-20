@@ -17,6 +17,7 @@ import OutlineVerseText from '../../../src/components/OutlineVerseText'
 import OutlinePrintSheet from '../../../src/components/OutlinePrintSheet'
 import { offerTourControls, tourRef } from '../../../src/store/tour'
 import { NOUN } from '@shared/brand'
+import { t, tc } from '@shared/i18n'
 
 type SaveState = 'saved' | 'dirty' | 'saving' | 'error'
 /** Gap between item cards; also the extra distance a swapped card travels. */
@@ -38,18 +39,18 @@ export default function OutlineEdit() {
 
   if (ready && !user && !local) return (
     <Screen>
-      <Stack.Screen options={{ title: `Edit ${NOUN.one}` }} />
-      <Card><T muted>Sign in to edit this {NOUN.one}.</T><Row><Button primary small title="Sign in" onPress={() => router.push('/login')} /><Button small title="View instead" onPress={() => router.replace({ pathname: '/outlines/[id]', params: { id: String(id) } })} /></Row></Card>
+      <Stack.Screen options={{ title: t('Edit {one}', { one: NOUN.one }) }} />
+      <Card><T muted>{t('Sign in to edit this {one}.', { one: NOUN.one })}</T><Row><Button primary small title={t('Sign in')} onPress={() => router.push('/login')} /><Button small title={t('View instead')} onPress={() => router.replace({ pathname: '/outlines/[id]', params: { id: String(id) } })} /></Row></Card>
     </Screen>
   )
-  if (load.kind === 'loading') return <Screen><Stack.Screen options={{ title: `Edit ${NOUN.one}` }} /><Spinner /></Screen>
+  if (load.kind === 'loading') return <Screen><Stack.Screen options={{ title: t('Edit {one}', { one: NOUN.one }) }} /><Spinner /></Screen>
   if (load.kind === 'error') return (
     <Screen>
-      <Stack.Screen options={{ title: `Edit ${NOUN.one}` }} />
-      <Card><ErrorText>{loadErrorText(load)}</ErrorText><Row><Button small title={`Back to ${NOUN.many}`} onPress={() => router.replace('/outlines')} /></Row></Card>
+      <Stack.Screen options={{ title: t('Edit {one}', { one: NOUN.one }) }} />
+      <Card><ErrorText>{loadErrorText(load)}</ErrorText><Row><Button small title={t('Back to {many}', { many: NOUN.many })} onPress={() => router.replace('/outlines')} /></Row></Card>
     </Screen>
   )
-  if (!mine) return <Screen><Stack.Screen options={{ title: `Edit ${NOUN.one}` }} /><Spinner /></Screen>
+  if (!mine) return <Screen><Stack.Screen options={{ title: t('Edit {one}', { one: NOUN.one }) }} /><Spinner /></Screen>
   return <Editor key={load.outline.id} initial={load.outline} />
 }
 
@@ -166,7 +167,7 @@ function Editor({ initial }: { initial: Outline }) {
   const link = shareUrl({ share_code: initial.share_code, visibility: meta.visibility })
   const copyLink = async () => { if (link && await copyText(link)) { setCopied(true); setTimeout(() => setCopied(false), 1500) } }
   const destroy = async () => {
-    if (!await confirmAsync(`Delete “${meta.title}”?`, 'This cannot be undone.')) return
+    if (!await confirmAsync(t('Delete “{title}”?', { title: meta.title }), t('This cannot be undone.'))) return
     latest.current.itemsDirty = false; latest.current.metaDirty = false
     if (timer.current) clearTimeout(timer.current)
     try { await deleteOutline(initial.id); router.replace('/outlines') } catch { setSave('error') }
@@ -177,41 +178,41 @@ function Editor({ initial }: { initial: Outline }) {
 
   return (
     <Screen animate={false}>
-      <Stack.Screen options={{ title: `Edit ${NOUN.one}` }} />
+      <Stack.Screen options={{ title: t('Edit {one}', { one: NOUN.one }) }} />
       <Enter style={{ gap: 12 }}>
         <Row>
           <SaveBadge state={save} retry={() => { void flush() }} />
           <View style={{ flex: 1 }} />
-          <Button small title="View" onPress={() => router.push({ pathname: '/outlines/[id]', params: { id: String(initial.id) } })} />
-          <Button small title="Print / PDF" onPress={() => setPrintOpen(true)} />
+          <Button small title={tc('verb', 'View')} onPress={() => router.push({ pathname: '/outlines/[id]', params: { id: String(initial.id) } })} />
+          <Button small title={t('Print / PDF')} onPress={() => setPrintOpen(true)} />
         </Row>
 
         <Card>
-          <Input value={meta.title} maxLength={160} placeholder="Title" onChangeText={t => changeMeta({ title: t })} style={{ fontSize: 20, fontWeight: '600' }} />
-          <AutoGrowInput value={meta.description ?? ''} maxLength={4000} placeholder="Description (optional)" onChangeText={t => changeMeta({ description: t || null })} />
+          <Input value={meta.title} maxLength={160} placeholder={t('Title')} onChangeText={v => changeMeta({ title: v })} style={{ fontSize: 20, fontWeight: '600' }} />
+          <AutoGrowInput value={meta.description ?? ''} maxLength={4000} placeholder={t('Description (optional)')} onChangeText={v => changeMeta({ description: v || null })} />
           <View ref={tourRef('editor-visibility')} style={{ gap: 10 }}>
-          <H2>Visibility</H2>
+          <H2>{t('Visibility')}</H2>
           {onDevice
-            ? <T small muted>Kept on this device. Sign in to keep it with your account and share it by link.</T>
+            ? <T small muted>{t('Kept on this device. Sign in to keep it with your account and share it by link.')}</T>
             // one published before the public list was withdrawn is shared by its link, and shows so
             : <Segmented<Outline['visibility']> value={meta.visibility === 'public' ? 'link' : meta.visibility} options={[...VISIBILITIES]} onChange={v => changeMeta({ visibility: v })} />}
           {link ? (
             <Row style={{ flexWrap: 'nowrap' }}>
               <T small muted selectable numberOfLines={1} style={{ flex: 1 }}>{link}</T>
-              <Button small title={copied ? 'Copied' : 'Copy'} onPress={() => { void copyLink() }} />
+              <Button small title={copied ? t('Copied') : tc('verb', 'Copy')} onPress={() => { void copyLink() }} />
             </Row>
           ) : null}
           </View>
-          <H2>Print style</H2>
+          <H2>{t('Print style')}</H2>
           <Segmented<Outline['print_style']> value={meta.print_style} options={[...PRINT_STYLES]} onChange={v => changeMeta({ print_style: v })} />
           <Row style={{ justifyContent: 'flex-end', marginTop: 4 }}>
-            <Button small danger title={`Delete ${NOUN.one}`} onPress={() => { void destroy() }} />
+            <Button small danger title={t('Delete {one}', { one: NOUN.one })} onPress={() => { void destroy() }} />
           </Row>
         </Card>
       </Enter>
 
       {texts.error ? <ErrorText>{texts.error}</ErrorText> : null}
-      {items.length === 0 ? <T muted>Nothing here yet. Add a passage, a note, a link or a heading below.</T> : null}
+      {items.length === 0 ? <T muted>{t('Nothing here yet. Add a passage, a note, a link or a heading below.')}</T> : null}
       {items.length > 0 ? (
         <View ref={tourRef('editor-items')} style={{ gap: GAP }}>
           {items.map((it, idx) => (
@@ -233,10 +234,10 @@ function Editor({ initial }: { initial: Outline }) {
 
 function SaveBadge({ state, retry }: { state: SaveState; retry: () => void }) {
   switch (state) {
-    case 'saved': return <T small muted>Saved</T>
-    case 'dirty': return <T small muted>Unsaved…</T>
-    case 'saving': return <T small muted>Saving…</T>
-    case 'error': return <Button small danger title="Save failed. Retry" onPress={retry} />
+    case 'saved': return <T small muted>{t('Saved')}</T>
+    case 'dirty': return <T small muted>{t('Unsaved…')}</T>
+    case 'saving': return <T small muted>{t('Saving…')}</T>
+    case 'error': return <Button small danger title={t('Save failed. Retry')} onPress={retry} />
     default: { const _exhaustive: never = state; return _exhaustive }
   }
 }
@@ -258,7 +259,7 @@ interface RowProps {
   onMove: (dir: 1 | -1) => void; onIndent: (delta: 1 | -1) => void
 }
 
-const KIND_LABEL: Record<OutlineItemKind, string> = { verse: 'Passage', note: 'Note', link: 'Link', heading: 'Heading' }
+const KIND_LABEL: Record<OutlineItemKind, () => string> = { verse: () => t('Passage'), note: () => tc('noun', 'Note'), link: () => t('Link'), heading: () => t('Heading') }
 
 function ItemRow(p: RowProps) {
   const { item } = p
@@ -270,12 +271,12 @@ function ItemRow(p: RowProps) {
       <Card style={{ gap: 6 }}>
         <ItemBody item={item} verses={p.verses} loadingVerses={p.loadingVerses} onChange={p.onChange} autoFocus={p.autoFocus} />
         <View style={styles.controls}>
-          <T small muted style={{ flex: 1 }}>{KIND_LABEL[item.kind]}</T>
-          <Button small iconName="up" title="Move up" disabled={p.idx === 0} onPress={() => p.onMove(-1)} />
-          <Button small iconName="down" title="Move down" disabled={p.idx === p.count - 1} onPress={() => p.onMove(1)} />
-          <Button small iconName="outdent" title="Outdent" disabled={item.depth <= 0} onPress={() => p.onIndent(-1)} />
-          <Button small iconName="indent" title="Indent" disabled={item.depth >= MAX_DEPTH} onPress={() => p.onIndent(1)} />
-          <Button small iconName="x" danger title="Delete item" onPress={p.onRemove} />
+          <T small muted style={{ flex: 1 }}>{KIND_LABEL[item.kind]()}</T>
+          <Button small iconName="up" title={t('Move up')} disabled={p.idx === 0} onPress={() => p.onMove(-1)} />
+          <Button small iconName="down" title={t('Move down')} disabled={p.idx === p.count - 1} onPress={() => p.onMove(1)} />
+          <Button small iconName="outdent" title={t('Outdent')} disabled={item.depth <= 0} onPress={() => p.onIndent(-1)} />
+          <Button small iconName="indent" title={t('Indent')} disabled={item.depth >= MAX_DEPTH} onPress={() => p.onIndent(1)} />
+          <Button small iconName="x" danger title={t('Delete item')} onPress={p.onRemove} />
         </View>
       </Card>
     </Animated.View>
@@ -310,7 +311,7 @@ function ItemBody({ item, verses, loadingVerses, onChange, autoFocus }: Pick<Row
   switch (item.kind) {
     case 'verse': {
       const ref = itemRef(item)
-      if (!ref) return <ErrorText>Verse item without a reference</ErrorText>
+      if (!ref) return <ErrorText>{t('Verse item without a reference')}</ErrorText>
       return (
         <>
           <Pressable onPress={() => openRef(ref)} accessibilityRole="link" style={{ alignSelf: 'flex-start' }}>
@@ -324,7 +325,7 @@ function ItemBody({ item, verses, loadingVerses, onChange, autoFocus }: Pick<Row
       const refs = noteRefs(item.text ?? '')
       return (
         <>
-          <AutoGrowInput placeholder="Note… (references like John 3:16 are linked automatically)" value={item.text ?? ''} onChangeText={t => onChange({ text: t })} autoFocus={autoFocus} />
+          <AutoGrowInput placeholder={t('Note… (references like John 3:16 are linked automatically)')} value={item.text ?? ''} onChangeText={v => onChange({ text: v })} autoFocus={autoFocus} />
           {refs.length > 0 ? (
             <Row>
               {refs.map(r => (
@@ -341,11 +342,11 @@ function ItemBody({ item, verses, loadingVerses, onChange, autoFocus }: Pick<Row
       return (
         <>
           <Input placeholder="https://…" value={item.url ?? ''} onChangeText={t => onChange({ url: t || null })} autoCapitalize="none" autoCorrect={false} keyboardType="url" autoFocus={autoFocus} />
-          <Input placeholder="Label (optional)" value={item.text ?? ''} onChangeText={t => onChange({ text: t || null })} />
+          <Input placeholder={t('Label (optional)')} value={item.text ?? ''} onChangeText={v => onChange({ text: v || null })} />
         </>
       )
     case 'heading':
-      return <Input placeholder="Heading" value={item.text ?? ''} onChangeText={t => onChange({ text: t || null })} style={{ fontSize: 18, fontWeight: '700' }} autoFocus={autoFocus} />
+      return <Input placeholder={t('Heading')} value={item.text ?? ''} onChangeText={v => onChange({ text: v || null })} style={{ fontSize: 18, fontWeight: '700' }} autoFocus={autoFocus} />
     default: { const _exhaustive: never = item.kind; return _exhaustive }
   }
 }
@@ -370,12 +371,12 @@ function AddBar({ onAdd }: { onAdd: (partial: Pick<OutlineItem, 'kind'> & Partia
   useEffect(() => {
     if (!parsed || !key) { setPreview(null); setPreviewErr(''); return }
     let live = true
-    const t = setTimeout(() => {
+    const wait = setTimeout(() => {
       fetchVerseRows(parsed)
         .then(rows => { if (live) { setPreview({ key, rows }); setPreviewErr('') } })
-        .catch((e: unknown) => { if (live) setPreviewErr(e instanceof Error ? e.message : 'Could not load preview') })
+        .catch((e: unknown) => { if (live) setPreviewErr(e instanceof Error ? e.message : t('Could not load preview')) })
     }, 200)
-    return () => { live = false; clearTimeout(t) }
+    return () => { live = false; clearTimeout(wait) }
     // parsed is derived from key
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
@@ -390,11 +391,11 @@ function AddBar({ onAdd }: { onAdd: (partial: Pick<OutlineItem, 'kind'> & Partia
   return (
     <Card ref={el => { tourRef('editor-add')(el); card.current = el }}>
       <Row style={{ flexWrap: 'nowrap' }}>
-        <Input placeholder="Add a passage, e.g. jn 3:16-18 or ps 23" value={text} onChangeText={setText} onSubmitEditing={submit} returnKeyType="done" submitBehavior="submit"
+        <Input placeholder={t('Add a passage, e.g. jn 3:16-18 or ps 23')} value={text} onChangeText={setText} onSubmitEditing={submit} returnKeyType="done" submitBehavior="submit"
           autoCorrect={false} autoCapitalize="none" style={{ flex: 1, minWidth: 0 }} />
-        <Button primary title="Add" disabled={!parsed} onPress={submit} />
+        <Button primary title={t('Add')} disabled={!parsed} onPress={submit} />
       </Row>
-      {text.trim() && !parsed && settled === text ? <Enter rise={4}><T small muted>Not a reference yet: try “Rom 8:28” or “1 cor 13:4-7”</T></Enter> : null}
+      {text.trim() && !parsed && settled === text ? <Enter rise={4}><T small muted>{t('Not a reference yet: try “Rom 8:28” or “1 cor 13:4-7”')}</T></Enter> : null}
       {parsed ? (
         <Enter rise={4} style={[styles.preview, { borderColor: c.border, backgroundColor: c.bg }]} onLayout={reveal}>
           <T small style={{ color: c.accent, fontWeight: '700' }}>{formatRef(parsed)}</T>
@@ -402,9 +403,9 @@ function AddBar({ onAdd }: { onAdd: (partial: Pick<OutlineItem, 'kind'> & Partia
         </Enter>
       ) : null}
       <Row>
-        <Button small title="+ Note" onPress={() => addKind('note')} />
-        <Button small title="+ Link" onPress={() => addKind('link')} />
-        <Button small title="+ Heading" onPress={() => addKind('heading')} />
+        <Button small title={t('+ Note')} onPress={() => addKind('note')} />
+        <Button small title={t('+ Link')} onPress={() => addKind('link')} />
+        <Button small title={t('+ Heading')} onPress={() => addKind('heading')} />
       </Row>
     </Card>
   )

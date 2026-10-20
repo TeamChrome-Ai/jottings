@@ -14,6 +14,7 @@ import { mix } from '../../src/theme'
 import { tourRef } from '../../src/store/tour'
 import type { TargetId } from '../../src/lib/tour'
 import { CONTROL_SPRING, POP_SPRING } from '../../src/lib/motion'
+import { t, tc } from '@shared/i18n'
 
 const GLOW = 30
 
@@ -220,11 +221,11 @@ export default function TabsLayout() {
         ? { duration: 1, easing: Easing.linear, fixedSpeed: true }
         : { duration: TAB_FADE_MS, easing: Easing.out(Easing.cubic), tempo: SLOW_TEMPO } } as never,
     }}>
-      <Tabs.Screen name="index" options={tab('Home', f => icon('home', f, 'tab-home'))} />
-      <Tabs.Screen name="read" options={tab('Read', f => icon('book', f, 'tab-read'))} />
-      <Tabs.Screen name="search" options={tab('Search', f => icon('search', f, 'tab-search'))} />
-      <Tabs.Screen name="stats" options={tab('Stats', statsIcon)} />
-      <Tabs.Screen name="settings" options={tab('Settings', f => icon('sliders', f, 'tab-settings'))} />
+      <Tabs.Screen name="index" options={tab(t('Home'), f => icon('home', f, 'tab-home'))} />
+      <Tabs.Screen name="read" options={tab(tc('verb', 'Read'), f => icon('book', f, 'tab-read'))} />
+      <Tabs.Screen name="search" options={tab(t('Search'), f => icon('search', f, 'tab-search'))} />
+      <Tabs.Screen name="stats" options={tab(t('Stats'), statsIcon)} />
+      <Tabs.Screen name="settings" options={tab(t('Settings'), f => icon('sliders', f, 'tab-settings'))} />
     </Tabs>
   )
 }

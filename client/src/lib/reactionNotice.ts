@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Notifications from 'expo-notifications'
 import { Platform } from 'react-native'
 import { REACTION_WORDS } from '@shared/friends'
+import { N_, t, tn } from '@shared/i18n'
 import { loadReactions } from './friends'
 import { reminderAllowed } from './streakReminder'
 
@@ -11,7 +12,7 @@ import { reminderAllowed } from './streakReminder'
  * heads-up). Never a push: nothing reaches the phone while the app is closed. Native only; the web module is inert.
  */
 export const REACTIONS_ROUTE = '/stats'
-const CHANNEL = { id: 'friends-reactions', name: 'Reactions from friends', description: 'A quiet note when a friend leaves a heart on a badge or your friend streak.' }
+const CHANNEL = { id: 'friends-reactions', name: N_('Reactions from friends'), description: N_('A quiet note when a friend leaves a heart on a badge or your friend streak.') }
 const DONE_KEY = 'berean_reactions_notified'
 
 let known = 0
@@ -26,12 +27,12 @@ export async function noteUnseenReactions(unseen: number) {
     try { done = JSON.parse((await AsyncStorage.getItem(DONE_KEY)) ?? '[]') as number[] } catch { /* none */ }
     const fresh = reactions.filter(r => !r.seen && !done.includes(r.id))
     if (!fresh.length) return
-    if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync(CHANNEL.id, { name: CHANNEL.name, description: CHANNEL.description, importance: Notifications.AndroidImportance.LOW })
+    if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync(CHANNEL.id, { name: t(CHANNEL.name), description: t(CHANNEL.description), importance: Notifications.AndroidImportance.LOW })
     const first = fresh[0]
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: fresh.length === 1 ? `${first.from.display_name} sent a ${REACTION_WORDS[first.kind].one}` : `${fresh.length} reactions from friends`,
-        body: 'See them on your badges in Stats',
+        title: fresh.length === 1 ? REACTION_WORDS[first.kind].sent(first.from.display_name) : tn(fresh.length, '{n} reaction from friends', '{n} reactions from friends'),
+        body: t('See them on your badges in Stats'),
         data: { url: REACTIONS_ROUTE },
       },
       trigger: Platform.OS === 'android' ? { channelId: CHANNEL.id } : null,

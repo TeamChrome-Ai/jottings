@@ -10,7 +10,7 @@ import { TOTAL_CHAPTERS, onOfflineChange, type ChapterData } from './bible'
 import { bundledChapters, hasBundledBible } from './bundledBible'
 import { listChapterFiles, readAllChapterFiles } from './chapterStore'
 import { loadIndexBytes, saveIndexBytes } from './searchIndexStore'
-import { onEditionChange, peekEdition } from './editionCore'
+import { onSourceChange, peekSource } from './text'
 
 /** Build work per turn of the event loop: short while nobody waits, long once a query waits on the index. */
 const IDLE_BUDGET_MS = 12
@@ -22,12 +22,13 @@ let waiting = false
 let complete: boolean | null = hasBundledBible ? true : null
 let index: Promise<SearchIndex | null> | null = null
 onOfflineChange(() => { if (!hasBundledBible) complete = null })
-// the index is of the edition's text (the same text unless the 1890 edition has its own; storeKey tells them apart)
-onEditionChange(() => { complete = hasBundledBible ? true : null; index = null })
+// the index is of the text shown: the edition's (the same text unless the 1890 edition has its own), or another
+// language's Bible; storeKey tells them apart
+onSourceChange(() => { complete = hasBundledBible ? true : null; index = null })
 
 async function haveWholeText(): Promise<boolean> {
   if (complete === null) {
-    complete = (await listChapterFiles(peekEdition())).length >= TOTAL_CHAPTERS
+    complete = (await listChapterFiles(peekSource())).length >= TOTAL_CHAPTERS
     if (!complete) index = null
   }
   return complete
@@ -35,7 +36,7 @@ async function haveWholeText(): Promise<boolean> {
 
 async function loadRows(): Promise<VerseRow[] | null> {
   let chapters: ChapterData[]
-  const e = peekEdition()
+  const e = peekSource()
   if (hasBundledBible) chapters = [...bundledChapters(e).values()]
   else {
     chapters = []
@@ -55,7 +56,7 @@ function storeKey(rows: VerseRow[]): string {
   let chars = 0
   for (const r of rows) chars += r.text.length
   const c = Constants.expoConfig
-  return `${c?.version ?? '0'}-${c?.android?.versionCode ?? c?.ios?.buildNumber ?? '0'}-${rows.length}-${chars}`.replace(/[^\w.-]/g, '_')
+  return `${c?.version ?? '0'}-${c?.android?.versionCode ?? c?.ios?.buildNumber ?? '0'}-${peekSource()}-${rows.length}-${chars}`.replace(/[^\w.-]/g, '_')
 }
 
 async function build(): Promise<SearchIndex | null> {

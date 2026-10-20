@@ -1,9 +1,14 @@
 import type { Ref } from './ref.js'
 
-export interface Verse { v: number; t: string; h?: string; p?: 1; s?: 1; hd?: string; notes?: Note[] }
+/** `nv`, `nc`: in a Bible other than the English (docs/LANGUAGES.md), the verse's own printed number and chapter where they
+ *  are not the English slot's; `nvTo` (and `ncTo`, its chapter when another) the last of its own verses joined into this
+ *  slot; `m`: its words are in a neighbouring slot (shown with that one, nothing here). */
+export interface Verse { v: number; t: string; h?: string; p?: 1; s?: 1; hd?: string; notes?: Note[]; nv?: number; nc?: number; nvTo?: number; ncTo?: number; m?: 1 }
 export interface Note { id: number; marker: string; text: string; pos?: number }
 /** `ed`: a chapter of the 1890 edition says so (docs/EDITION.md); a 1961 chapter carries none. */
-export interface Chapter { c: number; title?: string; division?: 1; verses: Verse[]; ed?: '1890' }
+/** `tx`: a chapter of the French or German Bible says so, and `nc` is its own printed chapter where its first verse's
+ *  is not the English one's (docs/LANGUAGES.md). */
+export interface Chapter { c: number; title?: string; division?: 1; verses: Verse[]; ed?: '1890'; tx?: 'fr' | 'de'; nc?: number }
 export interface BookData { n: number; name: string; abbr: string; osis: string; testament: 'OT' | 'NT'; chapters: Chapter[] }
 
 export interface SearchHit { book: number; chapter: number; verse: number; text: string; snippet: string; rank: number }

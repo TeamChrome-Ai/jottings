@@ -9,7 +9,9 @@ import type { Chapter, Verse } from '@shared/types'
 import { fetchWithTimeout, getApiBase, loadApiBase } from './api'
 import { listChapterFiles, readChapterFile, removeAllChapterFiles, writeChapterFile } from './chapterStore'
 import { bundledChapter, bundledKeys, hasBundledBible } from './bundledBible'
-import { archivePath, chapterEdition, chapterPath, chapterStoreKey, onEditionChange, peekEdition, type Edition, type Meta1890 } from './editionCore'
+import { archivePath, chapterEdition, chapterPath, chapterStoreKey, type Meta1890, type Source } from './editionCore'
+import { onSourceChange, peekSource, TEXT_VERSION } from './text'
+import { WORD_RE_EN, WORD_RE_INTL } from '@shared/texts'
 import meta1890 from '../../public/bible1890/meta.json'
 
 /** The 1890 data's version (client/public/bible1890/meta.json): in its URLs, and a change sweeps its stored chapters. */
@@ -24,7 +26,9 @@ const listeners = new Set<() => void>()
 export const onOfflineChange = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } }
 const notify = () => listeners.forEach(l => l())
 
-export const chapterUrl = (b: number, c: number, e: Edition = peekEdition()) => `${getApiBase()}${chapterPath(e, b, c, V1890)}`
+/** The version in a source's URLs: the 1890 data's or a language's (a new one is a new address no cache holds). */
+const versionOf = (e: Source): string => (e === 'fr' || e === 'de' ? TEXT_VERSION[e] : V1890)
+export const chapterUrl = (b: number, c: number, e: Source = peekSource()) => `${getApiBase()}${chapterPath(e, b, c, versionOf(e))}`
 export const key = (b: number, c: number) => `${b}.${c}`
 
 /**
@@ -45,17 +49,21 @@ function ensureDataVersion(): Promise<void> {
       const have = await AsyncStorage.getItem(DATA_VERSION_KEY)
       if (have !== String(BIBLE_DATA_VERSION)) { await removeAllChapterFiles(); await AsyncStorage.setItem(DATA_VERSION_KEY, String(BIBLE_DATA_VERSION)) }
       if (await AsyncStorage.getItem(DATA_VERSION_1890_KEY) !== V1890) { await removeAllChapterFiles('1890'); await AsyncStorage.setItem(DATA_VERSION_1890_KEY, V1890) }
+      for (const l of ['fr', 'de'] as const) {
+        const k = `berean_bible_${l}_version`
+        if (await AsyncStorage.getItem(k) !== TEXT_VERSION[l]) { await removeAllChapterFiles(l); await AsyncStorage.setItem(k, TEXT_VERSION[l]) }
+      }
     } catch { /* storage unavailable: nothing to sweep */ }
   })()
   return swept
 }
 
-// another edition: nothing held for the last one is shown again
-onEditionChange(() => { mem.clear(); ready.clear(); notify() })
+// another edition or Bible: nothing held for the last one is shown again
+onSourceChange(() => { mem.clear(); ready.clear(); notify() })
 
-/** The chapter in the edition shown: the device's copy, else the app's own (native), else the server's (then kept). */
-export function fetchChapter(book: number, chapter: number): Promise<ChapterData> {
-  const e = peekEdition()
+/** The chapter of the Bible shown (or of `e`, the second one side by side): the device's copy, else the app's own
+ *  (native), else the server's (then kept). */
+export function fetchChapter(book: number, chapter: number, e: Source = peekSource()): Promise<ChapterData> {
   const k = chapterStoreKey(e, book, chapter)
   let p = mem.get(k)
   if (!p) {
@@ -77,6 +85,7 @@ export function fetchChapter(book: number, chapter: number): Promise<ChapterData
         notify()
       }
       c.book = book
+      adopt(c)
       if (chapterEdition(c) === e) ready.set(k, c)
       else mem.delete(k)
       return c
@@ -87,17 +96,17 @@ export function fetchChapter(book: number, chapter: number): Promise<ChapterData
   return p
 }
 /** Synchronous when the chapter is already in memory (page turns). */
-export const peekChapter = (book: number, chapter: number) => ready.get(chapterStoreKey(peekEdition(), book, chapter))
-export function warmChapter(book: number, chapter: number) { fetchChapter(book, chapter).catch(() => {}) }
+export const peekChapter = (book: number, chapter: number, e: Source = peekSource()) => ready.get(chapterStoreKey(e, book, chapter))
+export function warmChapter(book: number, chapter: number, e: Source = peekSource()) { fetchChapter(book, chapter, e).catch(() => {}) }
 /** Local copy only; null when the chapter has not been stored (offline search). */
-export async function readLocalChapter(book: number, chapter: number): Promise<ChapterData | null> {
-  const e = peekEdition()
+export async function readLocalChapter(book: number, chapter: number, e: Source = peekSource()): Promise<ChapterData | null> {
   const hit = ready.get(chapterStoreKey(e, book, chapter))
   if (hit) return hit
   await ensureDataVersion()
   const local = await readChapterFile(book, chapter, e)
-  if (!local) return bundledChapter(book, chapter, e)
-  try { const c = JSON.parse(local) as ChapterData; c.book = book; return chapterEdition(c) === e ? c : bundledChapter(book, chapter, e) } catch { return bundledChapter(book, chapter, e) }
+  const bundled = () => adopt(bundledChapter(book, chapter, e))
+  if (!local) return bundled()
+  try { const c = JSON.parse(local) as ChapterData; c.book = book; return chapterEdition(c) === e ? adopt(c) : bundled() } catch { return bundled() }
 }
 
 export const book = (n: number): BookMeta => BOOKS[n - 1]
@@ -131,7 +140,12 @@ export const validRef = (b: number, c: number) => b >= 1 && b <= 66 && c >= 1 &&
 export const verseId = (b: number, c: number, v: number) => b * 1_000_000 + c * 1000 + v
 
 export interface Token { tok: string; wi: number; word: boolean; italic: boolean }
-const WORD_RE = /([A-Za-z0-9'’]+)|([^A-Za-z0-9'’]+)/g
+/** Verses of a Bible other than the English: they count words in every alphabet (@shared/texts WORD_RE_INTL). */
+const intl = new WeakSet<object>()
+function adopt<C extends ChapterData | null>(c: C): C {
+  if (c && c.tx) for (const v of c.verses) intl.add(v)
+  return c
+}
 const ENT: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&apos;': "'", '&nbsp;': ' ' }
 const unescape = (s: string) => s.replace(/&[a-z#0-9]+;/g, m => ENT[m] ?? m)
 
@@ -149,7 +163,7 @@ export function tokenize(v: Pick<Verse, 't' | 'h'>): readonly Token[] {
   const out: Token[] = []
   let wi = 0
   const push = (text: string, italic: boolean) => {
-    for (const m of text.matchAll(WORD_RE)) {
+    for (const m of text.matchAll(intl.has(v) ? WORD_RE_INTL : WORD_RE_EN)) {
       if (m[1]) out.push({ tok: m[1], wi: wi++, word: true, italic })
       else out.push({ tok: m[2], wi: -1, word: false, italic })
     }
@@ -170,22 +184,23 @@ export function tokenize(v: Pick<Verse, 't' | 'h'>): readonly Token[] {
 // ---------- offline bundle management ----------
 export async function offlineStatus(): Promise<{ have: number; total: number }> {
   if (hasBundledBible) return { have: TOTAL_CHAPTERS, total: TOTAL_CHAPTERS }
-  const files = await listChapterFiles(peekEdition())
+  const files = await listChapterFiles(peekSource())
   return { have: files.length, total: TOTAL_CHAPTERS }
 }
 export async function offlineKeys(): Promise<string[]> {
   if (hasBundledBible) return bundledKeys()
-  return listChapterFiles(peekEdition())
+  return listChapterFiles(peekSource())
 }
 /** True when every chapter ships inside the app (native builds); the web build downloads on demand. */
 export const bibleIsBundled = hasBundledBible
 
 /** One archive request, unpacked into per-chapter files so the reader and offline search share them. */
 export async function downloadAll(onProgress?: (done: number, total: number) => void): Promise<void> {
-  const r = await fetch(`${getApiBase()}${archivePath(peekEdition(), V1890)}`)
+  const src = peekSource()
+  const r = await fetch(`${getApiBase()}${archivePath(src, versionOf(src))}`)
   if (!r.ok) throw new Error(`archive: ${r.status}`)
   const { chapters, ed } = await r.json() as { v: number; ed?: string; chapters: ChapterData[] }
-  const e = chapterEdition({ ed })
+  const e = chapters[0]?.tx ?? chapterEdition({ ed })
   let done = 0
   for (const ch of chapters) {
     await writeChapterFile(ch.book, ch.c, JSON.stringify(ch), e)

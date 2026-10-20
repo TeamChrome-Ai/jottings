@@ -6,6 +6,8 @@ import { usePlayer } from '../store/player'
 import { usePrefs } from '../store/prefs'
 import { tourRef } from '../store/tour'
 import { Button, Segmented, Sheet, SwitchRow, T } from './ui'
+import { t, tc } from '@shared/i18n'
+import { peekShownText } from '@shared/texts'
 
 /** How read aloud sounds, in one sheet: opened from the player bar and from Settings → Listening. */
 export default function ListeningSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -13,31 +15,32 @@ export default function ListeningSheet({ open, onClose }: { open: boolean; onClo
   const preview = usePreview(open, prefs.ttsVoice)
   const name = VOICES.find(v => v.id === prefs.ttsVoice)?.name ?? prefs.ttsVoice
   return (
-    <Sheet open={open} onClose={onClose} title="Listening">
+    <Sheet open={open} onClose={onClose} title={t('Listening')}>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
         <View ref={tourRef('listening-sheet')} style={{ gap: 14 }}>
-          <T small muted>Voice</T>
+          <T small muted>{t('Voice')}</T>
           <Segmented value={prefs.ttsVoice} onChange={ttsVoice => set({ ttsVoice })} options={VOICES.map(v => ({ value: v.id, label: v.name }))} />
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <T small muted style={{ flexShrink: 1 }}>{VOICES.find(v => v.id === prefs.ttsVoice)?.blurb}</T>
-            <Button small lead={preview.playing ? 'pause' : 'play'} title={preview.playing ? 'Stop' : `Hear ${name}`} accessibilityLabel={preview.playing ? `Stop the sample of ${name}` : `Hear a sample of ${name}, Psalm 23`} onPress={preview.toggle} />
+            <T small muted style={{ flexShrink: 1 }}>{t(VOICES.find(v => v.id === prefs.ttsVoice)?.blurb ?? '')}</T>
+            <Button small lead={preview.playing ? 'pause' : 'play'} title={preview.playing ? tc('verb', 'Stop') : t('Hear {voice}', { voice: name })} accessibilityLabel={preview.playing ? t('Stop the sample of {voice}', { voice: name }) : t('Hear a sample of {voice}, Psalm 23', { voice: name })} onPress={preview.toggle} />
           </View>
-          <T small muted>AI voices, powered by Speechify</T>
-          <T small muted>Speed</T>
+          <T small muted>{t('AI voices, powered by Speechify')}</T>
+          {peekShownText() !== 'en' ? <T small>{t('These voices read the English Darby. The Bible you read is read by your device’s own voice, in its language.')}</T> : null}
+          <T small muted>{t('Speed')}</T>
           <Segmented value={String(prefs.ttsSpeed)} onChange={s => set({ ttsSpeed: Number(s) })} options={SPEEDS.map(s => ({ value: String(s), label: `${s}×` }))} />
-          <T small muted>Pause between verses</T>
-          <Segmented<Pause> value={prefs.ttsPause} onChange={ttsPause => set({ ttsPause })} options={[{ value: 'none', label: 'None' }, { value: 'short', label: 'Short' }, { value: 'long', label: 'Long' }]} />
+          <T small muted>{t('Pause between verses')}</T>
+          <Segmented<Pause> value={prefs.ttsPause} onChange={ttsPause => set({ ttsPause })} options={[{ value: 'none', label: tc('pause', 'None') }, { value: 'short', label: tc('pause', 'Short') }, { value: 'long', label: tc('pause', 'Long') }]} />
         </View>
         <View>
-          <SwitchRow label="Say verse numbers" value={prefs.ttsNumbers} onChange={ttsNumbers => set({ ttsNumbers })} />
-          <SwitchRow label="Say the book and chapter" value={prefs.ttsHeading} onChange={ttsHeading => set({ ttsHeading })} />
-          <SwitchRow label="Highlight each word" value={prefs.ttsWord} onChange={ttsWord => set({ ttsWord })} />
-          <SwitchRow label="Continue into the next chapter" hint="Follows your path while one is on" value={prefs.ttsAutoNext} onChange={ttsAutoNext => set({ ttsAutoNext })} />
-          <SwitchRow label="Stop after the selected verse" value={prefs.ttsStopAtSelection} onChange={ttsStopAtSelection => set({ ttsStopAtSelection })} />
-          <SwitchRow label="Use the device voice" hint="Reads offline; no word timings" value={prefs.ttsDevice} onChange={ttsDevice => set({ ttsDevice })} />
+          <SwitchRow label={t('Say verse numbers')} value={prefs.ttsNumbers} onChange={ttsNumbers => set({ ttsNumbers })} />
+          <SwitchRow label={t('Say the book and chapter')} value={prefs.ttsHeading} onChange={ttsHeading => set({ ttsHeading })} />
+          <SwitchRow label={t('Highlight each word')} value={prefs.ttsWord} onChange={ttsWord => set({ ttsWord })} />
+          <SwitchRow label={t('Continue into the next chapter')} hint={t('Follows your path while one is on')} value={prefs.ttsAutoNext} onChange={ttsAutoNext => set({ ttsAutoNext })} />
+          <SwitchRow label={t('Stop after the selected verse')} value={prefs.ttsStopAtSelection} onChange={ttsStopAtSelection => set({ ttsStopAtSelection })} />
+          <SwitchRow label={t('Use the device voice')} hint={t('Reads offline; no word timings')} value={prefs.ttsDevice} onChange={ttsDevice => set({ ttsDevice })} />
         </View>
-        <T small muted>Voice, speed, numbers and heading apply from the next verse; the rest at once.</T>
-        <Button title="Done" primary onPress={onClose} />
+        <T small muted>{t('Voice, speed, numbers and heading apply from the next verse; the rest at once.')}</T>
+        <Button title={t('Done')} primary onPress={onClose} />
       </ScrollView>
     </Sheet>
   )

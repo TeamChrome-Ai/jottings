@@ -1,4 +1,5 @@
 import { BOOKS } from '@shared/books'
+import { N_, t } from '@shared/i18n'
 
 /**
  * The read-aloud log's pure parts (lib/readAloudLog.ts keeps it on the phone): what is kept, what counts as the reading
@@ -30,8 +31,9 @@ export interface Phone extends Scene {
   backgroundRestricted?: boolean | null; bucket?: number | null
 }
 export type TroubleKind = 'closed' | 'error' | 'stalled' | 'interrupted' | 'no-next'
-/** A time the reading stopped and nobody in the app had asked it to. */
-export interface Trouble { t: number; kind: TroubleKind; w?: string; what: string }
+/** A time the reading stopped and nobody in the app had asked it to. `what` is the log's English; `d` the detail in it
+ *  (what took the sound, the chapter asked for, Android's record, the failure, the seconds), for `troubleWords`. */
+export interface Trouble { t: number; kind: TroubleKind; w?: string; what: string; d?: string }
 
 export const KEEP_MS = 48 * 3600_000
 export const MAX_EVENTS = 1500
@@ -60,9 +62,10 @@ export const exitWords = (x: ExitInfo) => `${EXIT_REASONS[x.reason] ?? `reason $
 /** Closed on purpose: force-stopped, swiped away from the recent apps ("remove task"), or updated. */
 export const exitByUser = (x: ExitInfo) => x.reason === 10 || x.reason === 11 || x.reason === 16 || /remove task/i.test(x.description ?? '')
 
+/** What sounds, by Android's usage; those `interrupter` names are phrases too, as the reader sees them in `troubleWords`. */
 const USAGE: Record<number, string> = {
-  0: 'unknown', 1: 'media', 2: 'a call', 3: 'a call', 4: 'an alarm', 5: 'a notification', 6: 'a ringtone', 7: 'a notification', 8: 'a notification',
-  9: 'a notification', 10: 'a notification', 11: 'accessibility', 12: 'a navigation voice', 13: 'a system sound', 14: 'a game', 16: 'the assistant', 17: 'a call',
+  0: 'unknown', 1: 'media', 2: N_('a call'), 3: N_('a call'), 4: N_('an alarm'), 5: N_('a notification'), 6: N_('a ringtone'), 7: N_('a notification'), 8: N_('a notification'),
+  9: N_('a notification'), 10: N_('a notification'), 11: N_('accessibility'), 12: N_('a navigation voice'), 13: N_('a system sound'), 14: 'a game', 16: N_('the assistant'), 17: N_('a call'),
 }
 const MODE: Record<number, string> = { 1: 'ringing', 2: 'in a call', 3: 'in a call (internet)', 4: 'screening a call', 5: 'in a call', 6: 'in a call' }
 const OUTPUT: Record<number, string> = {
@@ -74,7 +77,7 @@ const BUCKET: Record<number, string> = { 5: 'exempt', 10: 'active', 20: 'working
 /** What in the scene would take the sound from read-aloud: a call, a ringtone, a navigation voice; null for nothing. */
 export function interrupter(s: Scene | null | undefined): string | null {
   if (!s) return null
-  if (s.mode && MODE[s.mode]) return s.mode === 1 ? 'a ringtone' : 'a call'
+  if (s.mode && MODE[s.mode]) return s.mode === 1 ? N_('a ringtone') : N_('a call')
   for (const p of s.playing ?? []) {
     const [u, state] = p.split(':')
     const usage = Number(u)
@@ -128,11 +131,11 @@ export function troubles(events: LogEvent[], exits: ExitInfo[], now: number): Tr
   let cut: LogEvent | null = null
   let handoff: LogEvent | null = null
   const cutStays = () => {
-    if (cut) out.push({ t: cut.t, kind: 'interrupted', w: cut.w, what: `the voice stopped for ${cut.d ?? 'another sound'} and did not go on by itself` })
+    if (cut) out.push({ t: cut.t, kind: 'interrupted', w: cut.w, what: `the voice stopped for ${cut.d ?? 'another sound'} and did not go on by itself`, d: cut.d })
     cut = null
   }
   const lostHandoff = () => {
-    if (handoff) out.push({ t: handoff.t, kind: 'no-next', w: handoff.w, what: `the next chapter (${handoff.w ?? '?'}) was asked for and never started` })
+    if (handoff) out.push({ t: handoff.t, kind: 'no-next', w: handoff.w, what: `the next chapter (${handoff.w ?? '?'}) was asked for and never started`, d: handoff.w })
     handoff = null
   }
   for (const x of events) {
@@ -147,7 +150,7 @@ export function troubles(events: LogEvent[], exits: ExitInfo[], now: number): Tr
         const exit = before && (reading || handoff)
           ? exits.filter(z => z.t >= before.t - 5000 && z.t <= x.t).sort((a, b) => a.t - b.t)[0]
           : undefined
-        if (exit && !exitByUser(exit)) out.push({ t: exit.t, kind: 'closed', w: where, what: `Android closed the app while it read (${exitWords(exit)})` })
+        if (exit && !exitByUser(exit)) out.push({ t: exit.t, kind: 'closed', w: where, what: `Android closed the app while it read (${exitWords(exit)})`, d: exitWords(exit) })
         else if (!exit && handoff && x.t - handoff.t > NEXT_MS) lostHandoff()
         cut = null; handoff = null; reading = false
         break
@@ -157,10 +160,10 @@ export function troubles(events: LogEvent[], exits: ExitInfo[], now: number): Tr
       case 'resume': cut = null; break
       case 'play': case 'stop': case 'start': case 'jump': cutStays(); break
       case 'next': handoff = x; break
-      case 'error': out.push({ t: x.t, kind: 'error', w: x.w ?? where, what: `read aloud failed (${x.d ?? 'no reason given'})` }); break
+      case 'error': out.push({ t: x.t, kind: 'error', w: x.w ?? where, what: `read aloud failed (${x.d ?? 'no reason given'})`, d: x.d }); break
       // paused, the timers stopping is Android's due (the session stays on for a Play from the lock screen): a reader
       // who paused for an appointment was asked why the reading had stopped by itself
-      case 'stall': if (reading && Number(x.d) * 1000 >= STALL_MS) out.push({ t: x.t, kind: 'stalled', w: where, what: `the app's timers stood still for ${x.d} s while it read` }); break
+      case 'stall': if (reading && Number(x.d) * 1000 >= STALL_MS) out.push({ t: x.t, kind: 'stalled', w: where, what: `the app's timers stood still for ${x.d} s while it read`, d: x.d }); break
     }
     if (x.e === 'start') handoff = null
     if (x.w && x.e !== 'next') where = x.w
@@ -169,6 +172,18 @@ export function troubles(events: LogEvent[], exits: ExitInfo[], now: number): Tr
   if (handoff && now - (handoff as LogEvent).t > NEXT_MS) lostHandoff()
   if (cut && now - (cut as LogEvent).t > CUT_MS) cutStays()
   return out.sort((a, b) => a.t - b.t)
+}
+
+/** A trouble's `what` in the reader's language, for the sheet that offers the report; the log and the report keep the
+ *  English. Android's record and a failure's own message stay as they came. */
+export function troubleWords(x: Trouble): string {
+  switch (x.kind) {
+    case 'interrupted': return t('the voice stopped for {sound} and did not go on by itself', { sound: x.d ? t(x.d) : t('another sound') })
+    case 'no-next': return t('the next chapter ({chapter}) was asked for and never started', { chapter: x.d ?? '?' })
+    case 'closed': return t('Android closed the app while it read ({why})', { why: x.d ?? '' })
+    case 'error': return t('read aloud failed ({why})', { why: x.d ?? t('no reason given') })
+    case 'stalled': return t('the app\'s timers stood still for {seconds} s while it read', { seconds: x.d ?? '' })
+  }
 }
 
 const two = (n: number) => String(n).padStart(2, '0')

@@ -4,6 +4,7 @@
  * what the reader's own screens show: it is never sent, and the streak, the reminder, badges, friends and groups all
  * go by the server's figure.
  */
+import { t } from '@shared/i18n'
 import { fmtDuration } from './format'
 
 /** Minutes a day. The first is the streak's own: with it nothing is shown differently. */
@@ -30,8 +31,8 @@ export interface GoalView {
 export function goalView(secs: number, streakSecs: number, goal: number): GoalView {
   const kept = streakSecs > 0 && secs >= streakSecs
   const own = goal > DAILY_GOAL_DEFAULT ? goal * 60 : 0
-  if (!kept || own <= streakSecs) return { pct: streakSecs ? Math.min(1, secs / streakSecs) : 0, kept, left: 0, line: `${fmtDuration(secs)} of ${fmtDuration(streakSecs)} today` }
-  if (secs >= own) return { pct: 1, kept, left: 0, line: `Daily goal met. ${fmtDuration(secs)} today` }
+  if (!kept || own <= streakSecs) return { pct: streakSecs ? Math.min(1, secs / streakSecs) : 0, kept, left: 0, line: t('{read} of {goal} today', { read: fmtDuration(secs), goal: fmtDuration(streakSecs) }) }
+  if (secs >= own) return { pct: 1, kept, left: 0, line: t('Daily goal met. {read} today', { read: fmtDuration(secs) }) }
   // whole minutes read, so the line never says "30 of 30" before the bar is full
-  return { pct: secs / own, kept, left: Math.ceil((own - secs) / 60), line: `Streak kept. ${Math.floor(secs / 60)} of ${goal} min` }
+  return { pct: secs / own, kept, left: Math.ceil((own - secs) / 60), line: t('Streak kept. {read} of {goal} min', { read: Math.floor(secs / 60), goal }) }
 }

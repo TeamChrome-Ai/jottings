@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Text, View } from 'react-native'
 import { articleWords, paragraphs, type CbdEntry } from '@shared/cbd'
 import type { Ref } from '@shared/ref'
+import { t, tn } from '@shared/i18n'
 import { useDictionaryIndex } from '../hooks/useDictionaryIndex'
 import { useReadingFont } from '../hooks/useReadingFont'
 import { useInks } from '../hooks/useTheme'
@@ -27,14 +28,14 @@ export default function DictionaryArticle({ entry, collapsed = false, onLink, on
   return (
     <View style={{ gap: 10 }}>
       {shown.map((p, i) => {
-        const text = <FootnoteText key={i} text={p} style={body} italicStyle={italic} onLink={onLink} onNavigate={onNavigate} />
+        const text = <FootnoteText key={i} english text={p} style={body} italicStyle={italic} onLink={onLink} onNavigate={onNavigate} />
         // paragraphs opened by "Read more" answer the tap; the first one is content and is simply there
         return i > 0 && collapsed ? <Enter key={i}>{text}</Enter> : text
       })}
       {!open && paras.length > 1 ? (
-        <Button small soft title={`Read more (${paras.length - 1} more paragraph${paras.length === 2 ? '' : 's'})`} onPress={() => { easeNextLayout(reduce); setOpen(true) }} style={{ alignSelf: 'flex-start' }} />
+        <Button small soft title={tn(paras.length - 1, 'Read more ({n} more paragraph)', 'Read more ({n} more paragraphs)')} onPress={() => { easeNextLayout(reduce); setOpen(true) }} style={{ alignSelf: 'flex-start' }} />
       ) : null}
-      {!collapsed && entry.aliases?.length ? <Text style={{ color: c.muted, fontSize: TYPE.small }}>Also entered as {entry.aliases.join(', ')}</Text> : null}
+      {!collapsed && entry.aliases?.length ? <Text style={{ color: c.muted, fontSize: TYPE.small }}>{t('Also entered as {aliases}', { aliases: entry.aliases.join(', ') })}</Text> : null}
     </View>
   )
 }
@@ -62,9 +63,9 @@ export function ArticleWords({ id, onWord }: { id: string; onWord: (code: string
   const greek = words.some(w => w[0].startsWith('G')), hebrew = words.some(w => w[0].startsWith('H'))
   return (
     <View style={{ gap: 8 }}>
-      <T small muted>{greek && hebrew ? 'Greek and Hebrew words' : greek ? 'Greek words' : 'Hebrew words'} in this article</T>
+      <T small muted>{greek && hebrew ? t('Greek and Hebrew words in this article') : greek ? t('Greek words in this article') : t('Hebrew words in this article')}</T>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        {words.map(([code, lemma]) => <Chip key={code} label={lemma} detail={code} accessibilityLabel={`${lemma}, Strong’s ${code}`} onPress={() => onWord(code, lemma)} />)}
+        {words.map(([code, lemma]) => <Chip key={code} label={lemma} detail={code} accessibilityLabel={t('{lemma}, Strong’s {code}', { lemma, code })} onPress={() => onWord(code, lemma)} />)}
       </View>
     </View>
   )

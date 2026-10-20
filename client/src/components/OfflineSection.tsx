@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { View } from 'react-native'
 import { useFocusEffect } from 'expo-router'
+import { t, tc } from '@shared/i18n'
 import { enabledAuthors } from '@shared/ministry'
 import { useEdition } from '../lib/edition'
 import { authorShown } from '../lib/editionCore'
@@ -57,11 +58,11 @@ function OfflineRows() {
   const current = rows.find(r => r.id === open) ?? null
   return (
     <>
-      <H2>Offline</H2>
+      <H2>{t('Offline')}</H2>
       <Card style={{ gap: 0, paddingVertical: 8 }}>
-        <ListRow icon="book" label="Bible" detail="On this phone" />
-        <ListRow icon="dictionary" label="Dictionary" detail={`On this phone · ${formatBytes(DICTIONARY_BYTES)}`} />
-        {rows.map(r => <ListRow key={r.id} icon="companion" label={`${r.name}’s ministry`} detail={statusDetail(r.status, r.latest)} onPress={() => setOpen(r.id)} />)}
+        <ListRow icon="book" label={t('Bible')} detail={t('On this phone')} />
+        <ListRow icon="dictionary" label={t('Dictionary')} detail={t('On this phone · {size}', { size: formatBytes(DICTIONARY_BYTES) })} />
+        {rows.map(r => <ListRow key={r.id} icon="companion" label={t('{name}’s ministry', { name: r.name })} detail={statusDetail(r.status, r.latest)} onPress={() => setOpen(r.id)} />)}
       </Card>
       <AuthorSheet row={current} onClose={() => setOpen(null)} />
     </>
@@ -78,34 +79,36 @@ function AuthorSheet({ row, onClose }: { row: Row | null; onClose: () => void })
   const r = row ?? shown
   if (!r) return <Sheet open={false} onClose={onClose}>{null}</Sheet>
   const refs = r.status.kind === 'stored' ? r.status.refs : r.latest?.refs ?? true
-  const what = `${r.name}’s works read offline in the library${refs ? ', and Ministry on a verse works too' : ''}.`
+  const what = refs
+    ? t('{name}’s works read offline in the library, and Ministry on a verse works too.', { name: r.name })
+    : t('{name}’s works read offline in the library.', { name: r.name })
   const start = async () => {
     onClose()
-    try { if (await download(r.id)) toast.show(`${r.name}’s ministry is on this phone`) }
-    catch (e) { toast.show(e instanceof Error ? e.message : 'The download did not finish') }
+    try { if (await download(r.id)) toast.show(t('{name}’s ministry is on this phone', { name: r.name })) }
+    catch (e) { toast.show(e instanceof Error ? e.message : t('The download did not finish')) }
   }
   const drop = async () => {
     setBusy(true)
-    try { await remove(r.id); toast.show(`${r.name}’s ministry removed`) } finally { setBusy(false); onClose() }
+    try { await remove(r.id); toast.show(t('{name}’s ministry removed', { name: r.name })) } finally { setBusy(false); onClose() }
   }
   return (
-    <Sheet open={!!row} onClose={onClose} title={`${r.name}’s ministry`}>
+    <Sheet open={!!row} onClose={onClose} title={t('{name}’s ministry', { name: r.name })}>
       <View style={{ padding: 16, gap: 12 }}>
         {r.status.kind === 'downloading' ? <>
-          <T>Downloading… {Math.round(r.status.fraction * 100)}%</T>
+          <T>{t('Downloading… {percent}%', { percent: Math.round(r.status.fraction * 100) })}</T>
           <T small muted>{what}</T>
-          <Button title="Cancel" onPress={() => { cancel(r.id); onClose() }} style={{ alignSelf: 'flex-start' }} />
+          <Button title={t('Cancel')} onPress={() => { cancel(r.id); onClose() }} style={{ alignSelf: 'flex-start' }} />
         </> : r.status.kind === 'stored' ? <>
-          <T>On this phone · {formatBytes(r.status.bytes)}</T>
-          <T small muted>{what}{r.status.stale ? ' The server has newer text; download again to update.' : ''}</T>
+          <T>{t('On this phone · {size}', { size: formatBytes(r.status.bytes) })}</T>
+          <T small muted>{what}{r.status.stale ? ` ${t('The server has newer text; download again to update.')}` : ''}</T>
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            {r.status.stale && r.latest ? <Button title="Update" primary onPress={() => { void start() }} /> : null}
-            <Button title="Remove" danger disabled={busy} onPress={() => { void drop() }} />
+            {r.status.stale && r.latest ? <Button title={tc('verb', 'Update')} primary onPress={() => { void start() }} /> : null}
+            <Button title={t('Remove')} danger disabled={busy} onPress={() => { void drop() }} />
           </View>
         </> : <>
-          <T>{r.latest ? `Download · ${formatBytes(r.latest.bytes)}, ${formatBytes(r.latest.rawBytes)} on the phone` : r.latest === null ? 'Needs a connection to download' : 'Download'}</T>
-          <T small muted>{what} Off until you choose it; remove it here any time.</T>
-          <Button title="Download" primary disabled={!r.latest} onPress={() => { void start() }} style={{ alignSelf: 'flex-start' }} />
+          <T>{r.latest ? t('Download · {size}, {stored} on the phone', { size: formatBytes(r.latest.bytes), stored: formatBytes(r.latest.rawBytes) }) : r.latest === null ? t('Needs a connection to download') : tc('verb', 'Download')}</T>
+          <T small muted>{what} {t('Off until you choose it; remove it here any time.')}</T>
+          <Button title={tc('verb', 'Download')} primary disabled={!r.latest} onPress={() => { void start() }} style={{ alignSelf: 'flex-start' }} />
         </>}
       </View>
     </Sheet>

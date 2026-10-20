@@ -39,11 +39,12 @@ async fn verse(State(s): State<AppState>, Path((book, chapter, verse)): Path<(i6
     val["book"] = json!(book); val["chapter"] = json!(chapter);
     Ok(cached(val, 86400))
 }
-#[derive(Deserialize)] struct VersesQ { refs: Option<String> }
+/// `tx`: the French or German Bible's verses instead of the English (docs/LANGUAGES.md).
+#[derive(Deserialize)] struct VersesQ { refs: Option<String>, tx: Option<String> }
 async fn verses(State(s): State<AppState>, Query(q): Query<VersesQ>) -> ApiResult<Response> {
     let ed = s.edition().await;
     let out = s.db(move |conn| {
-        let t = edition::tables(conn, ed);
+        let t = edition::text_tables(conn, q.tx.as_deref(), ed);
         let mut out = Vec::new();
         for key in q.refs.unwrap_or_default().split(',').filter(|k| !k.is_empty()).take(200) {
             let parts: Vec<&str> = key.split('.').collect();
@@ -55,10 +56,10 @@ async fn verses(State(s): State<AppState>, Query(q): Query<VersesQ>) -> ApiResul
     }).await?;
     Ok(cached(out, 3600))
 }
-#[derive(Deserialize)] struct SearchQ { q: Option<String>, limit: Option<i64>, offset: Option<i64>, scope: Option<String>, order: Option<String> }
+#[derive(Deserialize)] struct SearchQ { q: Option<String>, limit: Option<i64>, offset: Option<i64>, scope: Option<String>, order: Option<String>, tx: Option<String> }
 async fn search(State(s): State<AppState>, Query(q): Query<SearchQ>) -> ApiResult<Response> {
     let ed = s.edition().await;
-    Ok(cached(s.db(move |conn| Ok(crate::search::search(conn, &edition::tables(conn, ed), q.q.as_deref().unwrap_or(""), q.limit.unwrap_or(50), q.offset.unwrap_or(0), q.scope.as_deref().unwrap_or("all"), crate::search::Order::parse(q.order.as_deref()))?)).await?, 300))
+    Ok(cached(s.db(move |conn| Ok(crate::search::search(conn, &edition::text_tables(conn, q.tx.as_deref(), ed), q.q.as_deref().unwrap_or(""), q.limit.unwrap_or(50), q.offset.unwrap_or(0), q.scope.as_deref().unwrap_or("all"), crate::search::Order::parse(q.order.as_deref()))?)).await?, 300))
 }
 #[derive(Deserialize)] struct StrongsQ { limit: Option<i64>, offset: Option<i64> }
 async fn strongs(State(s): State<AppState>, Path(code): Path<String>, Query(q): Query<StrongsQ>) -> ApiResult<Response> {

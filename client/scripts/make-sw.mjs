@@ -1,5 +1,5 @@
 // After `expo export --platform web`: write dist/sw.js with the precache list of the app shell.
-// Runtime: cache-first for /bible/* (and /bible1890/*, docs/EDITION.md) chapter JSON and hashed _expo assets,
+// Runtime: cache-first for /bible/* (and /bible1890/*, docs/EDITION.md; /bible-fr/*, /bible-de/*, docs/LANGUAGES.md) chapter JSON and hashed _expo assets,
 // network-first for the HTML shell, never cache /api. A chapter is kept only when the server marks it immutable: while
 // the 1890 edition is on, /bible/* answers with its 1890 file and no-cache, which must not stand for the 1961 one later.
 // Idle registration happens in app/_layout.tsx.
@@ -22,7 +22,7 @@ self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Pr
 self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
   if (e.request.method !== 'GET' || u.origin !== location.origin || u.pathname.startsWith('/api/')) return;
-  const chapter = /^\\/bible(1890)?\\/\\d+\\/\\d+\\.json$/.test(u.pathname);
+  const chapter = /^\\/bible(1890|-fr|-de)?\\/\\d+\\/\\d+\\.json$/.test(u.pathname);
   if (u.pathname.startsWith('/_expo/') || u.pathname.startsWith('/assets/') || u.pathname.startsWith('/fonts/') || chapter) {
     e.respondWith(caches.match(e.request).then(hit => hit || fetch(e.request).then(r => { if (r.ok && (!chapter || (r.headers.get('cache-control') || '').includes('immutable'))) { const copy = r.clone(); caches.open(chapter ? 'berean-bible' : V).then(c => c.put(e.request, copy)); } return r; })));
     return;

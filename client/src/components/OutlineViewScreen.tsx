@@ -15,6 +15,8 @@ import ReportSheet from './ReportSheet'
 import { Tag } from './CommunityBits'
 import Avatar from './Avatar'
 import { NOUN } from '@shared/brand'
+import { t, tc } from '@shared/i18n'
+import { tr } from '../i18n'
 
 /** `hidden: 1` rides on the author's own copy while a report is open (docs/API.md, Moderation); shared/types has no field for it. */
 const underReview = (o: object): boolean => 'hidden' in o && (o.hidden === 1 || o.hidden === true)
@@ -49,10 +51,10 @@ export default function OutlineViewScreen({ id, code }: { id?: string; code?: st
       <Stack.Screen options={{ title }} />
       <Card>
         <ErrorText>{loadErrorText(load)}</ErrorText>
-        {load.status === 403 && !user ? <T small muted>Sign in if this {NOUN.one} is yours.</T> : null}
+        {load.status === 403 && !user ? <T small muted>{t('Sign in if this {one} is yours.', { one: NOUN.one })}</T> : null}
         <Row>
-          {load.status === 403 && !user ? <Button primary small title="Sign in" onPress={() => router.push('/login')} /> : null}
-          <Button small title={`Back to ${NOUN.many}`} onPress={() => router.replace('/outlines')} />
+          {load.status === 403 && !user ? <Button primary small title={t('Sign in')} onPress={() => router.push('/login')} /> : null}
+          <Button small title={t('Back to {many}', { many: NOUN.many })} onPress={() => router.replace('/outlines')} />
         </Row>
       </Card>
     </Screen>
@@ -69,11 +71,11 @@ export default function OutlineViewScreen({ id, code }: { id?: string; code?: st
     try {
       const f = await forkOutline(o)
       router.push({ pathname: '/outlines/[id]/edit', params: { id: String(f.id) } })
-    } catch (e) { setErr(e instanceof Error ? e.message : 'Could not make a copy') } finally { setForking(false) }
+    } catch (e) { setErr(e instanceof Error ? e.message : t('Could not make a copy')) } finally { setForking(false) }
   }
   const share = async () => {
     const r = await shareText({ title: o.title, message: o.title, url: link })
-    if (r === 'copied') toast.show('Link copied'); else if (r === 'failed' && await copyText(link)) toast.show('Link copied')
+    if (r === 'copied') toast.show(t('Link copied')); else if (r === 'failed' && await copyText(link)) toast.show(t('Link copied'))
   }
 
   // one entrance: the title block rises, then the first items follow it in turn
@@ -82,13 +84,13 @@ export default function OutlineViewScreen({ id, code }: { id?: string; code?: st
       <Stack.Screen options={{ title }} />
       <Enter style={{ gap: 12 }}>
         <Row>
-          {owner ? <Button primary small title="Edit" onPress={() => router.push({ pathname: '/outlines/[id]/edit', params: { id: String(o.id) } })} /> : null}
-          {!owner ? <Button small title={forking ? 'Copying…' : 'Make a copy'} disabled={forking} onPress={() => { void fork() }} /> : null}
-          <Button small title="Print / PDF" onPress={() => setPrintOpen(true)} />
-          {!local ? <Button small title="Share link" onPress={() => { void share() }} /> : null}
-          {!owner && user ? <Button small title="Report" onPress={() => setReport({ kind: 'outline', id: o.id, label: NOUN.one })} /> : null}
+          {owner ? <Button primary small title={t('Edit')} onPress={() => router.push({ pathname: '/outlines/[id]/edit', params: { id: String(o.id) } })} /> : null}
+          {!owner ? <Button small title={forking ? t('Copying…') : t('Make a copy')} disabled={forking} onPress={() => { void fork() }} /> : null}
+          <Button small title={t('Print / PDF')} onPress={() => setPrintOpen(true)} />
+          {!local ? <Button small title={t('Share link')} onPress={() => { void share() }} /> : null}
+          {!owner && user ? <Button small title={tc('verb', 'Report')} onPress={() => setReport({ kind: 'outline', id: o.id, label: NOUN.one })} /> : null}
         </Row>
-        {owner && underReview(o) ? <Row><Tag label="Under review" /><T small muted>A report on this {NOUN.one} is being looked at; only you can see it meanwhile.</T></Row> : null}
+        {owner && underReview(o) ? <Row><Tag label={t('Under review')} /><T small muted>{t('A report on this {one} is being looked at; only you can see it meanwhile.', { one: NOUN.one })}</T></Row> : null}
         {err ? <ErrorText>{err}</ErrorText> : null}
 
         <View style={{ gap: 4 }}>
@@ -96,14 +98,14 @@ export default function OutlineViewScreen({ id, code }: { id?: string; code?: st
           {o.visibility === 'public' && o.owner_handle ? (
             <Row style={{ flexWrap: 'nowrap', gap: 10, marginVertical: 4 }}>
               <Avatar name={o.owner_display_name ?? o.owner_handle} avatar={o.owner_avatar} size={32} />
-              <T small style={{ flex: 1 }}>by <T small bold>{o.owner_display_name ?? o.owner_handle}</T> <T small muted>@{o.owner_handle}</T></T>
+              <T small style={{ flex: 1 }}>{tr('by <b>{name}</b> <muted>@{handle}</muted>', { b: s => <T small bold>{s}</T>, muted: s => <T small muted>{s}</T> }, { name: o.owner_display_name ?? o.owner_handle, handle: o.owner_handle })}</T>
             </Row>
           ) : null}
           <Row>
             {o.owner_handle && o.visibility !== 'public' ? <T small muted>@{o.owner_handle}</T> : null}
-            <T small muted>{o.owner_handle && o.visibility !== 'public' ? '· ' : ''}Updated {fmtDateLong(o.updated_at)}</T>
+            <T small muted>{o.owner_handle && o.visibility !== 'public' ? '· ' : ''}{t('Updated {date}', { date: fmtDateLong(o.updated_at) })}</T>
             {o.visibility !== 'private' ? <T small style={{ color: c.accent }}>· {visibilityLabel(o.visibility)}</T> : null}
-            {local ? <T small muted>· On this device</T> : null}
+            {local ? <T small muted>· {t('On this device')}</T> : null}
           </Row>
           {o.description ? <T muted style={{ marginTop: 4 }}>{o.description}</T> : null}
         </View>
@@ -111,7 +113,7 @@ export default function OutlineViewScreen({ id, code }: { id?: string; code?: st
 
       {texts.error ? <ErrorText>{texts.error}</ErrorText> : null}
       {items.length === 0
-        ? <T muted>This {NOUN.one} is empty.{owner ? ' Edit it to add passages and notes.' : ''}</T>
+        ? <T muted>{owner ? t('This {one} is empty. Edit it to add passages and notes.', { one: NOUN.one }) : t('This {one} is empty.', { one: NOUN.one })}</T>
         : <OutlineBody items={items} style={o.print_style} verses={texts.verses} loading={texts.loading} revealAfter={140} />}
       <View style={{ height: 24 }} />
       <OutlinePrintSheet open={printOpen} onClose={() => setPrintOpen(false)} outline={o} verses={texts.verses} loading={texts.loading} />

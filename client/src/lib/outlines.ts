@@ -13,6 +13,8 @@ import { ApiError, get, getApiBase } from './api'
 import { fetchChapter } from './bible'
 import { NotOnDevice, getOwnOutline, isLocalId, saveOutlineItems } from './library'
 import { BRAND, NOUN } from '@shared/brand'
+import { t, tc } from '@shared/i18n'
+import { dateLocale } from '../i18n'
 import { scanMinistry, scanTypedRefs, type MinistryAuthor, type MinistryTarget } from './noteLinks'
 
 export type OutlineItemInput = Omit<OutlineItem, 'id' | 'outline_id' | 'position'>
@@ -35,15 +37,16 @@ export async function addVersesToOutline(outlineId: number, book: number, chapte
 export const MAX_DEPTH = 3
 export const AUTOSAVE_MS = 800
 
+// each label is read in the reader's language when the screen shows it
 export const PRINT_STYLES = [
-  { value: 'verses-first', label: 'Verses first' },
-  { value: 'inline', label: 'Inline' },
-  { value: 'refs-only', label: 'References only' },
+  { value: 'verses-first', get label() { return t('Verses first') } },
+  { value: 'inline', get label() { return tc('print style', 'Inline') } },
+  { value: 'refs-only', get label() { return t('References only') } },
 ] as const satisfies readonly { value: Outline['print_style']; label: string }[]
 
 export const VISIBILITIES = [
-  { value: 'private', label: 'Private' },
-  { value: 'link', label: 'Anyone with the link' },
+  { value: 'private', get label() { return tc('visibility', 'Private') } },
+  { value: 'link', get label() { return t('Anyone with the link') } },
 ] as const satisfies readonly { value: Outline['visibility']; label: string }[]
 
 export const isPrintStyle = (s: string): s is Outline['print_style'] => PRINT_STYLES.some(p => p.value === s)
@@ -80,7 +83,7 @@ export function siteOrigin(): string {
 export const shareUrl = (o: Pick<Outline, 'share_code' | 'visibility'>): string | null =>
   o.visibility !== 'private' && o.share_code ? `${siteOrigin()}/o/${o.share_code}` : null
 
-export const fmtDateLong = (iso: string) => { const d = new Date(iso); return isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) }
+export const fmtDateLong = (iso: string) => { const d = new Date(iso); return isNaN(d.getTime()) ? iso : d.toLocaleDateString(dateLocale(), { year: 'numeric', month: 'short', day: 'numeric' }) }
 
 // ---------------- verse text ----------------
 export type VerseRow = Pick<Verse, 'v' | 't' | 'h'>
@@ -130,7 +133,7 @@ export function useVerseTexts(keys: readonly string[]): VerseTexts {
     setState(s => ({ verses: s.verses, loading: true, error: '' }))
     fetchVerses(list, (k, rows) => { if (live) setState(s => { const m = new Map(s.verses); m.set(k, rows); return { ...s, verses: m } }) })
       .then(verses => { if (live) setState({ verses, loading: false, error: '' }) })
-      .catch((e: unknown) => { if (live) setState(s => ({ ...s, loading: false, error: e instanceof Error ? e.message : 'Could not load verses' })) })
+      .catch((e: unknown) => { if (live) setState(s => ({ ...s, loading: false, error: e instanceof Error ? e.message : t('Could not load verses') })) })
     return () => { live = false }
   }, [sig])
   return state
@@ -158,7 +161,7 @@ export function useOutlineLoad(p: { id?: string; code?: string }, reloadKey = 0,
   const [state, setState] = useState<OutlineLoad>({ kind: 'loading' })
   useEffect(() => {
     if (!enabled) { setState({ kind: 'loading' }); return }
-    if (!path) { setState({ kind: 'error', status: 404, message: `No ${NOUN.one} requested` }); return }
+    if (!path) { setState({ kind: 'error', status: 404, message: t('No {one} requested', { one: NOUN.one }) }); return }
     let live = true
     setState({ kind: 'loading' })
     const local = !p.code && p.id !== undefined && isLocalId(p.id)
@@ -167,7 +170,7 @@ export function useOutlineLoad(p: { id?: string; code?: string }, reloadKey = 0,
       .catch((e: unknown) => {
         if (!live) return
         if (e instanceof ApiError || e instanceof NotOnDevice) setState({ kind: 'error', status: e.status, message: e.message })
-        else setState({ kind: 'error', status: 0, message: e instanceof Error ? e.message : `Could not load ${NOUN.one}` })
+        else setState({ kind: 'error', status: 0, message: e instanceof Error ? e.message : t('Could not load {one}', { one: NOUN.one }) })
       })
     return () => { live = false }
     // p.id and p.code are what `path` is built from
@@ -177,10 +180,10 @@ export function useOutlineLoad(p: { id?: string; code?: string }, reloadKey = 0,
 }
 
 export function loadErrorText(e: { status: number; message: string }): string {
-  if (e.status === 403) return `This ${NOUN.one} is private.`
-  if (e.status === 404) return `This ${NOUN.one} does not exist or has been deleted.`
-  if (e.status === 0) return 'Could not reach the server.'
-  return e.message || 'Something went wrong.'
+  if (e.status === 403) return t('This {one} is private.', { one: NOUN.one })
+  if (e.status === 404) return t('This {one} does not exist or has been deleted.', { one: NOUN.one })
+  if (e.status === 0) return t('Could not reach the server.')
+  return e.message || t('Something went wrong.')
 }
 
 // ---------------- note auto-linking ----------------
@@ -232,10 +235,10 @@ export async function copyText(text: string): Promise<boolean> {
 }
 
 /** Native Alert / web confirm(); RN's Alert is a no-op on react-native-web. */
-export function confirmAsync(title: string, message: string, ok = 'Delete'): Promise<boolean> {
+export function confirmAsync(title: string, message: string, ok = t('Delete')): Promise<boolean> {
   if (Platform.OS === 'web') return Promise.resolve(typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`))
   return new Promise(resolve => Alert.alert(title, message, [
-    { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+    { text: t('Cancel'), style: 'cancel', onPress: () => resolve(false) },
     { text: ok, style: 'destructive', onPress: () => resolve(true) },
   ], { cancelable: true, onDismiss: () => resolve(false) }))
 }
@@ -254,10 +257,10 @@ export function useDebounced<V>(value: V, ms: number): V {
 
 // ---------------- print / PDF ----------------
 export const PAPERS = [
-  { id: 'bible', label: 'Bible insert', size: '3.5 × 5.5 in', w: 3.5, h: 5.5 },
-  { id: 'half', label: 'Half letter', size: '5.5 × 8.5 in', w: 5.5, h: 8.5 },
+  { id: 'bible', get label() { return t('Bible insert') }, size: '3.5 × 5.5 in', w: 3.5, h: 5.5 },
+  { id: 'half', get label() { return t('Half letter') }, size: '5.5 × 8.5 in', w: 5.5, h: 8.5 },
   { id: 'a5', label: 'A5', size: '148 × 210 mm', w: 5.83, h: 8.27 },
-  { id: 'letter', label: 'Letter', size: '8.5 × 11 in', w: 8.5, h: 11 },
+  { id: 'letter', get label() { return tc('paper size', 'Letter') }, size: '8.5 × 11 in', w: 8.5, h: 11 },
   { id: 'a4', label: 'A4', size: '210 × 297 mm', w: 8.27, h: 11.69 },
 ] as const
 export type PaperId = typeof PAPERS[number]['id']
@@ -291,7 +294,7 @@ const verseHtml = (r: VerseRow) => (r.h && r.h.includes('<i>') ? r.h.replace(/<(
 
 function rowsHtml(rows: VerseRow[] | undefined, inline: boolean): string {
   if (!rows) return '<span class="muted">…</span>'
-  if (rows.length === 0) return '<span class="muted">No text found for this reference.</span>'
+  if (rows.length === 0) return `<span class="muted">${esc(t('No text found for this reference.'))}</span>`
   const body = rows.map(r => `${rows.length > 1 ? `<sup class="vn">${r.v}</sup>` : ''}${r.t === '' ? '<i class="muted">[omitted]</i>' : verseHtml(r)}`).join(' ')
   return inline ? `<span class="verse-text">${body}</span>` : `<div class="verse-text">${body}</div>`
 }
@@ -334,7 +337,7 @@ export function buildPrintHtml(o: Outline, verses: Map<string, VerseRow[]>, s: P
   const paper = paperById(s.paper)
   const style = s.style || o.print_style
   const items = o.items ?? []
-  const body = items.length ? items.map(it => itemHtml(it, style, verses)).join('\n') : `<p class="muted">This ${NOUN.one} is empty.</p>`
+  const body = items.length ? items.map(it => itemHtml(it, style, verses)).join('\n') : `<p class="muted">${esc(t('This {one} is empty.', { one: NOUN.one }))}</p>`
   const meta = [o.owner_handle ? `@${esc(o.owner_handle)}` : '', fmtDateLong(o.updated_at), 'Darby'].filter(Boolean).join(' · ')
   const pageMargin = target === 'web' ? `${s.margin}in` : '0'
   const bodyPad = target === 'web' ? '0' : `${s.margin}in`
@@ -397,7 +400,7 @@ export async function printOutline(o: Outline, verses: Map<string, VerseRow[]>, 
     frame.style.position = 'fixed'; frame.style.right = '0'; frame.style.bottom = '0'; frame.style.width = '0'; frame.style.height = '0'; frame.style.border = '0'
     document.body.appendChild(frame)
     const doc = frame.contentDocument
-    if (!doc) { frame.remove(); throw new Error('Could not open the print view') }
+    if (!doc) { frame.remove(); throw new Error(t('Could not open the print view')) }
     doc.open(); doc.write(html); doc.close()
     await new Promise(r => setTimeout(r, 300))
     frame.contentWindow?.focus(); frame.contentWindow?.print()
@@ -410,6 +413,6 @@ export async function printOutline(o: Outline, verses: Map<string, VerseRow[]>, 
   const [Print, Sharing] = await Promise.all([import('expo-print'), import('expo-sharing')])
   if (mode === 'print') { await Print.printAsync({ html, width, height }); return }
   const { uri } = await Print.printToFileAsync({ html, width, height })
-  if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is not available on this device')
+  if (!(await Sharing.isAvailableAsync())) throw new Error(t('Sharing is not available on this device'))
   await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: o.title })
 }

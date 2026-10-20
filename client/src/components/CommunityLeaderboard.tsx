@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Animated, View } from 'react-native'
 import type { EventMetric, LeaderboardRow } from '@shared/types'
+import { t } from '@shared/i18n'
 import { get } from '../lib/api'
 import { fmtDuration } from '../lib/format'
 import { useColors } from '../hooks/useTheme'
@@ -23,7 +24,7 @@ const BAR_BASE = 120
 export function LeaderboardTable({ rows, metric, goal, myId }: { rows: LeaderboardRow[]; metric: EventMetric; goal?: number | null; myId: number | null }) {
   const c = useColors()
   const fade = useReorderMotion(rows.map(r => r.user_id).join(','))
-  if (rows.length === 0) return <T small muted>No activity in this window yet.</T>
+  if (rows.length === 0) return <T small muted>{t('No activity in this window yet.')}</T>
   const hasGoal = goal != null && goal > 0
   const top = Math.max(0, ...rows.map(r => r.value))
   // my row's wash goes up as the last animated bar lands
@@ -34,18 +35,18 @@ export function LeaderboardTable({ rows, metric, goal, myId }: { rows: Leaderboa
         const me = r.user_id === myId
         const pct = hasGoal ? r.value / goal : top > 0 ? r.value / top : 0
         return (
-          <View key={r.user_id} accessibilityLabel={me ? 'your row' : undefined}
+          <View key={r.user_id} accessibilityLabel={me ? t('your row') : undefined}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, backgroundColor: me ? c.selected : 'transparent' }}>
             {me ? <PulseOnce delay={landed} /> : null}
             <T bold muted style={{ width: 26, textAlign: 'right' }}>{r.rank ?? i + 1}</T>
             <View style={{ flex: 1, gap: 3 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><UserLink handle={r.handle} name={displayName(r)} bold={me} />{r.staff ? <AdminBadge /> : null}</View>
-              <T small muted>{fmtDuration(r.active_seconds)} active · {r.pages} ch.</T>
+              <T small muted>{t('{time} active · {n} ch.', { time: fmtDuration(r.active_seconds), n: r.pages })}</T>
               <FillBar pct={pct} delay={staggerDelay(i, STAGGER_CAP, STAGGER_STEP, BAR_BASE) ?? BAR_BASE + STAGGER_CAP * STAGGER_STEP} height={hasGoal ? 6 : 4} />
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <T bold>{fmtValue(r.value, metric)}</T>
-              {goal != null && goal > 0 ? <T small muted>{Math.round(100 * r.value / goal)}% of goal</T> : null}
+              {goal != null && goal > 0 ? <T small muted>{t('{pct}% of goal', { pct: Math.round(100 * r.value / goal) })}</T> : null}
             </View>
           </View>
         )

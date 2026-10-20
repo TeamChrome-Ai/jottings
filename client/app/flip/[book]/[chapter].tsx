@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated'
 import type { Verse } from '@shared/types'
+import { t } from '@shared/i18n'
 import { book as bookMeta, fetchChapter, nextChapter, prevChapter, tokenize, validRef, warmChapter, type ChapterData } from '../../../src/lib/bible'
 import { geomFromLines, geomFromTops, geomUniform, landingPage, pageOfVerse, paginate, splitParas, type Landing, type Layout, type Metrics, type Page, type Para } from '../../../src/lib/pages'
 import { chapterShape } from '../../../src/lib/screenVerses'
@@ -44,7 +45,7 @@ const ENTER_MS = 260
 /** Turns and the chapter entrance ease out: a released page keeps the finger's speed and settles (Reanimated's
  *  default in-out started it from rest, so a flick stalled the moment it was let go). */
 const OUT = Easing.out(Easing.cubic)
-const OMITTED = '[omitted]'
+const omitted = () => t('[omitted]')
 const SANS_BOLD = face('sans', { bold: true })
 /** Web only: a small sans span inside serif text keeps its own line box tight, or its different ascent pushes the line open. */
 const inlineMark = (size: number) => Platform.OS === 'web' ? { lineHeight: Math.round(size) } : null
@@ -459,8 +460,8 @@ function FlipScreenPage() {
     return (
       <View style={[styles.fill, styles.center, { backgroundColor: colors.bg }]}>
         <Stack.Screen options={{ headerShown: false }} />
-        <ErrorText>That reference does not exist.</ErrorText>
-        <Button title="Back to reading" onPress={() => router.replace('/read')} style={{ marginTop: 12 }} />
+        <ErrorText>{t('That reference does not exist.')}</ErrorText>
+        <Button title={t('Back to reading')} onPress={() => router.replace('/read')} style={{ marginTop: 12 }} />
       </View>
     )
   }
@@ -480,7 +481,7 @@ function FlipScreenPage() {
             <Layer key={`${layoutId}:${i}`} idx={i} gen={layoutId} current={i === page} sv={sv} pad={layerPad} onOverflow={onOverflow} onDrawnLines={onDrawnLines} onDrawnTitle={onDrawnTitle}
               page={pages![i]} paras={paras} tm={tm} colors={colors} data={current!} spokenV={spokenV} width={pageW} height={pageH} />
           ))}
-          {err ? <View style={[StyleSheet.absoluteFill, styles.center]}><ErrorText>{err}</ErrorText><Button title="Back to reading" onPress={leave} style={{ marginTop: 12 }} /></View> : null}
+          {err ? <View style={[StyleSheet.absoluteFill, styles.center]}><ErrorText>{err}</ErrorText><Button title={t('Back to reading')} onPress={leave} style={{ marginTop: 12 }} /></View> : null}
           {!err && !pages ? <View style={[StyleSheet.absoluteFill, styles.center, { pointerEvents: 'none' }]}><Spinner /></View> : null}
         </View>
       </GestureDetector>
@@ -504,14 +505,14 @@ function FlipScreenPage() {
 
       {/* HUD: slides down + fades in on a centre tap, slides back up when it times out */}
       <DockedBar open={hud} edge="top" fade style={[styles.hud, { paddingTop: insets.top + 6, backgroundColor: colors.bar, borderBottomColor: colors.border }]}>
-        <Button iconName="back" title="Back to reading" onPress={leave} />
+        <Button iconName="back" title={t('Back to reading')} onPress={leave} />
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={{ color: colors.text, fontWeight: '600' }} numberOfLines={1}>{meta.name} {chapterN} · {pages ? `page ${page + 1} of ${count}` : 'laying out…'}</Text>
-          <Text style={{ color: colors.muted, fontSize: 12 }}>Tap the edges or swipe to turn</Text>
+          <Text style={{ color: colors.text, fontWeight: '600' }} numberOfLines={1}>{meta.name} {chapterN} · {pages ? t('page {n} of {count}', { n: page + 1, count }) : t('laying out…')}</Text>
+          <Text style={{ color: colors.muted, fontSize: 12 }}>{t('Tap the edges or swipe to turn')}</Text>
         </View>
-        {Platform.OS === 'web' ? <Button iconName="expand" title="Toggle fullscreen" onPress={toggleFullscreen} /> : null}
-        <Button iconName="share" title="Share this chapter" onPress={() => { void shareChapter(bookN, chapterN).then(r => { if (r === 'copied') toast.show('Link copied') }) }} />
-        <Button iconName="sliders" title="Reading settings" onPress={() => { showHud(false); setSettings(true) }} />
+        {Platform.OS === 'web' ? <Button iconName="expand" title={t('Toggle fullscreen')} onPress={toggleFullscreen} /> : null}
+        <Button iconName="share" title={t('Share this chapter')} onPress={() => { void shareChapter(bookN, chapterN).then(r => { if (r === 'copied') toast.show(t('Link copied')) }) }} />
+        <Button iconName="sliders" title={t('Reading settings')} onPress={() => { showHud(false); setSettings(true) }} />
       </DockedBar>
 
       <FlipSettings open={settings} prefs={prefs} set={set} onClose={() => setSettings(false)} />
@@ -611,7 +612,7 @@ function verseOffsets(verses: Verse[], tm: TextMetrics): { starts: number[]; tot
     starts.push(n)
     if (v.s) n += 2
     if (tm.verseNumbers) n += String(v.v).length + 1
-    n += v.t === '' ? OMITTED.length : tokenize(v).reduce((a, t) => a + t.tok.length, 0)
+    n += v.t === '' ? omitted().length : tokenize(v).reduce((a, t) => a + t.tok.length, 0)
     n += 1
   }
   return { starts, total: n }
@@ -747,7 +748,7 @@ const ParaText = memo(function ParaText({ para, tm, colors, tint, textRef, onLay
         <Text key={v.v} style={v.v === tint ? { backgroundColor: colors.selected } : undefined}>
           {v.s ? <Text style={{ color: colors.muted, fontSize: tm.fs * 0.7, ...inlineMark(tm.fs * 0.7) }}>✦ </Text> : null}
           {tm.verseNumbers ? <Text style={{ color: colors.accent, fontSize: tm.fs * 0.6, ...SANS_BOLD, ...inlineMark(tm.fs * 0.6) }}>{`${v.v}\u00a0`}</Text> : null}
-          {v.t === '' ? <Text style={{ color: colors.muted, ...face(tm.font, { italic: true }) }}>{OMITTED}</Text> : verseBody(v, tm.font, tm.sep, plainSeps)}
+          {v.t === '' ? <Text style={{ color: colors.muted, ...face(tm.font, { italic: true }) }}>{omitted()}</Text> : verseBody(v, tm.font, tm.sep, plainSeps)}
           {' '}
         </Text>
       ))}
@@ -758,18 +759,18 @@ const ParaText = memo(function ParaText({ para, tm, colors, tint, textRef, onLay
 /** The reading controls that matter mid-chapter; the full set lives on the Settings tab. */
 function FlipSettings({ open, prefs, set, onClose }: { open: boolean; prefs: Prefs; set: (p: Partial<Prefs>) => void; onClose: () => void }) {
   return (
-    <Sheet open={open} onClose={onClose} title="Reading settings">
+    <Sheet open={open} onClose={onClose} title={t('Reading settings')}>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 8 }}>
-        <Slider label="Text size" value={prefs.fontSize} min={FONT_MIN} max={FONT_MAX} step={1} onChange={v => set({ fontSize: v })} format={v => `${v} px`} />
-        <Slider label="Line height" value={prefs.lineHeight} min={1.2} max={2.4} step={0.05} onChange={v => set({ lineHeight: v })} format={v => v.toFixed(2)} />
-        <T small muted>Font</T>
-        <Segmented<Font> value={prefs.font} onChange={font => set({ font })} options={[{ value: 'serif', label: 'Serif' }, { value: 'sans', label: 'Sans' }, { value: 'dyslexic', label: 'Dyslexic' }]} />
-        <T small muted>Theme</T>
+        <Slider label={t('Text size')} value={prefs.fontSize} min={FONT_MIN} max={FONT_MAX} step={1} onChange={v => set({ fontSize: v })} format={v => `${v} px`} />
+        <Slider label={t('Line height')} value={prefs.lineHeight} min={1.2} max={2.4} step={0.05} onChange={v => set({ lineHeight: v })} format={v => v.toFixed(2)} />
+        <T small muted>{t('Font')}</T>
+        <Segmented<Font> value={prefs.font} onChange={font => set({ font })} options={[{ value: 'serif', label: t('Serif') }, { value: 'sans', label: t('Sans') }, { value: 'dyslexic', label: t('Dyslexic') }]} />
+        <T small muted>{t('Theme')}</T>
         <ThemeGallery compact />
-        <SwitchRow label="Reduce animation" hint="Turn pages instantly" value={prefs.reduceMotion} onChange={reduceMotion => set({ reduceMotion })} />
-        <SwitchRow label="Paragraphs" hint="Off: one verse per line" value={prefs.paragraphs} onChange={paragraphs => set({ paragraphs })} />
-        <SwitchRow label="Verse numbers" value={prefs.verseNumbers} onChange={verseNumbers => set({ verseNumbers })} />
-        <Button title="Done" onPress={onClose} style={{ marginTop: 8 }} />
+        <SwitchRow label={t('Reduce animation')} hint={t('Turn pages instantly')} value={prefs.reduceMotion} onChange={reduceMotion => set({ reduceMotion })} />
+        <SwitchRow label={t('Paragraphs')} hint={t('Off: one verse per line')} value={prefs.paragraphs} onChange={paragraphs => set({ paragraphs })} />
+        <SwitchRow label={t('Verse numbers')} value={prefs.verseNumbers} onChange={verseNumbers => set({ verseNumbers })} />
+        <Button title={t('Done')} onPress={onClose} style={{ marginTop: 8 }} />
       </ScrollView>
     </Sheet>
   )

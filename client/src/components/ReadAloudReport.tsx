@@ -1,16 +1,22 @@
 import { useEffect, useState } from 'react'
 import { AppState, Platform, View } from 'react-native'
 import Constants from 'expo-constants'
+import { t, tn } from '@shared/i18n'
 import { errMsg, fmtWhen } from '../lib/community'
 import { MESSAGE_MAX, appVersionLabel, sendFeedback } from '../lib/feedback'
 import { markAsked, readAloudReport, troublesToAsk } from '../lib/readAloudLog'
-import type { Trouble } from '../lib/readAloudLogCore'
+import { troubleWords, type Trouble } from '../lib/readAloudLogCore'
 import { useToast } from '../store/toast'
 import { SheetBody } from './CommunityBits'
 import { Button, ErrorText, Input, Row, Sheet, T } from './ui'
 
 /** "In Psalm 118:12, 2 h ago, the voice stopped for a call and did not go on by itself." */
 const said = (x: Trouble) => { const when = fmtWhen(new Date(x.t).toISOString()); return `${x.w ? `In ${x.w}, ${when}` : when[0].toUpperCase() + when.slice(1)}, ${x.what}.` }
+/** The same in the reader's language, for the sheet; the message to the developer keeps `said`'s English. */
+const saidShown = (x: Trouble) => {
+  const when = fmtWhen(new Date(x.t).toISOString())
+  return x.w ? t('In {place}, {when}, {what}.', { place: x.w, when, what: troubleWords(x) }) : t('{when}, {what}.', { when: when[0].toUpperCase() + when.slice(1), what: troubleWords(x) })
+}
 
 /**
  * "Read aloud stopped": offered when the app comes to the front after a reading stopped by itself (the `troubles` of
@@ -41,23 +47,23 @@ export default function ReadAloudReport() {
       const message = ['Read aloud stopped by itself (sent from the app’s offer)', ...found.map(said), words.trim() ? `\n${words.trim()}` : ''].join('\n').trim().slice(0, MESSAGE_MAX)
       await sendFeedback({ message, app_version: appVersionLabel(Constants.expoConfig?.version, Constants.expoConfig?.android?.versionCode), platform: Platform.OS, ...(diagnostics ? { diagnostics } : {}) })
       close()
-      toast.show('Sent. Thank you')
+      toast.show(t('Sent. Thank you'))
     } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
   const latest = found?.[found.length - 1]
   return (
-    <Sheet open={!!latest} onClose={close} title="Read aloud stopped">
+    <Sheet open={!!latest} onClose={close} title={t('Read aloud stopped')}>
       <SheetBody>
-        {latest ? <T>{said(latest)}{found && found.length > 1 ? ` It stopped ${found.length === 2 ? 'once' : `${found.length - 1} times`} before that too.` : ''}</T> : null}
-        <T small muted>It should have read on. Sending the details helps find out why: what read aloud did over the last two days, the phone’s model and Android version, and its battery settings for the app. Nothing you wrote goes with them.</T>
+        {latest ? <T>{saidShown(latest)}{found && found.length > 1 ? ` ${tn(found.length - 1, 'It stopped once before that too.', 'It stopped {n} times before that too.')}` : ''}</T> : null}
+        <T small muted>{t('It should have read on. Sending the details helps find out why: what read aloud did over the last two days, the phone’s model and Android version, and its battery settings for the app. Nothing you wrote goes with them.')}</T>
         <View style={{ gap: 4 }}>
-          <T small muted>What was happening? (optional)</T>
-          <Input placeholder="Driving, a call came in…" accessibilityLabel="What was happening (optional)" value={words} onChangeText={setWords} maxLength={500} multiline style={{ minHeight: 70, textAlignVertical: 'top' }} />
+          <T small muted>{t('What was happening? (optional)')}</T>
+          <Input placeholder={t('Driving, a call came in…')} accessibilityLabel={t('What was happening (optional)')} value={words} onChangeText={setWords} maxLength={500} multiline style={{ minHeight: 70, textAlignVertical: 'top' }} />
         </View>
         {err && <ErrorText>{err}</ErrorText>}
         <Row style={{ justifyContent: 'flex-end' }}>
-          <Button title="Not now" small onPress={close} disabled={busy} />
-          <Button title={busy ? 'Sending…' : 'Send'} primary small onPress={() => { void send() }} disabled={busy} />
+          <Button title={t('Not now')} small onPress={close} disabled={busy} />
+          <Button title={busy ? t('Sending…') : t('Send')} primary small onPress={() => { void send() }} disabled={busy} />
         </Row>
       </SheetBody>
     </Sheet>

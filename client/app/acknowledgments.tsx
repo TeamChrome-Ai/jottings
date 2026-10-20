@@ -7,6 +7,8 @@ import { face } from '../src/theme'
 import { PopIn } from '../src/components/motion/nav'
 import { Card, Enter, H, H2, Screen, T, TYPE } from '../src/components/ui'
 import { BRAND } from '@shared/brand'
+import { t } from '@shared/i18n'
+import { tr } from '../src/i18n'
 
 /** The people behind the app, a word that nothing is for sale, and a one-line thank-you. Send feedback sits beside this
  * screen's row under Settings → About. */
@@ -15,29 +17,29 @@ export default function AcknowledgmentsScreen() {
   const name = { color: c.text, fontSize: TYPE.hero, ...face('serif', { bold: true }) }
   return (
     <Screen animate={false}>
-      <Stack.Screen options={{ title: 'Acknowledgments' }} />
-      <Enter><H>Acknowledgments</H></Enter>
+      <Stack.Screen options={{ title: t('Acknowledgments') }} />
+      <Enter><H>{t('Acknowledgments')}</H></Enter>
       <Enter delay={60}>
         <Text style={{ color: c.text, fontSize: TYPE.heading, lineHeight: 28, ...face('serif') }}>
-          {BRAND.name} was made for readers of J. N. Darby’s New Translation, to keep his text and every one of his notes close at hand.
+          {t('{name} was made for readers of J. N. Darby’s New Translation, to keep his text and every one of his notes close at hand.', { name: BRAND.name })}
         </Text>
       </Enter>
 
       <Enter delay={120}>
         <Card style={{ gap: 16 }}>
           <View style={{ gap: 2 }}>
-            <T small muted>Built by</T>
+            <T small muted>{t('Built by')}</T>
             <Text style={name}>{BUILT_BY}</Text>
           </View>
           <View style={{ gap: 2 }}>
-            <T small muted>With help from</T>
+            <T small muted>{t('With help from')}</T>
             {WITH_HELP_FROM.map(n => <Text key={n} style={name}>{n}</Text>)}
           </View>
         </Card>
       </Enter>
 
       <Enter delay={180} style={{ gap: 12 }}>
-        <H2 hint="They read the early builds and said what was wrong, kindly.">Playtesters</H2>
+        <H2 hint={t('They read the early builds and said what was wrong, kindly.')}>{t('Playtesters')}</H2>
         <Card style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 0, rowGap: 10 }}>
           {PLAYTESTERS.map((n, i) => (
             // the names follow their card in: timed from its entrance (180), not from mount behind it
@@ -54,7 +56,7 @@ export default function AcknowledgmentsScreen() {
 
       <Enter delay={300}>
         <Text style={{ color: c.text, fontSize: TYPE.heading, lineHeight: 28, marginTop: 8, ...face('serif') }}>
-          Thank you for reading with {BRAND.name}.
+          {t('Thank you for reading with {name}.', { name: BRAND.name })}
         </Text>
       </Enter>
     </Screen>
@@ -73,7 +75,9 @@ function SupportNote() {
   const read = () => router.push({ pathname: '/read/[book]/[chapter]', params: { book: String(r.book), chapter: String(r.chapter), v: String(r.v1), v2: String(r.v2) } })
   return (
     <Text style={{ color: c.muted, fontSize: TYPE.small, lineHeight: 21, marginTop: 8 }}>
-      {BRAND.name} has no ads and <Text accessibilityRole="link" accessibilityLabel={`Read ${label}`} onPress={read} style={{ textDecorationLine: 'underline' }}>never will</Text>, and nothing in it is for sale. There is nothing you need to give.
+      {tr('{name} has no ads and <link>never will</link>, and nothing in it is for sale. There is nothing you need to give.', {
+        link: s => <Text accessibilityRole="link" accessibilityLabel={t('Read {ref}', { ref: label })} onPress={read} style={{ textDecorationLine: 'underline' }}>{s}</Text>,
+      }, { name: BRAND.name })}
     </Text>
   )
 }

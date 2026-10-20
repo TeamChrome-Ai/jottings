@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Animated, Easing, LayoutAnimation, Platform, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native'
+import { t } from '@shared/i18n'
 import { useReduceMotion } from '../../store/prefs'
 import RiseIn from './rise'
 import { useColors } from '../../hooks/useTheme'
@@ -279,7 +280,7 @@ export function BusyDots({ color }: { color?: string }) {
     return () => loop.stop()
   }, [dots, reduce])
   return (
-    <View accessibilityRole="progressbar" accessibilityLabel="working" style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+    <View accessibilityRole="progressbar" accessibilityLabel={t('working')} style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
       {dots.map((d, i) => <Animated.View key={i} style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: color ?? c.accent, opacity: d }} />)}
     </View>
   )

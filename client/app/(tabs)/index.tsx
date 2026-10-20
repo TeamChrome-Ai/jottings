@@ -3,6 +3,7 @@ import { Linking, Platform, Text, View } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 import type { Stats } from '@shared/types'
 import { formatRef, type Ref } from '@shared/ref'
+import { ownNumber } from '@shared/texts'
 import { presentVotd, votdFor } from '@shared/votd'
 import { book as bookMeta, fetchChapter } from '../../src/lib/bible'
 import { dayLine } from '../../src/lib/week'
@@ -33,6 +34,8 @@ import { useEdition } from '../../src/lib/edition'
 import { authorShown, hasChronology } from '../../src/lib/editionCore'
 import { authorNames, enabledAuthors } from '@shared/ministry'
 import { BRAND, NOUN } from '@shared/brand'
+import { t } from '@shared/i18n'
+import { policyPath } from '../../src/lib/credits'
 
 /**
  * Home opens on the text itself: today's verse as the screen's one solid accent block, then the chapter to go back
@@ -96,7 +99,7 @@ export default function Home() {
     <View ref={tourRef('home-streak')}>
       {user && stats ? <Enter delay={streakAt}><StreakCard streak={stats.streak} delay={reduce ? 0 : streakAt} /></Enter> : user ? null : (
         <Enter delay={220}>
-          <SignInCard title="Keep a daily reading streak" text="Sign in to track your days and read with a group." />
+          <SignInCard title={t('Keep a daily reading streak')} text={t('Sign in to track your days and read with a group.')} />
         </Enter>
       )}
     </View>
@@ -113,7 +116,7 @@ export default function Home() {
 
       <Grow from={0.94} delay={60}>
         <Card ref={tourRef('home-votd')} tone="accent" style={{ padding: 24, gap: 18, minHeight: 200 }} onPress={votd ? () => open({ book: votd.ref.book, chapter: votd.ref.chapter, verse: votd.ref.v1 }) : undefined}
-          accessibilityLabel={votd ? `Today’s verse, ${formatRef(votd.ref)}. Open the chapter` : undefined}>
+          accessibilityLabel={votd ? t('Today’s verse, {ref}. Open the chapter', { ref: formatRef(votd.ref) }) : undefined}>
           {votd ? <Enter delay={votdAt}><T bold style={{ color: c.accentText }}>{formatRef(votd.ref)}</T></Enter> : <T bold> </T>}
           {votd ? (
             <Enter delay={votdAt}>
@@ -121,11 +124,11 @@ export default function Home() {
             </Enter>
           ) : <Spinner color={c.accentText} />}
           <Row style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
-            <T small style={{ color: c.accentText, opacity: 0.8 }}>Today’s verse</T>
+            <T small style={{ color: c.accentText, opacity: 0.8 }}>{t('Today’s verse')}</T>
             {votd ? (
               <Enter delay={votdAt} rise={0}>
                 <View style={{ backgroundColor: c.accentText, borderRadius: 18, height: 36, paddingHorizontal: 16, justifyContent: 'center' }}>
-                  <T small bold style={{ color: c.accent }}>Read the chapter</T>
+                  <T small bold style={{ color: c.accent }}>{t('Read the chapter')}</T>
                 </View>
               </Enter>
             ) : null}
@@ -141,12 +144,12 @@ export default function Home() {
         <Enter delay={posAt}>
           {/* the server's position replacing this device's first guess swaps in place rather than jumping */}
           <FadeSwap k={`${pos.book}.${pos.chapter}`}>
-            <Card onPress={() => open(pos)} accessibilityLabel={`Continue reading ${formatRef({ book: pos.book, chapter: pos.chapter })}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 14, paddingLeft: 22 }}>
+            <Card onPress={() => open(pos)} accessibilityLabel={t('Continue reading {ref}', { ref: formatRef({ book: pos.book, chapter: pos.chapter }) })} style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 14, paddingLeft: 22 }}>
               <View style={{ flex: 1, gap: 2 }}>
-                <T small muted>Continue reading</T>
+                <T small muted>{t('Continue reading')}</T>
                 <Text numberOfLines={1} style={{ color: c.text, fontSize: 24, ...face('serif', { bold: true }) }}>{bookMeta(pos.book).name}</Text>
               </View>
-              <Numeral n={pos.chapter} size={56} dyslexic={font === 'dyslexic'} />
+              <Numeral n={ownNumber(pos.book, pos.chapter, 1).c} size={56} dyslexic={font === 'dyslexic'} />
             </Card>
           </FadeSwap>
         </Enter>
@@ -160,32 +163,32 @@ export default function Home() {
       <Enter delay={280} style={desktop ? { flexDirection: 'row', alignItems: 'flex-start', gap: 20 } : { gap: 12 }}>
         {/* flex 1 only in the row: in the column, on the web, a flex-basis of 0 collapses a block to no height */}
         <View style={{ flex: desktop ? 1 : undefined, gap: 12 }}>
-        <H2>Library</H2>
+        <H2>{t('Library')}</H2>
         <Card style={{ gap: 0, paddingVertical: 8 }}>
-          <ListRow ref={tourRef('home-bookmarks')} icon="bookmark" label="Bookmarks" onPress={() => router.push('/bookmarks')} />
-          <ListRow icon="list" label={NOUN.Many} detail="Your studies" onPress={() => router.push('/outlines')} />
-          {hasChronology(edition) ? <ListRow ref={tourRef('home-chronology')} icon="clock" label="Chronological table" detail="Kings and prophets of Judah and Israel" onPress={() => router.push('/chronology')} /> : null}
-          <ListRow ref={tourRef('home-dictionary')} icon="dictionary" label="Dictionary and concordance" detail="Morrish’s dictionary, Strong’s concordance" onPress={() => router.push('/dictionary')} />
-          <ListRow ref={tourRef('home-ministry')} icon="companion" label="Ministry" detail={authorNames(enabledAuthors().filter(a => !authorShown(a.id, edition)).map(a => a.id))} onPress={() => router.push('/companion')} />
-          <ListRow icon="stack" label="Paths" detail={pathOn && path.state && path.progress ? `${pathTitle(path.state)} · ${countWords(path.progress)}` : 'Reading plans, no dates unless you set one'} onPress={() => router.push('/paths')} />
+          <ListRow ref={tourRef('home-bookmarks')} icon="bookmark" label={t('Bookmarks')} onPress={() => router.push('/bookmarks')} />
+          <ListRow icon="list" label={NOUN.Many} detail={t('Your studies')} onPress={() => router.push('/outlines')} />
+          {hasChronology(edition) ? <ListRow ref={tourRef('home-chronology')} icon="clock" label={t('Chronological table')} detail={t('Kings and prophets of Judah and Israel')} onPress={() => router.push('/chronology')} /> : null}
+          <ListRow ref={tourRef('home-dictionary')} icon="dictionary" label={t('Dictionary and concordance')} detail={t('Morrish’s dictionary, Strong’s concordance')} onPress={() => router.push('/dictionary')} />
+          <ListRow ref={tourRef('home-ministry')} icon="companion" label={t('Ministry')} detail={authorNames(enabledAuthors().filter(a => !authorShown(a.id, edition)).map(a => a.id))} onPress={() => router.push('/companion')} />
+          <ListRow icon="stack" label={t('Paths')} detail={pathOn && path.state && path.progress ? `${pathTitle(path.state)} · ${countWords(path.progress)}` : t('Reading plans, no dates unless you set one')} onPress={() => router.push('/paths')} />
         </Card>
         {/* before the first finished chapter the sign-in card sits under the Library column (rule above) */}
         {readAny !== null && signInPromptBelowLibrary(!!user, readAny) ? streakSlot : null}
         </View>
         <View ref={tourRef('home-together')} style={{ flex: desktop ? 1 : undefined, gap: 12 }}>
-        <H2>Together</H2>
+        <H2>{t('Together')}</H2>
         {/* friends only once there are some (or an invite): otherwise one quiet line, and nothing while invites are off */}
         {user && friends && (friends.friends.length || friends.incoming.length) ? <HomeFriends data={friends} uid={user.id} delay={280} /> : null}
         <Card style={{ gap: 0, paddingVertical: 8 }}>
-          <ListRow icon="users" label="Reading groups" detail="Start one, or join with a code" onPress={() => router.push('/groups')} />
+          <ListRow icon="users" label={t('Reading groups')} detail={t('Start one, or join with a code')} onPress={() => router.push('/groups')} />
           {user && friends && !friends.friends.length && !friends.incoming.length && friends.settings.invites
-            ? <ListRow icon="invite" label="Invite a friend" detail="Someone you know, by their handle or your code" onPress={() => router.push('/friends')} /> : null}
+            ? <ListRow icon="invite" label={t('Invite a friend')} detail={t('Someone you know, by their handle or your code')} onPress={() => router.push('/friends')} /> : null}
         </Card>
         </View>
       </Enter>
 
       <Enter delay={340} style={{ gap: 8 }}>
-        <H2>Theme</H2>
+        <H2>{t('Theme')}</H2>
         <ThemeStrip onMore={() => router.push('/themes')} />
       </Enter>
 
@@ -193,9 +196,9 @@ export default function Home() {
         <View style={{ paddingTop: 8, gap: 4 }}>
           <T small muted>{BRAND.fullName}</T>
           <Row style={{ gap: 14 }}>
-            <Text accessibilityRole="link" style={{ color: c.muted, fontSize: TYPE.small, textDecorationLine: 'underline' }} onPress={() => Linking.openURL('/privacy')}>Privacy policy</Text>
-            <Text accessibilityRole="link" style={{ color: c.muted, fontSize: TYPE.small, textDecorationLine: 'underline' }} onPress={() => Linking.openURL('/terms')}>Terms</Text>
-            <Text accessibilityRole="link" style={{ color: c.muted, fontSize: TYPE.small, textDecorationLine: 'underline' }} onPress={() => Linking.openURL('/copyright')}>Copyright</Text>
+            <Text accessibilityRole="link" style={{ color: c.muted, fontSize: TYPE.small, textDecorationLine: 'underline' }} onPress={() => Linking.openURL(policyPath('/privacy'))}>{t('Privacy policy')}</Text>
+            <Text accessibilityRole="link" style={{ color: c.muted, fontSize: TYPE.small, textDecorationLine: 'underline' }} onPress={() => Linking.openURL(policyPath('/terms'))}>{t('Terms')}</Text>
+            <Text accessibilityRole="link" style={{ color: c.muted, fontSize: TYPE.small, textDecorationLine: 'underline' }} onPress={() => Linking.openURL('/copyright')}>{t('Copyright')}</Text>
           </Row>
         </View>
       )}

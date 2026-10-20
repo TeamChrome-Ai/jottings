@@ -4,6 +4,7 @@ import Constants from 'expo-constants'
 import { sendFeedback } from '../lib/feedback'
 import { copyText } from '../lib/outlines'
 import { NOUN } from '@shared/brand'
+import { t } from '@shared/i18n'
 
 /**
  * The root error boundary's screen. It must work when the providers themselves are what failed, so it reads no
@@ -23,14 +24,14 @@ export default function CrashScreen({ error, retry }: { error: Error; retry: () 
   const btn = (primary: boolean) => ({ paddingHorizontal: 18, height: 44, borderRadius: 22, alignItems: 'center' as const, justifyContent: 'center' as const, backgroundColor: primary ? P.accent : P.card })
   return (
     <View style={{ flex: 1, backgroundColor: P.bg, justifyContent: 'center', padding: 28, gap: 16 }}>
-      <Text accessibilityRole="header" style={{ color: P.text, fontSize: 26, fontWeight: '700' }}>Something went wrong</Text>
-      <Text style={{ color: P.muted, fontSize: 16, lineHeight: 23 }}>That screen hit an error. Your reading, bookmarks and {NOUN.many} are safe.</Text>
+      <Text accessibilityRole="header" style={{ color: P.text, fontSize: 26, fontWeight: '700' }}>{t('Something went wrong')}</Text>
+      <Text style={{ color: P.muted, fontSize: 16, lineHeight: 23 }}>{t('That screen hit an error. Your reading, bookmarks and {many} are safe.', { many: NOUN.many })}</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-        <Pressable accessibilityRole="button" onPress={() => { void retry() }} style={btn(true)}><Text style={{ color: P.accentText, fontWeight: '700' }}>Try again</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={() => { void retry() }} style={btn(true)}><Text style={{ color: P.accentText, fontWeight: '700' }}>{t('Try again')}</Text></Pressable>
         <Pressable accessibilityRole="button" disabled={sent === 'sending' || sent === 'sent'} onPress={() => { void send() }} style={btn(false)}>
-          <Text style={{ color: P.text, fontWeight: '600' }}>{sent === 'sent' ? 'Report sent' : sent === 'sending' ? 'Sending…' : sent === 'failed' ? 'Send again' : 'Send report'}</Text>
+          <Text style={{ color: P.text, fontWeight: '600' }}>{sent === 'sent' ? t('Report sent') : sent === 'sending' ? t('Sending…') : sent === 'failed' ? t('Send again') : t('Send report')}</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" onPress={() => { void copyText(details).then(ok => setCopied(ok)) }} style={btn(false)}><Text style={{ color: P.text, fontWeight: '600' }}>{copied ? 'Copied' : 'Copy details'}</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={() => { void copyText(details).then(ok => setCopied(ok)) }} style={btn(false)}><Text style={{ color: P.text, fontWeight: '600' }}>{copied ? t('Copied') : t('Copy details')}</Text></Pressable>
       </View>
       <ScrollView style={{ maxHeight: 160, backgroundColor: P.card, borderRadius: 14 }} contentContainerStyle={{ padding: 12 }}>
         <Text selectable style={{ color: P.muted, fontSize: 12, fontFamily: Platform.select({ android: 'monospace', default: 'monospace' }) }}>{details}</Text>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ScrollView, Text, View } from 'react-native'
 import type { WorkContents, WorkSummary } from '@shared/ministry'
+import { t } from '@shared/i18n'
 import { pickerLayout, shelfItems, shortTitle, worksNoun, type PickerItem, type Shelf } from '../lib/libraryNav'
 import { useReadingFont } from '../hooks/useReadingFont'
 import { useColors } from '../hooks/useTheme'
@@ -94,8 +95,8 @@ function Body({ level, author, works, many, viewWork, contents, current, current
           {level === 'works' ? <WorksChooser author={author} works={works} current={currentWork} picked={picked.work} markRef={mark} onLaid={place} onWork={onWork} />
             : (
               <View style={{ gap: 10 }}>
-                {many ? <Button small lead="back" title={`All ${noun}`} onPress={onUp} style={pickerStyles.back} /> : null}
-                {contents === undefined ? <Spinner /> : contents === null ? <T small muted>The contents need a connection the first time they are opened.</T>
+                {many ? <Button small lead="back" title={noun === 'books' ? t('All books') : noun === 'papers' ? t('All papers') : t('All volumes')} onPress={onUp} style={pickerStyles.back} /> : null}
+                {contents === undefined ? <Spinner /> : contents === null ? <T small muted>{t('The contents need a connection the first time they are opened.')}</T>
                   : <SectionsList key={viewWork} contents={contents} current={current} picked={picked.n} markRef={mark} onLaid={place} onPick={onPick} />}
               </View>
             )}

@@ -34,6 +34,7 @@ import TourVeil from './TourVeil'
 import { Button, RADIUS, TYPE } from './ui'
 import { useEdition } from '../lib/edition'
 import { NOUN } from '@shared/brand'
+import { t, tc } from '@shared/i18n'
 
 /*
  * The guided tour: coach marks over the live interface. A veil in the sheet scrim with a rounded spotlight cut round
@@ -298,11 +299,11 @@ export default function TourRun({ chapter, full, onClose }: { chapter: Chapter |
       }
       case 'sample': {
         if (a.on) {
-          const o = await createOutline({ title: `Sample ${NOUN.one}`, description: 'Made by the tour to show the editor; it goes when the tour moves on.' })
+          const o = await createOutline({ title: t('Sample {one}', { one: NOUN.one }), description: t('Made by the tour to show the editor; it goes when the tour moves on.') })
           await saveOutlineItems(o.id, [
-            { kind: 'heading', text: 'In the beginning', depth: 0 },
+            { kind: 'heading', text: t('In the beginning'), depth: 0 },
             { kind: 'verse', book: 43, chapter: 1, v1: 1, v2: 1, depth: 0 },
-            { kind: 'note', text: 'A note of your own sits under the passage it belongs to.', depth: 1 },
+            { kind: 'note', text: t('A note of your own sits under the passage it belongs to.'), depth: 1 },
           ])
           sample.current = o.id
           setTourSample(o.id)
@@ -343,7 +344,7 @@ export default function TourRun({ chapter, full, onClose }: { chapter: Chapter |
       setPhase('final')
       const v = view.current
       setHole({ x: 0, y: 0, w: v.w, h: v.h, r: 0 })
-      const bye = () => { close(); toast.show(FINAL_TEXT, FINAL_REST_MS) }
+      const bye = () => { close(); toast.show(t(FINAL_TEXT), FINAL_REST_MS) }
       if (reduce) bye(); else setTimeout(bye, OPEN_MS)
     })
     // setScene reads refs only
@@ -524,23 +525,23 @@ export default function TourRun({ chapter, full, onClose }: { chapter: Chapter |
           style={[styles.label, { width: Math.min(LABEL_W, W - 32), backgroundColor: c.bg, left: placed?.x ?? 16, top: placed?.y ?? -9999, opacity: labelOpacity, transform: [{ translateY: lift }] }]}>
           {choice ? (
             <>
-              <Text style={{ color: c.text, fontSize: TYPE.body, lineHeight: 23 }}>{CHOICE.text}</Text>
+              <Text style={{ color: c.text, fontSize: TYPE.body, lineHeight: 23 }}>{t(CHOICE.text)}</Text>
               <View style={{ gap: 10 }}>
-                <Button soft title={CHOICE.more} onPress={keepGoing} />
-                <Button title={CHOICE.enough} onPress={() => finish(false)} />
+                <Button soft title={t(CHOICE.more)} onPress={keepGoing} />
+                <Button title={t(CHOICE.enough)} onPress={() => finish(false)} />
               </View>
             </>
           ) : (
             <>
-              <Text style={{ color: c.text, fontSize: TYPE.body, lineHeight: 23 }}>{shown?.text ?? STEPS[0].text}</Text>
+              <Text style={{ color: c.text, fontSize: TYPE.body, lineHeight: 23 }}>{t(shown?.text ?? STEPS[0].text)}</Text>
               <View style={styles.footer}>
-                <SkipPill onPress={skip} label="Skip the tour" />
+                <SkipPill onPress={skip} label={t('Skip the tour')} />
                 {mode === 'short'
                   ? <Dots at={i} n={n} />
-                  : <Text accessibilityLabel={`Step ${i + 1} of ${n}`} style={{ color: c.muted, fontSize: TYPE.caption, fontVariant: ['tabular-nums'] }}>{progressText(i, n)}</Text>}
+                  : <Text accessibilityLabel={t('Step {step} of {n}', { step: i + 1, n })} style={{ color: c.muted, fontSize: TYPE.caption, fontVariant: ['tabular-nums'] }}>{progressText(i, n)}</Text>}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {mode === 'full' ? <Button small title="Back" disabled={index === 0} onPress={back} /> : null}
-                  <Button small primary title={lastStep ? 'Done' : 'Next'} onPress={next} />
+                  {mode === 'full' ? <Button small title={tc('verb', 'Back')} disabled={index === 0} onPress={back} /> : null}
+                  <Button small primary title={lastStep ? t('Done') : t('Next')} onPress={next} />
                 </View>
               </View>
             </>
@@ -575,7 +576,7 @@ function Blockers({ hole, W, H }: { hole: Hole; W: number; H: number }) {
 function Dots({ at, n }: { at: number; n: number }) {
   const c = useColors()
   return (
-    <View accessibilityLabel={`Step ${at + 1} of ${n}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+    <View accessibilityLabel={t('Step {step} of {n}', { step: at + 1, n })} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
       {Array.from({ length: n }, (_, k) => <View key={k} style={{ width: k === at ? 14 : 6, height: 6, borderRadius: 3, backgroundColor: k === at ? c.accent : c.border }} />)}
     </View>
   )

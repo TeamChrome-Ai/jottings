@@ -2,6 +2,8 @@
  * Fonts the reader added (Google Fonts or a file from the device). Pure data and naming only, so theme.ts and the
  * prefs store can use it without pulling in file storage or font loading.
  */
+import { t } from '@shared/i18n'
+
 export type FaceKey = 'regular' | 'bold' | 'italic'
 export const FACE_KEYS: readonly FaceKey[] = ['regular', 'bold', 'italic']
 export interface CustomFont {
@@ -48,7 +50,7 @@ export function sniffFont(bytes: Uint8Array): 'ttf' | 'otf' | 'woff' | 'woff2' |
 export function nameFromFile(file: string): string {
   const base = file.replace(/^.*[\\/]/, '').replace(/\.[a-z0-9]+$/i, '')
   const trimmed = base.replace(/[-_ ]?(regular|roman|book|normal)$/i, '').replace(/[-_]+/g, ' ').trim()
-  return (trimmed || base || 'My font').slice(0, 40)
+  return (trimmed || base || t('My font')).slice(0, 40)
 }
 
 const ID_RE = /^[a-z0-9-]{1,40}$/

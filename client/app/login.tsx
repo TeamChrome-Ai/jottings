@@ -11,6 +11,7 @@ import { usePrefsStore } from '../src/store/prefs'
 import { useColors } from '../src/hooks/useTheme'
 import { Button, Enter, ErrorText, H, Row, Screen, T } from '../src/components/ui'
 import { BusyDots, FadeSwap, FocusInput, ShakeIn, easeNextLayout } from '../src/components/motion/nav'
+import { t, tc } from '@shared/i18n'
 
 WebBrowser.maybeCompleteAuthSession()
 
@@ -32,7 +33,7 @@ export default function Login() {
   const setErr = useCallback((m: string) => { setErrText(m); if (m) setErrN(n => n + 1) }, [])
   const c = useColors()
 
-  const done = useCallback(() => { toast.show('Signed in'); if (router.canGoBack()) router.back(); else router.replace('/') }, [toast, router])
+  const done = useCallback(() => { toast.show(t('Signed in')); if (router.canGoBack()) router.back(); else router.replace('/') }, [toast, router])
   const submit = async () => {
     if (busy || !handle.trim() || !password) return
     setBusy(true); setErr('')
@@ -40,11 +41,11 @@ export default function Login() {
       if (mode === 'login') await auth.login(handle.trim(), password)
       else await auth.register(handle.trim(), displayName.trim() || handle.trim(), password)
       done()
-    } catch (e) { setErr((e as Error).message || 'Sign in failed') } finally { setBusy(false) }
+    } catch (e) { setErr((e as Error).message || t('Sign in failed')) } finally { setBusy(false) }
   }
   const onGoogleToken = useCallback(async (idToken: string) => {
     setBusy(true); setErr('')
-    try { await auth.google(idToken); done() } catch (e) { setErr((e as Error).message || 'Google sign-in failed') } finally { setBusy(false) }
+    try { await auth.google(idToken); done() } catch (e) { setErr((e as Error).message || t('Google sign-in failed')) } finally { setBusy(false) }
   }, [auth, done, setErr])
   const googleReady = !!googleIds && hasAnyClientId(googleIds)
   // switching mode swaps the title and opens or closes the one field that differs; the rest of the form stays put
@@ -53,15 +54,15 @@ export default function Login() {
   return (
     <Screen>
       <View style={{ gap: 12 }}>
-        <FadeSwap k={mode}><H>{mode === 'login' ? 'Sign in' : 'Create account'}</H></FadeSwap>
-        <FocusInput placeholder="Handle" value={handle} onChangeText={setHandle} autoCapitalize="none" autoCorrect={false} textContentType="username" />
-        {mode === 'register' && <Enter><FocusInput placeholder="Display name" value={displayName} onChangeText={setDisplayName} /></Enter>}
-        <FocusInput placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" onSubmitEditing={() => { void submit() }} />
+        <FadeSwap k={mode}><H>{mode === 'login' ? t('Sign in') : t('Create account')}</H></FadeSwap>
+        <FocusInput placeholder={tc('username', 'Handle')} value={handle} onChangeText={setHandle} autoCapitalize="none" autoCorrect={false} textContentType="username" />
+        {mode === 'register' && <Enter><FocusInput placeholder={t('Display name')} value={displayName} onChangeText={setDisplayName} /></Enter>}
+        <FocusInput placeholder={t('Password')} value={password} onChangeText={setPassword} secureTextEntry textContentType="password" onSubmitEditing={() => { void submit() }} />
         {err ? <ShakeIn k={errN}><ErrorText>{err}</ErrorText></ShakeIn> : null}
         <View>
           <Button
             primary
-            title={mode === 'login' ? 'Sign in' : 'Create account'}
+            title={mode === 'login' ? t('Sign in') : t('Create account')}
             onPress={() => { void submit() }}
             disabled={!busy && (!handle.trim() || !password)}
             accessibilityState={{ busy }}
@@ -71,17 +72,17 @@ export default function Login() {
         </View>
         {googleReady && googleIds && (
           <>
-            <T small muted style={{ textAlign: 'center' }}>or</T>
+            <T small muted style={{ textAlign: 'center' }}>{t('or')}</T>
             {Platform.select({ android: googleIds.android, ios: googleIds.ios, default: googleIds.web })
               ? <GoogleButton ids={googleIds} disabled={busy} onToken={onGoogleToken} onError={setErr} />   // the provider hook throws without this platform's own id
               : null}
           </>
         )}
       </View>
-      <T small muted>No email and no password reset here{googleReady ? '; use Google if you would rather not keep a password' : ''}.</T>
+      <T small muted>{googleReady ? t('No email and no password reset here; use Google if you would rather not keep a password.') : t('No email and no password reset here.')}</T>
       <Row style={{ justifyContent: 'center', marginTop: 8 }}>
-        <T muted>{mode === 'login' ? 'No account?' : 'Already registered?'}</T>
-        <Button small title={mode === 'login' ? 'Create account' : 'Sign in'} onPress={flip} />
+        <T muted>{mode === 'login' ? t('No account?') : t('Already registered?')}</T>
+        <Button small title={mode === 'login' ? t('Create account') : t('Sign in')} onPress={flip} />
       </Row>
       <View style={{ height: 24 }} />
     </Screen>
@@ -94,9 +95,9 @@ function GoogleButton({ ids, disabled, onToken, onError }: { ids: GoogleClientId
   useEffect(() => {
     if (!response) return
     if (response.type === 'success') {
-      const t = response.params.id_token
-      if (t) onToken(t); else onError('Google returned no id token')
-    } else if (response.type === 'error') onError(response.error?.message ?? 'Google sign-in failed')
+      const token = response.params.id_token
+      if (token) onToken(token); else onError(t('Google returned no id token'))
+    } else if (response.type === 'error') onError(response.error?.message ?? t('Google sign-in failed'))
   }, [response, onToken, onError])
-  return <Button title="Continue with Google" leadNode={<GoogleLogo />} disabled={!request || disabled} onPress={() => { promptAsync().catch(e => onError((e as Error).message)) }} />
+  return <Button title={t('Continue with Google')} leadNode={<GoogleLogo />} disabled={!request || disabled} onPress={() => { promptAsync().catch(e => onError((e as Error).message)) }} />
 }

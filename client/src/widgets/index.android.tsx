@@ -10,6 +10,7 @@ import { readDailyGoal, type DailyGoal } from '../lib/dailyGoal'
 import { THEME_MAP, type ThemeId } from '../theme'
 import { StreakWidget, VerseWidget } from './layouts'
 import { streakCard, verseCard, widgetThemes } from './model'
+import { ensureStoredLanguage } from '../i18n'
 
 /**
  * Android home-screen widgets: Verse of the day and Reading streak (`index.ts` is the inert copy for iOS and the web).
@@ -44,6 +45,7 @@ let shown = ''
 const parse = (raw: string | null): unknown => { try { return raw ? JSON.parse(raw) : null } catch { return null } }
 
 async function load(): Promise<Data> {
+  await ensureStoredLanguage()
   if (streak === undefined || !themes || goal === undefined) {
     const [[, s], [, p]] = await AsyncStorage.multiGet([STREAK_KEY, PREFS_KEY])
     const prefs = parse(p) as Partial<StoredPrefs> | null

@@ -1,6 +1,7 @@
 import type { ReactNode, Ref } from 'react'
 import { View } from 'react-native'
 import { useRouter } from 'expo-router'
+import { t } from '@shared/i18n'
 import { Button, Card, T } from './ui'
 
 /**
@@ -17,7 +18,7 @@ export default function SignInCard({ title, text, children, ref }: { title?: str
         <T small muted>{text}</T>
         {children}
       </View>
-      <Button primary small title="Sign in" onPress={() => router.push('/login')} />
+      <Button primary small title={t('Sign in')} onPress={() => router.push('/login')} />
     </Card>
   )
 }

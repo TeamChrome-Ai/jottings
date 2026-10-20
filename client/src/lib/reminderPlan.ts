@@ -1,4 +1,5 @@
 import type { StreakInfo } from '@shared/types'
+import { t, tn } from '@shared/i18n'
 import { shiftDay, streakToday } from './localDay'
 
 /**
@@ -71,18 +72,18 @@ export function summarizeStreak(s: StreakInfo, today: string): StreakSummary {
  * planned again (or dropped) on every call, so a reschedule neither repeats it nor loses it.
  */
 export function planReminders({ now, enabled, hour, minute, streak, log }: PlanInput): { fires: Fire[]; log: NudgeLog } {
-  const t = now.getTime()
-  const settled: NudgeLog = { start: settle(log.start, t), lapse: settle(log.lapse, t) }
+  const ms = now.getTime()
+  const settled: NudgeLog = { start: settle(log.start, ms), lapse: settle(log.lapse, ms) }
   const drop = (e: NudgeEntry): NudgeEntry => ({ ...e, pending: null, pendingRun: null })
   const idle = { start: drop(settled.start), lapse: drop(settled.lapse) }
   if (!enabled) return { fires: [], log: idle }
 
   const today = at(now, 0, hour, minute), tomorrow = at(now, 1, hour, minute)
-  const next = today.getTime() > t ? today : tomorrow
+  const next = today.getTime() > ms ? today : tomorrow
 
   if (streak.current > 0) {
     const fires: Fire[] = []
-    if (today.getTime() > t && !streak.todayMet) fires.push(daily(today, streak.current + 1))
+    if (today.getTime() > ms && !streak.todayMet) fires.push(daily(today, streak.current + 1))
     fires.push(daily(tomorrow, streak.todayMet ? streak.current + 1 : null))
     return { fires, log: idle }
   }
@@ -92,7 +93,7 @@ export function planReminders({ now, enabled, hour, minute, streak, log }: PlanI
     if (!due(e.sent, next)) return { fires: [], log: idle }
     const m = streak.goalMinutes
     return {
-      fires: [{ kind: 'start', at: next, title: 'Start a streak?', body: `${m} ${m === 1 ? 'minute' : 'minutes'} a day, and the app keeps count. Today is a good day to begin.` }],
+      fires: [{ kind: 'start', at: next, title: t('Start a streak?'), body: tn(m, '{n} minute a day, and the app keeps count. Today is a good day to begin.', '{n} minutes a day, and the app keeps count. Today is a good day to begin.') }],
       log: { start: { ...e, pending: next.getTime() }, lapse: idle.lapse },
     }
   }
@@ -102,13 +103,13 @@ export function planReminders({ now, enabled, hour, minute, streak, log }: PlanI
   if ((run && e.sentRun === run.end) || !due(e.sent, next)) return { fires: [], log: idle }
   const n = run?.length ?? 0
   return {
-    fires: [{ kind: 'lapse', at: next, title: 'Your streak paused', body: n > 1 ? `You read ${n} days in a row. Pick it up where you left off.` : 'Pick it up where you left off.' }],
+    fires: [{ kind: 'lapse', at: next, title: t('Your streak paused'), body: n > 1 ? t('You read {n} days in a row. Pick it up where you left off.', { n }) : t('Pick it up where you left off.') }],
     log: { start: idle.start, lapse: { ...e, pending: next.getTime(), pendingRun: run?.end ?? null } },
   }
 }
 
 function daily(when: Date, day: number | null): Fire {
-  return { kind: 'daily', at: when, title: 'Keep the streak going', body: `A few minutes of reading keeps today’s streak alive.${day ? ` Day ${day} is waiting.` : ''}` }
+  return { kind: 'daily', at: when, title: t('Keep the streak going'), body: day ? t('A few minutes of reading keeps today’s streak alive. Day {day} is waiting.', { day }) : t('A few minutes of reading keeps today’s streak alive.') }
 }
 
 /** A pending notice whose time has passed has fired. */

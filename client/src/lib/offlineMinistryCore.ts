@@ -8,6 +8,7 @@ import { collectionHidden, collectionsByWork, notesHidden, remapPara, stripCalle
 import { paragraphsOf, type WorkMeta } from '@shared/companion'
 import { mentionOfRank, plainOf, snippetOf } from '@shared/ministryIndex'
 import { MINISTRY_AUTHORS, type Library, type LibraryAuthor, type MinistryGroup, type MinistryItem, type MinistryRefs, type MinistrySection, type WorkContents } from '@shared/ministry'
+import { t, tc } from '@shared/i18n'
 
 // ---------- the server's listing ----------
 
@@ -107,17 +108,17 @@ export function deriveStatus(stored: StoredAuthor | null, inFlight: number | nul
 
 /** "48 MB", "3.5 MB", "820 KB": one decimal under 10 MB, none above. */
 export function formatBytes(n: number): string {
-  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`
+  if (n < 1024 * 1024) return t('{n} KB', { n: Math.max(1, Math.round(n / 1024)) })
   const mb = n / (1024 * 1024)
-  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
+  return t('{n} MB', { n: mb < 10 ? mb.toFixed(1) : Math.round(mb) })
 }
 
 /** The Settings row's detail line. */
 export function statusDetail(status: OfflineStatus, latest: PackAuthor | null | undefined): string {
   switch (status.kind) {
-    case 'downloading': return `Downloading… ${Math.round(status.fraction * 100)}%`
-    case 'stored': return `On this phone · ${formatBytes(status.bytes)}${status.stale ? ' · update available' : ''}`
-    case 'none': return latest ? `Download · ${formatBytes(latest.bytes)}` : latest === null ? 'Download · needs a connection' : 'Download'
+    case 'downloading': return t('Downloading… {pct}%', { pct: Math.round(status.fraction * 100) })
+    case 'stored': return status.stale ? t('On this phone · {size} · update available', { size: formatBytes(status.bytes) }) : t('On this phone · {size}', { size: formatBytes(status.bytes) })
+    case 'none': return latest ? t('Download · {size}', { size: formatBytes(latest.bytes) }) : latest === null ? t('Download · needs a connection') : tc('verb', 'Download')
   }
 }
 

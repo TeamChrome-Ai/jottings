@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, ScrollView, StyleSheet, Text, View, type DimensionValue } from 'react-native'
 import type { Outline } from '@shared/types'
 import { formatRef, refKey } from '@shared/ref'
+import { t, tn } from '@shared/i18n'
 import { fmtDateLong, itemRef, paperById, type PrintSettings, type VerseRow } from '../lib/outlines'
 import { layoutPrintPreview, type BarTone, type PreviewItem, type PreviewPage, type PreviewPiece } from '../lib/printPreview'
 import { useColors } from '../hooks/useTheme'
@@ -47,7 +48,7 @@ export default function PrintLayoutPreview({ outline, verses, settings }: Props)
         const ref = itemRef(it)
         if (!ref) return []
         const rows = verses.get(refKey(ref))
-        const text = rows ? rows.length ? rows.map(r => rows.length > 1 ? `${r.v} ${r.t}` : r.t).join(' ') : 'No text found for this reference.' : null
+        const text = rows ? rows.length ? rows.map(r => rows.length > 1 ? `${r.v} ${r.t}` : r.t).join(' ') : t('No text found for this reference.') : null
         return [{ kind: 'verse', depth: it.depth, label: formatRef(ref), text }]
       }
       case 'link': return it.url ? [{ kind: 'link', depth: it.depth, text: it.text || it.url }] : []
@@ -93,11 +94,11 @@ export default function PrintLayoutPreview({ outline, verses, settings }: Props)
   const shown = layout.pages.slice(0, MAX_PAGES)
   const spreads: PreviewPage[][] = []
   for (let i = 0; i < shown.length; i += 2) spreads.push(shown.slice(i, i + 2))
-  const summary = count === 1 ? '1 page' : `About ${count} pages`
+  const summary = tn(count, '{n} page', 'About {n} pages')
 
   return (
     <View style={{ gap: SPACE.m }} onLayout={e => setWidth(Math.round(e.nativeEvent.layout.width))}>
-      <View accessible accessibilityLabel={`Layout preview: ${summary.toLowerCase()} on ${paper.label}`} style={{ height: PAGE_MAX_H }}>
+      <View accessible accessibilityLabel={tn(count, 'Layout preview: {n} page on {paper}', 'Layout preview: about {n} pages on {paper}', { paper: t(paper.label) })} style={{ height: PAGE_MAX_H }}>
         {pageH ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden
             contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', gap: SPREAD_GAP }}>
@@ -118,7 +119,7 @@ export default function PrintLayoutPreview({ outline, verses, settings }: Props)
             ))}
             {count > MAX_PAGES ? (
               <Animated.View style={{ width: size.w, height: size.h, borderRadius: RADIUS.control, backgroundColor: c.card, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={[{ color: c.muted, fontSize: TYPE.small }, face('serif')]}>{`${count - MAX_PAGES} more`}</Text>
+                <Text style={[{ color: c.muted, fontSize: TYPE.small }, face('serif')]}>{tn(count - MAX_PAGES, '{n} more', '{n} more')}</Text>
               </Animated.View>
             ) : null}
           </ScrollView>

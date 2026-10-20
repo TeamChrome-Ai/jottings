@@ -11,12 +11,13 @@ import { get } from './api'
 import { refsFromStored, versesOfRows, type RefsRow } from './offlineMinistryCore'
 import { offlineSupported, readRefs, readSectionRaw, storedAuthor } from './offlineMinistry'
 import { refsPath } from './ministryShared'
+import { N_ } from '@shared/i18n'
 import { authorShown, onEditionChange, peekCleanse } from './editionCore'
 
 export { selectionKey } from './ministryShared'
 
 /** What to say when a list cannot be had; on the phone, the way to keep it. */
-export const ministryUnavailable = offlineSupported ? 'This needs a connection to the server. Or download the authors under Settings → Offline.' : 'This needs a connection to the server.'
+export const ministryUnavailable = offlineSupported ? N_('This needs a connection to the server. Or download the authors under Settings → Offline.') : N_('This needs a connection to the server.')
 
 const chapters = new Map<string, ReadonlySet<number>>()
 const pending = new Map<string, Promise<ReadonlySet<number> | null>>()

@@ -8,6 +8,7 @@ import { BOOKS, type BookMeta } from '@shared/books'
 import { AUTHORS, formatPassage, formatPassages, titleIsPassage, type CompanionIndex, type Passage, type Place, type WorkKind, type WorkMeta } from '@shared/companion'
 import { MINISTRY_AUTHORS, type CollectionSummary, type Library, type LibraryAuthor, type MinistrySectionMeta, type SectionHit, type WorkContents, type WorkSummary } from '@shared/ministry'
 import { formatVerseRuns, type Ref } from '@shared/ref'
+import { N_, t, tn } from '@shared/i18n'
 
 /** Lower case without accents or apostrophes, for matching titles. */
 const fold = (s: string) => s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[’']/g, '')
@@ -110,7 +111,6 @@ export function worksAreBooks(works: readonly Pick<WorkSummary, 'title' | 'kind'
   return walks.length > 0 && walks.filter(w => bookOfTitle(w.title)).length >= walks.length * 0.8
 }
 
-const plural = (n: number, unit: string) => `${n} ${n === 1 ? unit : unit === 'address' ? 'addresses' : unit + 's'}`
 /** What a work's sections are called in a count. */
 export function unitOf(kind: WorkKind, author?: string): string {
   if (kind === 'letters') return 'letter'
@@ -119,16 +119,21 @@ export function unitOf(kind: WorkKind, author?: string): string {
   if (kind === 'notes') return 'reading'
   return 'section'
 }
-export const countOf = (kind: WorkKind, n: number, author?: string) => plural(n, unitOf(kind, author))
+export const countOf = (kind: WorkKind, n: number, author?: string) => {
+  const unit = unitOf(kind, author)
+  return unit === 'letter' ? tn(n, '{n} letter', '{n} letters') : unit === 'address' ? tn(n, '{n} address', '{n} addresses')
+    : unit === 'reading' ? tn(n, '{n} reading', '{n} readings') : tn(n, '{n} section', '{n} sections')
+}
 
 /** A collection's line in the library: "66 books, Genesis to Revelation", "34 volumes", "8 addresses". */
 export function collectionDetail(c: CollectionSummary, author?: string): string {
   if (c.works.length === 1) return countOf(c.works[0].kind, c.works[0].count, author)
   if (worksAreBooks(c.works)) {
     const books = c.works.map(w => bookOfTitle(w.title)).filter((b): b is NonNullable<typeof b> => !!b)
-    return `${plural(books.length, 'book')}, ${books[0].book.name} to ${books[books.length - 1].book.name}`
+    return tn(books.length, '{n} book, {first} to {last}', '{n} books, {first} to {last}', { first: books[0].book.name, last: books[books.length - 1].book.name })
   }
-  return plural(c.works.length, shelfUnit(c.works))
+  const n = c.works.length, unit = shelfUnit(c.works)
+  return unit === 'paper' ? tn(n, '{n} paper', '{n} papers') : unit === 'book' ? tn(n, '{n} book', '{n} books') : tn(n, '{n} volume', '{n} volumes')
 }
 /** What the works of a collection are, one by one: short papers and tracts (a few sections each), books of addresses,
  * or volumes. */
@@ -260,7 +265,7 @@ function polish(groups: PickerGroup[], sections: readonly MinistrySectionMeta[],
     seen.set(r.key, nth)
     if (nth === 1) return
     const pair = total.get(r.key) === 2 && i > 0 && rows[i - 1].key === r.key
-    r.it.detail = pair ? [r.it.detail, '(continued)'].filter(Boolean).join(' ') : `${r.it.detail} · ${nth}`.trimStart()
+    r.it.detail = pair ? [r.it.detail, t('(continued)')].filter(Boolean).join(' ') : `${r.it.detail} · ${nth}`.trimStart()
   })
   return merged
 }
@@ -312,7 +317,7 @@ export function shelfItems(works: readonly WorkSummary[], author?: string): { bo
   if (!books) return { books, groups: [{ label: '', items }] }
   // an introduction leads, unlabelled; works that are not one book ("The Building of the Wall") follow the
   // testaments as "Other"
-  const label = (t: 'OT' | 'NT' | undefined, intro: boolean) => intro ? '' : t === 'OT' ? 'Old Testament' : t === 'NT' ? 'New Testament' : 'Other'
+  const label = (t: 'OT' | 'NT' | undefined, intro: boolean) => intro ? '' : t === 'OT' ? N_('Old Testament') : t === 'NT' ? N_('New Testament') : N_('Other')
   const order = ['', 'Old Testament', 'New Testament', 'Other']
   const groups: { label: string; items: ShelfItem[] }[] = []
   for (const [i, it] of items.entries()) {
@@ -321,6 +326,7 @@ export function shelfItems(works: readonly WorkSummary[], author?: string): { bo
     if (g) g.items.push(it); else groups.push({ label: l, items: [it] })
   }
   groups.sort((a, b) => order.indexOf(a.label) - order.indexOf(b.label))
+  for (const g of groups) if (g.label) g.label = t(g.label)
   return { books, groups }
 }
 
@@ -347,7 +353,7 @@ export const worksNoun = (works: readonly Pick<WorkSummary, 'title' | 'kind' | '
  * Genesis), "Genesis 6–8" (the Synopsis), "Genesis · Introduction", "Letter 12", a paper's own title.
  */
 export function toolbarTitle(work: Pick<WorkSummary, 'title' | 'kind'>, section: Pick<MinistrySectionMeta, 'title' | 'part'> | undefined, n: number): string {
-  if (work.kind === 'letters') return `Letter ${n}`
+  if (work.kind === 'letters') return t('Letter {n}', { n })
   if (!section) return shortTitle(work.title)
   const cell = cellLabel(section.title, work.kind, n)
   const book = bookOfTitle(work.title)

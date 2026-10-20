@@ -75,6 +75,16 @@ pub fn has_text_1890(conn: &Connection) -> bool {
 pub fn tables(conn: &Connection, ed: Edition) -> Tables {
     match ed { Edition::E1961 => T1961, Edition::E1890 if has_text_1890(conn) => T1890_TEXT, Edition::E1890 => T1890_NOTES }
 }
+/// The French and German Bibles' tables (docs/LANGUAGES.md, db.rs LANG_TEXTS), kept in the English verses.
+const TFR: Tables = Tables { verses: "verses_fr", fts: "verses_fr_fts", tri: "verses_fr_tri", chapters: "chapters_fr", words: "verse_words_fr", notes: "notes_fr" };
+const TDE: Tables = Tables { verses: "verses_de", fts: "verses_de_fts", tri: "verses_de_tri", chapters: "chapters_de", words: "verse_words_de", notes: "notes_de" };
+/// The tables of the Bible a request asks for with `tx` (a client reading the French or German sends it), when this
+/// server's data has it; otherwise the edition's English.
+pub fn text_tables(conn: &Connection, tx: Option<&str>, ed: Edition) -> Tables {
+    let own = match tx { Some("fr") => Some(TFR), Some("de") => Some(TDE), _ => None };
+    let present = |t: &Tables| conn.prepare_cached("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1").and_then(|mut st| st.exists([t.verses])).unwrap_or(false);
+    match own { Some(t) if present(&t) => t, _ => tables(conn, ed) }
+}
 
 /// The introductory notices an edition shows (`GET /api/intro`, the About screen): the 1961 edition's file whole; for
 /// 1890, data/notices_1890.json when there is one, else the sections of the 1961 file that are not the 1961 editors'

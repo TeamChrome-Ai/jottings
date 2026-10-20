@@ -12,6 +12,7 @@ import {
   removeLocalBookmark, setLocalOutlineItems, type ItemInput, type OutlineMeta,
 } from './localLibrary'
 import { NOUN } from '@shared/brand'
+import { t } from '@shared/i18n'
 
 export { isLocalId }
 const signedIn = () => getToken() !== null
@@ -54,7 +55,7 @@ export async function getOwnOutline(localOrServerId: number): Promise<Outline> {
 }
 export class NotOnDevice extends Error {
   readonly status = 404
-  constructor() { super(`This ${NOUN.one} is not on this device`) }
+  constructor() { super(t('This {one} is not on this device', { one: NOUN.one })) }
 }
 
 /** `keepalive` lets the editor's last save outlive a closing web page; storage writes need no such help. */

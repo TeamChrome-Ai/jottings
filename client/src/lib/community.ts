@@ -8,6 +8,8 @@ import type { GroupPath } from '@shared/paths'
 import type { GroupStreak } from '@shared/friends'
 import { ApiError, getApiBase } from './api'
 import { localDay } from './localDay'
+import { N_, t, tc } from '@shared/i18n'
+import { dateLocale } from '../i18n'
 
 // ---------------- API response shapes (mirror rs/src/groups.rs + rs/src/routes.rs) ----------------
 /** `supporter` is sent to site admins only (the flag behind the secret Supporter badge). */
@@ -39,13 +41,13 @@ export interface FeedPost {
   notice?: boolean; staff?: boolean; hidden?: number
 }
 export type GlobalPeriod = 'week' | 'month' | 'all'
-export const GLOBAL_PERIODS: { value: GlobalPeriod; label: string }[] = [{ value: 'week', label: 'This week' }, { value: 'month', label: 'This month' }, { value: 'all', label: 'All time' }]
+export const GLOBAL_PERIODS: { value: GlobalPeriod; label: string }[] = [{ value: 'week', label: N_('This week') }, { value: 'month', label: N_('This month') }, { value: 'all', label: N_('All time') }]
 
 // ---------------- loader ----------------
 export type Load<T> = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; data: T }
 
 export const errMsg = (e: unknown): string =>
-  e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Something went wrong'
+  e instanceof ApiError ? e.message : e instanceof Error ? e.message : t('Something went wrong')
 
 /**
  * Runs `load` on focus and whenever `deps` change. The result is a discriminated union so callers switch on `kind`.
@@ -68,10 +70,10 @@ export function useLoad<T>(load: () => Promise<T>, deps: readonly unknown[], ena
 }
 
 /** Yes/no prompt that works on web (window.confirm) and native (Alert). */
-export function confirmAsync(title: string, message?: string, okLabel = 'OK'): Promise<boolean> {
+export function confirmAsync(title: string, message?: string, okLabel = t('OK')): Promise<boolean> {
   if (Platform.OS === 'web') return Promise.resolve(typeof window !== 'undefined' && window.confirm(message ? `${title}\n\n${message}` : title))
   return new Promise(resolve => Alert.alert(title, message, [
-    { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+    { text: t('Cancel'), style: 'cancel', onPress: () => resolve(false) },
     { text: okLabel, style: 'destructive', onPress: () => resolve(true) },
   ], { cancelable: true, onDismiss: () => resolve(false) }))
 }
@@ -82,21 +84,22 @@ export { addDays, isDay, utcDay } from './events'
 export const fmtDay = (iso: string): string => {
   const day = iso.length === 10
   const t = Date.parse(day ? `${iso}T00:00:00Z` : iso)
-  return Number.isNaN(t) ? iso : new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: day ? 'UTC' : undefined })
+  return Number.isNaN(t) ? iso : new Date(t).toLocaleDateString(dateLocale(), { year: 'numeric', month: 'short', day: 'numeric', timeZone: day ? 'UTC' : undefined })
 }
 /** SQLite CURRENT_TIMESTAMP is UTC without a zone marker; treat zone-less stamps as UTC. */
 export const fmtWhen = (iso: string): string => {
-  const t = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) || iso.length === 10 ? iso : `${iso.replace(' ', 'T')}Z`)
-  if (Number.isNaN(t)) return iso
-  const mins = Math.round((Date.now() - t) / 60_000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins} min ago`
-  if (mins < 60 * 24) return `${Math.round(mins / 60)} h ago`
-  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const at = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) || iso.length === 10 ? iso : `${iso.replace(' ', 'T')}Z`)
+  if (Number.isNaN(at)) return iso
+  const mins = Math.round((Date.now() - at) / 60_000)
+  if (mins < 1) return t('just now')
+  if (mins < 60) return t('{n} min ago', { n: mins })
+  if (mins < 60 * 24) return t('{n} h ago', { n: Math.round(mins / 60) })
+  return new Date(at).toLocaleDateString(dateLocale(), { month: 'short', day: 'numeric' })
 }
+/** English only: the admin screens' counts. */
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 /** A group role as a label: "Owner", "Admin" ("Member" too, though the screens show no tag for it: every group you see you are in). */
-export const roleLabel = (role: string) => role.charAt(0).toUpperCase() + role.slice(1)
+export const roleLabel = (role: string) => (role === 'owner' ? t('Owner') : role === 'admin' ? tc('group role', 'Admin') : role === 'member' ? t('Member') : role.charAt(0).toUpperCase() + role.slice(1))
 export const displayName = (u: { display_name: string; handle: string }) => u.display_name || u.handle
 
 /** Invite link that lands on /groups with the code prefilled: the page's own origin on the web (the API base is empty

@@ -8,6 +8,7 @@ import { usePref, usePrefsStore } from '../../store/prefs'
 import { Button, Card, ErrorText, ListRow, Sheet, Spinner, SwitchRow, T } from '../ui'
 import { SheetBody } from '../CommunityBits'
 import { BRAND } from '@shared/brand'
+import { t, tc } from '@shared/i18n'
 
 /**
  * Settings → Account → Friends: who can invite you, being told of an invite, what friends see, reactions, being found
@@ -16,7 +17,7 @@ import { BRAND } from '@shared/brand'
  */
 export default function FriendsSettingsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Sheet open={open} onClose={onClose} title="Friends">
+    <Sheet open={open} onClose={onClose} title={t('Friends')}>
       {open ? <Body onClose={onClose} /> : null}
     </Sheet>
   )
@@ -35,11 +36,11 @@ function InviteNotify() {
   }
   return (
     <>
-      <SwitchRow label="Notify me of friend invites" hint={native ? 'A notification when someone invites you, checked about every 15 minutes' : 'A note in the app when someone invites you'} value={on} onChange={toggle} />
+      <SwitchRow label={t('Notify me of friend invites')} hint={native ? t('A notification when someone invites you, checked about every 15 minutes') : t('A note in the app when someone invites you')} value={on} onChange={toggle} />
       {on && native && perm === 'denied' ? (
         <View style={{ gap: 8, paddingBottom: 8 }}>
-          <T small muted>Notifications are off for {BRAND.name} in the system settings, so invites show only in the app.</T>
-          <Button small title="Open system settings" onPress={() => { Linking.openSettings().catch(() => {}) }} style={{ alignSelf: 'flex-start' }} />
+          <T small muted>{t('Notifications are off for {brand} in the system settings, so invites show only in the app.', { brand: BRAND.name })}</T>
+          <Button small title={t('Open system settings')} onPress={() => { Linking.openSettings().catch(() => {}) }} style={{ alignSelf: 'flex-start' }} />
         </View>
       ) : null}
     </>
@@ -66,19 +67,19 @@ function Body({ onClose }: { onClose: () => void }) {
       {prefs ? (
         <>
           <Card style={{ gap: 0, paddingVertical: 8 }}>
-            <SwitchRow label="Allow friend invites" hint={prefs.invites ? 'Someone who knows your handle, or scans your code, can invite you' : 'Off: nobody can invite you, and codes you have shown stop working'} value={prefs.invites} onChange={flip('invites')} />
+            <SwitchRow label={t('Allow friend invites')} hint={prefs.invites ? t('Someone who knows your handle, or scans your code, can invite you') : t('Off: nobody can invite you, and codes you have shown stop working')} value={prefs.invites} onChange={flip('invites')} />
             {prefs.invites ? <InviteNotify /> : null}
           </Card>
-          <T small muted style={{ marginTop: 6 }}>What friends see</T>
+          <T small muted style={{ marginTop: 6 }}>{t('What friends see')}</T>
           <Card style={{ gap: 0, paddingVertical: 8 }}>
-            <SwitchRow label="My streak" hint="Your streak and this week’s days; a friend streak needs you both" value={prefs.share_streak} onChange={flip('share_streak')} />
-            <SwitchRow label="My badges" value={prefs.share_badges} onChange={flip('share_badges')} />
-            <SwitchRow label="Chapters this week" hint="How many, never which, and never where you are reading" value={prefs.share_reading} onChange={flip('share_reading')} />
-            <SwitchRow label="Reactions" hint="A heart, a smile, applause or a seal on badges; no words" value={prefs.reactions} onChange={flip('reactions')} />
+            <SwitchRow label={t('My streak')} hint={t('Your streak and this week’s days; a friend streak needs you both')} value={prefs.share_streak} onChange={flip('share_streak')} />
+            <SwitchRow label={t('My badges')} value={prefs.share_badges} onChange={flip('share_badges')} />
+            <SwitchRow label={t('Chapters this week')} hint={t('How many, never which, and never where you are reading')} value={prefs.share_reading} onChange={flip('share_reading')} />
+            <SwitchRow label={t('Reactions')} hint={t('A heart, a smile, applause or a seal on badges; no words')} value={prefs.reactions} onChange={flip('reactions')} />
           </Card>
           <Card style={{ gap: 0, paddingVertical: 8 }}>
-            <ListRow icon="contacts" label="Let contacts find me" detail={found ? 'On' : 'Off'} onPress={() => go('/friends/contacts')} />
-            <ListRow icon="users" label="Your friends" detail="Invites, friend streaks, remove or block" onPress={() => go('/friends')} />
+            <ListRow icon="contacts" label={t('Let contacts find me')} detail={found ? tc('state', 'On') : tc('state', 'Off')} onPress={() => go('/friends/contacts')} />
+            <ListRow icon="users" label={t('Your friends')} detail={t('Invites, friend streaks, remove or block')} onPress={() => go('/friends')} />
           </Card>
           <View style={{ height: 4 }} />
         </>

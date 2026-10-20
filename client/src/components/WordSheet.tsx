@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router'
 import { articlesFor, matchWord, paragraphs, sheetParts, type CbdEntry, type CbdMatch, type SheetPart } from '@shared/cbd'
 import { bookPage, concordanceLine, groupByBook, OCCURRENCE_PAGE, renderingKey, type StrongsInfo, type StrongsOccurrence } from '@shared/concordance'
 import type { Ref } from '@shared/ref'
+import { N_, t, tc, tn } from '@shared/i18n'
 import { get, isNetworkError } from '../lib/api'
 import { book as bookMeta } from '../lib/bible'
 import { glossaryTerm, type GlossarySource } from '@shared/glossary'
@@ -60,8 +61,8 @@ interface Nav {
   opened: Set<string>
 }
 
-const WORD_HINT = (code: string) => `The ${code.startsWith('H') ? 'Hebrew' : 'Greek'} behind the English, and where it occurs`
-const SUBJECT_HINT = 'What it is: a person, place, thing or teaching'
+const WORD_HINT = (code: string) => code.startsWith('H') ? t('The Hebrew behind the English, and where it occurs') : t('The Greek behind the English, and where it occurs')
+const SUBJECT_HINT = N_('What it is: a person, place, thing or teaching')
 
 /**
  * The sheet for a word. Two parts, never mixed: the word (Strong's number: the Hebrew or Greek, how the King James
@@ -116,7 +117,7 @@ export default function WordSheet({ target, onClose }: { target: WordTarget | nu
       <View ref={tourWord} style={{ flexShrink: 1 }}>
       {parts.length > 1 ? (
         <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-          <Segmented<SheetPart> value={showing} onChange={pick} options={[{ value: 'word', label: 'Concordance' }, { value: 'subject', label: 'The subject' }]} />
+          <Segmented<SheetPart> value={showing} onChange={pick} options={[{ value: 'word', label: t('Concordance') }, { value: 'subject', label: t('The subject') }]} />
         </View>
       ) : null}
       <FadeSwap k={key} dx={dir * TURN_DX} style={{ flexShrink: 1 }}>
@@ -124,7 +125,7 @@ export default function WordSheet({ target, onClose }: { target: WordTarget | nu
           onScroll={e => { ys.current[depth] = e.nativeEvent.contentOffset.y }}
           onContentSizeChange={(_, h) => { const r = restore.current; if (r.y && h > r.y && Date.now() < r.until) { scroll.current?.scrollTo({ y: r.y, animated: false }); r.y = 0 } }}>
           {/* back to the tapped word, which the sheet's title already names: plain "Back" */}
-          {back ? <Button small lead="back" title={depth === 1 && shown.word ? 'Back' : (trail[depth - 2] ?? root).label} accessibilityLabel={`Back to ${(trail[depth - 2] ?? root).label}`} onPress={back} style={{ alignSelf: 'flex-start' }} /> : null}
+          {back ? <Button small lead="back" title={depth === 1 && shown.word ? tc('verb', 'Back') : (trail[depth - 2] ?? root).label} accessibilityLabel={t('Back to {place}', { place: (trail[depth - 2] ?? root).label })} onPress={back} style={{ alignSelf: 'flex-start' }} /> : null}
           {place.kind === 'tap' && place.term ? <DarbyUsage term={place.term} nav={nav} /> : null}
           {place.kind === 'tap'
             ? showing === 'word' ? <WordPart code={place.code} paired={parts.length > 1} nav={nav} /> : <SubjectPart word={place.word} paired={parts.length > 1} nav={nav} />
@@ -164,11 +165,11 @@ function DarbyUsage({ term, nav }: { term: string; nav: Nav }) {
   if (!entry || !source) return null
   return (
     <View testID="darby-usage"><Enter style={{ gap: 6 }}>
-      <T small muted>Darby’s usage</T>
+      <T small muted>{t('Darby’s usage')}</T>
       <Text style={{ color: c.text, ...f.body }}><Text style={f.bold}>{entry.term}</Text>{' — '}{entry.short}</Text>
       <Text style={{ color: c.muted, fontSize: TYPE.small, lineHeight: 21, ...f.italic }}>“{source.quote}”</Text>
-      <Text accessibilityRole="link" accessibilityLabel={`Read it in the ministry: ${place || source.work}`} onPress={() => nav.ministry(source)} style={{ color: c.accent, fontSize: TYPE.small, lineHeight: 20 }}>
-        {place || 'Read it in the ministry'} →
+      <Text accessibilityRole="link" accessibilityLabel={t('Read it in the ministry: {place}', { place: place || source.work })} onPress={() => nav.ministry(source)} style={{ color: c.accent, fontSize: TYPE.small, lineHeight: 20 }}>
+        {place || t('Read it in the ministry')} →
       </Text>
     </Enter></View>
   )
@@ -201,7 +202,7 @@ function WordPart({ code, paired = false, nav }: { code: string; /** under the s
     get<StrongsInfo>(strongsUrl(code, 1)).then(i => {
       infoCache.set(code, i)
       if (!cancelled) { setInfo(i); setPages(new Map([[1, i.page]])) }
-    }).catch(e => { if (!cancelled) setErr(isNetworkError(e) ? 'Strong’s entries need a connection; the dictionary works offline' : (e as Error).message || 'Could not load the entry') })
+    }).catch(e => { if (!cancelled) setErr(isNetworkError(e) ? t('Strong’s entries need a connection; the dictionary works offline') : (e as Error).message || t('Could not load the entry')) })
     return () => { cancelled = true }
   }, [code])
   const turn = async (to: number) => {
@@ -215,18 +216,18 @@ function WordPart({ code, paired = false, nav }: { code: string; /** under the s
       const r = await get<StrongsInfo>(strongsUrl(code, to))
       setPages(m => new Map(m).set(to, r.page))
       show()
-    } catch (e) { setPageErr((e as Error).message || 'Could not load the page') } finally { setFetching(false) }
+    } catch (e) { setPageErr((e as Error).message || t('Could not load the page')) } finally { setFetching(false) }
   }
   const discussed = useMemo(() => index ? articlesFor(index, code) : [], [index, code])
   return (
     <View style={{ gap: 10 }} onLayout={e => { partY.current = e.nativeEvent.layout.y }}>
-      {paired ? <T small muted>{WORD_HINT(code)}</T> : <H2 hint={WORD_HINT(code)}>The word</H2>}
+      {paired ? <T small muted>{WORD_HINT(code)}</T> : <H2 hint={WORD_HINT(code)}>{t('The word')}</H2>}
       {err ? <ErrorText>{err}</ErrorText> : !info || index === undefined ? <Spinner /> : (
         <>
           <Enter><Identity info={info} /></Enter>
           {discussed.length ? (
             <Enter delay={40} style={{ gap: 8 }}>
-              <T small muted>Discussed in the dictionary</T>
+              <T small muted>{t('Discussed in the dictionary')}</T>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                 {discussed.map(a => <Chip key={a.id} label={a.headword} onPress={() => nav.push({ kind: 'subject', id: a.id, label: a.headword })} />)}
               </View>
@@ -249,7 +250,7 @@ function Identity({ info }: { info: StrongsInfo }) {
   const c = useInks()
   const f = useReadingFont(TYPE.body, 1.45)
   const key = renderingKey(info.kjv)
-  if (!info.lemma) return <T muted>Strong’s concordance has no entry numbered {info.code}.</T>
+  if (!info.lemma) return <T muted>{t('Strong’s concordance has no entry numbered {code}.', { code: info.code })}</T>
   return (
     <View style={{ gap: 10 }}>
       <View style={{ gap: 2 }}>
@@ -257,20 +258,20 @@ function Identity({ info }: { info: StrongsInfo }) {
         <Row style={{ gap: 10, flexWrap: 'nowrap' }}>
           <Text style={{ color: c.text, fontSize: 28, lineHeight: 38, flexShrink: 1 }}>{info.lemma}</Text>
           <View style={{ backgroundColor: c.accentSoft, borderRadius: 13, height: 26, paddingHorizontal: 10, justifyContent: 'center' }}>
-            <Text style={{ color: c.accent, fontSize: TYPE.caption, ...SANS_BOLD }} accessibilityLabel={`Strong’s number ${info.code}`}>{info.code}</Text>
+            <Text style={{ color: c.accent, fontSize: TYPE.caption, ...SANS_BOLD }} accessibilityLabel={t('Strong’s number {code}', { code: info.code })}>{info.code}</Text>
           </View>
         </Row>
         {info.translit || info.pron ? (
           <Text style={{ color: c.text, ...f.body }}>
             {info.translit ? <Text style={f.italic}>{info.translit}</Text> : null}
             {info.translit && info.pron ? ', ' : null}
-            {info.pron ? <Text style={{ color: c.muted }} accessibilityLabel={`pronounced ${info.pron}`}>{info.pron}</Text> : null}
+            {info.pron ? <Text style={{ color: c.muted }} accessibilityLabel={t('pronounced {pron}', { pron: info.pron })}>{info.pron}</Text> : null}
           </Text>
         ) : null}
       </View>
       {info.kjv ? (
         <View style={{ gap: 4 }}>
-          <T small muted>Rendered in the King James Version</T>
+          <T small muted>{t('Rendered in the King James Version')}</T>
           <Text style={{ color: c.text, ...f.body }}>{info.kjv}</Text>
           {key ? <Text style={{ color: c.muted, fontSize: TYPE.caption }}>{key}</Text> : null}
         </View>
@@ -297,10 +298,10 @@ function Occurrences({ info, page, verses, dir, fetching, error, onPage, onOpen,
   const offset = (page - 1) * OCCURRENCE_PAGE
   const groups = useMemo(() => groupByBook(verses, info.books, offset), [verses, info.books, offset])
   const hebrew = info.code.startsWith('H')
-  const count = (n: number, one: string, many: string) => `${n.toLocaleString()} ${n === 1 ? one : many}`
-  const summary = !info.occurrences ? 'Not tagged anywhere in Darby’s text'
-    : info.occurrences === info.verses ? count(info.occurrences, 'occurrence', 'occurrences')
-    : `${count(info.occurrences, 'occurrence', 'occurrences')} in ${count(info.verses, 'verse', 'verses')}`
+  const occurrences = () => tn(info.occurrences, '{n} occurrence', '{n} occurrences', { n: info.occurrences.toLocaleString() })
+  const summary = !info.occurrences ? t('Not tagged anywhere in Darby’s text')
+    : info.occurrences === info.verses ? occurrences()
+    : tn(info.verses, '{occurrences} in {n} verse', '{occurrences} in {n} verses', { n: info.verses.toLocaleString(), occurrences: occurrences() })
   const more = info.renderings.length - RENDERINGS
   // each page (once its verses are in) arrives with the house stagger, down its book headings and verses in turn
   const fresh = useFreshList(`${page}:${verses.length ? 1 : 0}`)
@@ -312,15 +313,15 @@ function Occurrences({ info, page, verses, dir, fetching, error, onPage, onOpen,
     <Disclosure label={summary} defaultOpen={open} onToggle={onToggle}>
       {info.renderings.length ? (
         <Text style={{ color: c.muted, fontSize: TYPE.small, lineHeight: 20 }}>
-          {'Darby renders it '}
+          {t('Darby renders it')}{' '}
           {info.renderings.slice(0, RENDERINGS).map(([w, n], i) => (
             <Text key={w}>{i ? ', ' : ''}<Text style={{ color: c.text, ...f.italic }}>{w}</Text>{` ${n.toLocaleString()}`}</Text>
           ))}
-          {more > 0 ? `, and ${count(more, 'other way', 'other ways')}` : ''}
+          {more > 0 ? tn(more, ', and {n} other way', ', and {n} other ways', { n: more.toLocaleString() }) : ''}
         </Text>
       ) : null}
       {pages > 1 && info.books.length > 1 ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }} accessibilityRole="tablist" accessibilityLabel="Books">
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }} accessibilityRole="tablist" accessibilityLabel={t('Books')}>
           {info.books.map(b => (
             <CountChip key={b.book} label={bookMeta(b.book).abbr} accessibilityLabel={bookMeta(b.book).name} count={b.occurrences} noun={['occurrence', 'occurrences']}
               on={groups[0]?.book === b.book} onPress={() => onPage(bookPage(info.books, b.book))} />
@@ -333,14 +334,14 @@ function Occurrences({ info, page, verses, dir, fetching, error, onPage, onOpen,
             <View key={g.book} style={{ gap: 6 }}>
               <Stagger index={starts[gi]} cap={cap} base={wait()}>
                 <Row style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
-                  <T small bold style={{ flexShrink: 1 }}>{bookMeta(g.book).name}{g.continued ? ', continued' : ''}</T>
+                  <T small bold style={{ flexShrink: 1 }}>{g.continued ? t('{book}, continued', { book: bookMeta(g.book).name }) : bookMeta(g.book).name}</T>
                   <T small muted>{g.occurrences.toLocaleString()}</T>
                 </Row>
               </Stagger>
               <Card style={{ gap: 0, paddingVertical: 6 }}>
                 {g.items.map((o, i) => (
                   <Stagger key={`${o.chapter}.${o.verse}`} index={starts[gi] + 1 + i} cap={cap} base={wait()}>
-                    <Tap onPress={() => onOpen(o)} scaleTo={0.985} accessibilityRole="link" accessibilityLabel={`Read ${bookMeta(o.book).name} ${o.chapter}:${o.verse}`}
+                    <Tap onPress={() => onOpen(o)} scaleTo={0.985} accessibilityRole="link" accessibilityLabel={t('Read {ref}', { ref: `${bookMeta(o.book).name} ${o.chapter}:${o.verse}` })}
                       style={{ minHeight: 44, justifyContent: 'center', paddingVertical: 8, borderTopWidth: i ? 1 : 0, borderTopColor: c.border }}>
                       <Text style={{ color: c.text, ...f.body }}>
                         <Text style={{ color: c.accent, fontSize: TYPE.small, ...SANS_BOLD }}>{o.chapter}:{o.verse}</Text>
@@ -357,7 +358,7 @@ function Occurrences({ info, page, verses, dir, fetching, error, onPage, onOpen,
       </FadeSwap>
       {error ? <ErrorText>{error}</ErrorText> : null}
       {pages > 1 ? <Pager page={page} pages={pages} onPage={onPage} busy={fetching} /> : null}
-      {hebrew ? <T small muted>Old Testament tags are aligned by machine, so this list can miss places the word occurs.</T> : null}
+      {hebrew ? <T small muted>{t('Old Testament tags are aligned by machine, so this list can miss places the word occurs.')}</T> : null}
     </Disclosure>
   )
 }
@@ -374,7 +375,7 @@ type Subject = { entry: CbdEntry; matches: CbdMatch[] } | 'loading' | 'none' | '
 function SubjectPart({ word = '', id, paired = false, nav }: { word?: string; id?: string; paired?: boolean; nav: Nav }) {
   const index = useDictionaryIndex()
   const [state, setState] = useState<Subject>('loading')
-  const head = paired ? <T small muted>{SUBJECT_HINT}</T> : <H2 hint={SUBJECT_HINT}>The subject</H2>
+  const head = paired ? <T small muted>{t(SUBJECT_HINT)}</T> : <H2 hint={t(SUBJECT_HINT)}>{t('The subject')}</H2>
   useEffect(() => {
     let cancelled = false
     setState('loading')
@@ -395,11 +396,11 @@ function SubjectPart({ word = '', id, paired = false, nav }: { word?: string; id
       <View style={{ gap: 10 }}>
         {head}
         {state === 'loading' ? <Spinner />
-          : state === 'unavailable' ? <ErrorText>{dictionaryOffline ? 'The dictionary is missing from this build.' : 'The dictionary needs a connection to the server.'}</ErrorText>
+          : state === 'unavailable' ? <ErrorText>{dictionaryOffline ? t('The dictionary is missing from this build.') : t('The dictionary needs a connection to the server.')}</ErrorText>
           : (
             <Enter style={{ gap: 10 }}>
-              <T muted>No article is headed “{word}”.</T>
-              <Button small title="Search the dictionary" onPress={() => nav.search(word)} style={{ alignSelf: 'flex-start' }} />
+              <T muted>{t('No article is headed “{word}”.', { word })}</T>
+              <Button small title={t('Search the dictionary')} onPress={() => nav.search(word)} style={{ alignSelf: 'flex-start' }} />
             </Enter>
           )}
       </View>
@@ -413,12 +414,12 @@ function SubjectPart({ word = '', id, paired = false, nav }: { word?: string; id
   const body = (
     <Enter key={entry.id} style={{ gap: 10 }}>
       <Headword entry={entry} size={22} />
-      {via ? <T small muted>The entry “{via}” refers here</T> : null}
+      {via ? <T small muted>{t('The entry “{via}” refers here', { via })}</T> : null}
       <DictionaryArticle key={`a.${entry.id}`} entry={entry} collapsed={long} onLink={follow} onNavigate={nav.read} />
       <ArticleWords id={entry.id} onWord={(code, lemma) => nav.push({ kind: 'word', code, label: lemma })} />
       {others.length ? (
         <View style={{ gap: 8 }}>
-          <T small muted>Other articles for “{word}”</T>
+          <T small muted>{t('Other articles for “{word}”', { word })}</T>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
             {others.map(m => <Chip key={m.id} label={m.headword} onPress={() => follow(m.id)} />)}
           </View>

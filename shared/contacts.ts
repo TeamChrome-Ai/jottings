@@ -3,8 +3,10 @@
  * (E.164; trimmed lower case), hashed with SHA-256 and a fixed salt, and only the hashes leave the phone. The
  * server compares them with the hashes of users who chose "Let contacts find me".
  *
- * Pure and dependency-free: runs on Hermes (no `crypto.subtle`, no `TextEncoder`), in the browser and in vitest.
+ * Pure and dependency-free but for the words (shared/i18n): runs on Hermes (no `crypto.subtle`, no `TextEncoder`), in
+ * the browser and in vitest.
  */
+import { t } from './i18n.js'
 
 // ---------- SHA-256 (FIPS 180-4) ----------
 
@@ -340,12 +342,12 @@ export function ownContactHashes(phone: string | null, email: string | null, reg
   if (phone && phone.trim()) {
     const n = normalisePhone(phone, region)
     if (n) hashes.push(contactHash('phone', n))
-    else errors.phone = `That does not look like a phone number. Include the country code, such as +${(region && REGIONS[region.toUpperCase()]?.cc) || '44'}.`
+    else errors.phone = t('That does not look like a phone number. Include the country code, such as +{cc}.', { cc: (region && REGIONS[region.toUpperCase()]?.cc) || '44' })
   }
   if (email && email.trim()) {
     const n = normaliseEmail(email)
     if (n) hashes.push(contactHash('email', n))
-    else errors.email = 'That does not look like an email address.'
+    else errors.email = t('That does not look like an email address.')
   }
   return { hashes: hashes.sort(), errors }
 }

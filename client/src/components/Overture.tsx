@@ -3,7 +3,11 @@ import { Animated, BackHandler, Easing, Platform, ScrollView, StyleSheet, Text, 
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BRAND } from '@shared/brand'
+import { t } from '@shared/i18n'
 import { formatRef } from '@shared/ref'
+import { BOOKS } from '@shared/books'
+import type { BibleText } from '@shared/texts'
+import { peekText } from '../lib/text'
 import { useColors, useFill } from '../hooks/useTheme'
 import { NAME_MAX, usePrefsStore, useReduceMotion } from '../store/prefs'
 import { startTour } from '../store/tour'
@@ -31,14 +35,24 @@ import { Button, Card, Input, T, Tap, TYPE } from './ui'
  * a still page and a crossfade.
  */
 
-const WORDS = ['In', 'the', 'beginning', 'God', 'created', 'the', 'heavens', 'and', 'the', 'earth.']
-const GOD = 3
+type NoteRun = { t: string; i?: boolean }
+/** Genesis 1:1 in each Bible (docs/LANGUAGES.md): its words, which of them is "God" (its jot becomes the tittle), and
+ *  Darby's note on it there, where that edition has one (the French has none on this verse). */
+const VERSES: Record<BibleText, { words: string[]; god: number; note: NoteRun[] | null }> = {
+  en: {
+    words: ['In', 'the', 'beginning', 'God', 'created', 'the', 'heavens', 'and', 'the', 'earth.'], god: 3,
+    note: [{ t: 'Heb. ' }, { t: 'Elohim', i: true }, { t: ', the plural of ' }, { t: 'Eloah', i: true }, { t: ', ‘the Supreme’. It is Deity in the absolute sense.' }],
+  },
+  fr: { words: ['Au', 'commencement', 'Dieu', 'créa', 'les', 'cieux', 'et', 'la', 'terre.'], god: 2, note: null },
+  de: { words: ['Im', 'Anfang', 'schuf', 'Gott', 'die', 'Himmel', 'und', 'die', 'Erde.'], god: 3, note: null },
+}
 /** The name's letters, each carried in by a word's jot: a name longer than the verse has words to give is set plain. */
-const MARK = WORDMARK && WORDMARK.letters.length < WORDS.length ? WORDMARK : null
-const S = schedule(WORDS, GOD)
-const NOTE: { t: string; i?: boolean }[] = [
-  { t: 'Heb. ' }, { t: 'Elohim', i: true }, { t: ', the plural of ' }, { t: 'Eloah', i: true }, { t: ', ‘the Supreme’. It is Deity in the absolute sense.' },
-]
+const markFor = (words: string[]) => (WORDMARK && WORDMARK.letters.length < words.length ? WORDMARK : null)
+// the verse of the Bible shown, set as the welcome mounts (useVerseOf), before anything below reads it
+let WORDS = VERSES.en.words, GOD = VERSES.en.god, NOTE = VERSES.en.note, MARK = markFor(WORDS), S = schedule(WORDS, GOD)
+function useVerseOf(text: BibleText) {
+  useState(() => { const x = VERSES[text]; WORDS = x.words; GOD = x.god; NOTE = x.note; MARK = markFor(WORDS); S = schedule(WORDS, GOD) })
+}
 const NO_READS: ReadonlySet<string> = new Set()
 /** Reduce animation: the page fades in, rests, and crossfades to the hand-off. */
 const STILL = { pageIn: 500, pageOut: [3700, 4200] as const, handoffIn: [3900, 4500] as const, end: 4500 }
@@ -53,6 +67,7 @@ const run = (v: Animated.Value, ms: number) => Animated.timing(v, fixedSpeed({ t
 
 /** The welcome itself, loaded only when it is due (components/Welcome.tsx). */
 export default function Overture({ replay, onClose }: { replay: boolean; onClose: () => void }) {
+  useVerseOf(peekText())
   const c = useColors()
   const reduce = useReduceMotion()
   const store = usePrefsStore()
@@ -163,7 +178,7 @@ export default function Overture({ replay, onClose }: { replay: boolean; onClose
   const dotClip = baselineIn(size.mark, markLine) - 0.56 * size.mark
   const top = insets.top + Math.round(Math.min(120, Math.max(56, H * 0.12)))
   const interactive = phase === 'handoff'
-  const label = choice ? `Read ${formatRef({ book: choice.book, chapter: choice.chapter })}` : 'Begin'
+  const label = choice ? t('Read {ref}', { ref: formatRef({ book: choice.book, chapter: choice.chapter }) }) : t('Begin')
 
   return (
     <Animated.View ref={rootRef} onLayout={onRootLayout} accessibilityViewIsModal style={[StyleSheet.absoluteFill, { backgroundColor: c.bg, opacity: clocks.out }]}>
@@ -176,7 +191,7 @@ export default function Overture({ replay, onClose }: { replay: boolean; onClose
             {MARK ? (
               <View ref={markRef} accessible accessibilityRole="header" accessibilityLabel={BRAND.name} style={{ width: Math.ceil(MARK.width * size.mark), height: markLine }}>
                 {MARK.letters.map((ch, i) => (
-                  <Animated.Text key={i} allowFontScaling={false} ref={m?.letters[i].ref} style={[letter, { left: MARK.x[i] * size.mark }, m?.letters[i].style ?? hidden]}>{ch}</Animated.Text>
+                  <Animated.Text key={i} allowFontScaling={false} ref={m?.letters[i].ref} style={[letter, { left: MARK!.x[i] * size.mark }, m?.letters[i].style ?? hidden]}>{ch}</Animated.Text>
                 ))}
                 {/* the tittle: the i's own dot, cut from a full "i" in the accent, so it sits exactly where the font puts it.
                     The name is set by the font's own measurements (WORDMARK), so it must not grow with the phone's font
@@ -193,27 +208,27 @@ export default function Overture({ replay, onClose }: { replay: boolean; onClose
                 <Animated.Text accessibilityRole="header" allowFontScaling={false} ref={m?.name?.ref} style={[plainName, m?.name?.style ?? hidden]}>{BRAND.name}</Animated.Text>
               </View>
             )}
-            <Animated.Text ref={m?.subtitle.ref} style={[{ color: c.muted, fontSize: 17, ...face('serif', { italic: true }) }, m?.subtitle.style ?? hidden]}>J. N. Darby’s New Translation</Animated.Text>
+            <Animated.Text ref={m?.subtitle.ref} style={[{ color: c.muted, fontSize: 17, ...face('serif', { italic: true }) }, m?.subtitle.style ?? hidden]}>{t('J. N. Darby’s New Translation')}</Animated.Text>
           </Animated.View>
 
           <Animated.View style={[{ gap: 8 }, m?.form[0].style ?? hidden]} ref={m?.form[0].ref}>
-            <T small muted>Your name</T>
-            <Input value={name} onChangeText={setName} placeholder="Optional" maxLength={NAME_MAX} autoCapitalize="words" autoCorrect={false}
-              autoComplete="given-name" textContentType="givenName" returnKeyType="done" accessibilityLabel="Your name, optional" />
-            <T small muted>For a greeting on Home. It stays on this device.</T>
+            <T small muted>{t('Your name')}</T>
+            <Input value={name} onChangeText={setName} placeholder={t('Optional')} maxLength={NAME_MAX} autoCapitalize="words" autoCorrect={false}
+              autoComplete="given-name" textContentType="givenName" returnKeyType="done" accessibilityLabel={t('Your name, optional')} />
+            <T small muted>{t('For a greeting on Home. It stays on this device.')}</T>
           </Animated.View>
 
           <Animated.View style={[{ gap: 8 }, m?.form[1].style ?? hidden]} ref={m?.form[1].ref}>
-            <T small muted>Where to begin</T>
+            <T small muted>{t('Where to begin')}</T>
             <Card style={{ gap: 0, paddingVertical: 6 }}>
-              <Option on={!choice} title="Home" detail={replay ? 'Today’s verse and where you left off' : 'Today’s verse, with John 1 to start'} onPress={() => setChoice(null)} />
-              <Option on={!!choice} title={choice ? formatRef({ book: choice.book, chapter: choice.chapter }) : 'A book of your choice'} detail={choice ? 'Tap to choose another' : 'Any book and chapter'} onPress={() => setPicker(true)} />
+              <Option on={!choice} title={t('Home')} detail={replay ? t('Today’s verse and where you left off') : t('Today’s verse, with John 1 to start')} onPress={() => setChoice(null)} />
+              <Option on={!!choice} title={choice ? formatRef({ book: choice.book, chapter: choice.chapter }) : t('A book of your choice')} detail={choice ? t('Tap to choose another') : t('Any book and chapter')} onPress={() => setPicker(true)} />
             </Card>
           </Animated.View>
 
           <Animated.View style={[{ gap: 14, marginTop: 4 }, m?.form[2].style ?? hidden]} ref={m?.form[2].ref}>
             <Button primary title={label} onPress={() => leave(choice ?? 'home')} />
-            <T small muted style={{ textAlign: 'center' }}>Sign in later, from Settings, to keep a streak and read with a group.</T>
+            <T small muted style={{ textAlign: 'center' }}>{t('Sign in later, from Settings, to keep a streak and read with a group.')}</T>
           </Animated.View>
         </Animated.View>
       </ScrollView>
@@ -221,9 +236,9 @@ export default function Overture({ replay, onClose }: { replay: boolean; onClose
       {/* the page: Genesis 1:1 and its first note, centred a little above the middle */}
       <Animated.View accessibilityElementsHidden={interactive} importantForAccessibility={interactive ? 'no-hide-descendants' : 'auto'}
         style={[StyleSheet.absoluteFill, { pointerEvents: 'none', alignItems: 'center', justifyContent: 'center', paddingBottom: Math.round(H * 0.08), paddingHorizontal: 28 }, still?.page]}>
-        <View style={{ width: '100%', maxWidth: 440 }} accessible accessibilityLabel={`Genesis 1:1. ${WORDS.join(' ')}`}>
+        <View style={{ width: '100%', maxWidth: 440 }} accessible accessibilityLabel={`${formatRef({ book: 1, chapter: 1, v1: 1 })}. ${WORDS.join(' ')}`}>
           <Animated.View ref={m?.head.ref} style={[{ alignItems: 'center', marginBottom: 22 }, m?.head.style]}>
-            <Animated.Text ref={m?.book.ref} style={[{ color: c.muted, fontSize: 17, ...face('serif', { italic: true }) }, m?.book.style ?? hidden]}>Genesis</Animated.Text>
+            <Animated.Text ref={m?.book.ref} style={[{ color: c.muted, fontSize: 17, ...face('serif', { italic: true }) }, m?.book.style ?? hidden]}>{BOOKS[0].name}</Animated.Text>
             <Animated.Text style={[{ color: c.accent, fontSize: TYPE.numeral, lineHeight: Math.round(TYPE.numeral * 1.08), letterSpacing: -TYPE.numeral * 0.02, fontVariant: ['lining-nums'], ...face('serif', { bold: true }) }, m?.numeral.style ?? hidden]} ref={m?.numeral.ref}>1</Animated.Text>
           </Animated.View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' }}>
@@ -239,7 +254,8 @@ export default function Overture({ replay, onClose }: { replay: boolean; onClose
                     <Animated.View ref={m?.words[i].inner.ref} style={[{ flexDirection: 'row', alignItems: 'flex-start' }, m?.words[i].inner.style ?? hidden]}>
                       <Text style={verseText}>{w}</Text>
                     </Animated.View>
-                    <View ref={callerRef} style={{ marginLeft: 1, marginTop: -3 }}>
+                    {/* with no note on the verse (the French) the caller and its ring stay unseen: the verse simply rests */}
+                    <View ref={callerRef} style={{ marginLeft: 1, marginTop: -3, opacity: NOTE ? 1 : 0 }}>
                       <Animated.View style={[RING_BASE, { borderColor: c.accent, left: '50%', top: verseLine / 2 - 13 }, m?.ring.style ?? HIDDEN]} ref={m?.ring.ref} />
                       <Animated.Text ref={m?.caller.ref} style={[mark, m?.caller.style ?? hidden]}>a</Animated.Text>
                     </View>
@@ -248,11 +264,11 @@ export default function Overture({ replay, onClose }: { replay: boolean; onClose
               </Animated.View>
             ))}
           </View>
-          <Animated.View ref={m?.note.outer.ref} style={[{ marginTop: 14, marginLeft: 10 }, m?.note.outer.style]}>
+          <Animated.View ref={m?.note.outer.ref} style={[{ marginTop: 14, marginLeft: 10 }, m?.note.outer.style, NOTE ? null : { opacity: 0 }]}>
             <Animated.View ref={(el: View | null) => { noteRef.current = el; m?.note.card.ref?.(el) }} style={[{ backgroundColor: c.card, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 }, m?.note.card.style ?? hidden]}>
               <Animated.Text ref={m?.noteText.ref} style={[{ color: c.text, fontSize: 15, lineHeight: 22, ...face('serif') }, m?.noteText.style ?? hidden]}>
                 <Text style={{ color: c.accent, ...face('sans', { bold: true }) }}>a  </Text>
-                {NOTE.map((r, i) => <Text key={i} style={r.i ? face('serif', { italic: true }) : null}>{r.t}</Text>)}
+                {(NOTE ?? []).map((r, i) => <Text key={i} style={r.i ? face('serif', { italic: true }) : null}>{r.t}</Text>)}
               </Animated.Text>
             </Animated.View>
           </Animated.View>
@@ -271,7 +287,7 @@ export default function Overture({ replay, onClose }: { replay: boolean; onClose
       ) : null}
 
       {/* from the first frame, fading in gently so it never competes with the page */}
-      <SkipPill onPress={skip} label="Skip the welcome" style={{ position: 'absolute', top: insets.top + 12, right: insets.right + 16, opacity: clocks.skip }} />
+      <SkipPill onPress={skip} label={t('Skip the welcome')} style={{ position: 'absolute', top: insets.top + 12, right: insets.right + 16, opacity: clocks.skip }} />
       <ChapterPicker open={picker} book={choice?.book ?? 43} chapter={choice?.chapter ?? 1} readSet={NO_READS} onClose={() => setPicker(false)}
         onPick={(book, chapter) => { setChoice({ book, chapter }); setPicker(false) }} />
     </Animated.View>
@@ -353,7 +369,7 @@ function motion(geo: Geo, markSize: number, markLine: number) {
   const jots: Jot[] = []
   let letters: Bound[] = [], dot: Bound | null = null, name: Bound | null = null
   if (MARK) {
-    const letterAt = (i: number): Pt => ({ x: geo.mark.x + (MARK.x[i] + MARK.advance[i] / 2) * markSize, y: geo.mark.y + dy + base - 0.28 * markSize })
+    const letterAt = (i: number): Pt => ({ x: geo.mark.x + (MARK!.x[i] + MARK!.advance[i] / 2) * markSize, y: geo.mark.y + dy + base - 0.28 * markSize })
     const pool = sources.map((_, i) => i).filter(i => i !== GOD)
     const pick = assign(pool.map(i => sources[i]), MARK.letters.map((_, j) => letterAt(j)))
     letters = MARK.letters.map((_, j) => {

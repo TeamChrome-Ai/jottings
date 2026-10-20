@@ -4,6 +4,7 @@
  */
 import { EDITION_AUTHORS, type Edition } from './editionCore'
 import { NOUN } from '@shared/brand'
+import { N_, t } from '@shared/i18n'
 import { authorNames } from '@shared/ministry'
 
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -42,6 +43,7 @@ export interface Step {
   /** The spotlight covers all of these that are on screen (a note: the text that holds its letter, and the note). */
   targets: TargetId[]
   scene: Scene
+  /** A getter on each step: the words in the reader's language when they are read. */
   text: string
   /** Grows the measured box before padding: a tab icon's box reaches down over its label. */
   grow?: Partial<Record<'top' | 'right' | 'bottom' | 'left', number>>
@@ -72,10 +74,10 @@ const HOME: Scene = { route: 'home' }
 const SETTINGS: Scene = { route: 'settings' }
 
 /** Said the same on a phone (the switch in More) and a tablet (Aa in the toolbar). */
-const LOOKUP = 'Word lookup: the Hebrew or Greek behind a word, and its subject in the dictionary.'
-const CHAPTER_MINISTRY = 'Ministry on this chapter: Darby and Coates going through it.'
-const SIZE = 'Text size, a step at a time; the rest is in Settings.'
-const PAGED = 'Paged mode sets the chapter out as pages you turn.'
+const LOOKUP = () => t('Word lookup: the Hebrew or Greek behind a word, and its subject in the dictionary.')
+const CHAPTER_MINISTRY = () => t('Ministry on this chapter: Darby and Coates going through it.')
+const SIZE = () => t('Text size, a step at a time; the rest is in Settings.')
+const PAGED = () => t('Paged mode sets the chapter out as pages you turn.')
 
 /**
  * The short tour, the Bible first and in the order a reader meets it: the book button the welcome hands over to, a
@@ -83,14 +85,14 @@ const PAGED = 'Paged mode sets the chapter out as pages you turn.'
  * step, ending on the reader it began on. It never points at something and then leaves it behind.
  */
 export const STEPS: Step[] = [
-  { id: 'picker', targets: ['reader-picker'], scene: READER, text: 'Any book and chapter from here; hold one to bookmark it.', ...PILL },
-  { id: 'note', targets: ['reader-note-run', 'reader-note-card'], scene: { route: 'reader', note: true }, text: 'Darby’s notes open in place from the small letters.', pad: 8, radius: 20, maxShare: 0.6 },
-  { id: 'verse', targets: ['action-colours', 'action-buttons'], scene: { route: 'reader', select: true }, text: `A tapped verse: highlight, bookmark, ${NOUN.verbLower}, and Ministry where there is some.`, ...CARD, fixed: true },
-  { id: 'lookup', targets: ['more-lookup'], scene: MORE, when: 'compact', text: LOOKUP, ...CARD },
-  { id: 'lookup-wide', targets: ['reader-lookup'], scene: READER, when: 'wide', text: LOOKUP, ...PILL },
-  { id: 'listen', targets: ['reader-listen'], scene: READER, text: 'Read aloud: TTS, each word lit as it is read.', ...PILL },
+  { id: 'picker', targets: ['reader-picker'], scene: READER, get text() { return t('Any book and chapter from here; hold one to bookmark it.') }, ...PILL },
+  { id: 'note', targets: ['reader-note-run', 'reader-note-card'], scene: { route: 'reader', note: true }, get text() { return t('Darby’s notes open in place from the small letters.') }, pad: 8, radius: 20, maxShare: 0.6 },
+  { id: 'verse', targets: ['action-colours', 'action-buttons'], scene: { route: 'reader', select: true }, get text() { return t('A tapped verse: highlight, bookmark, {verbLower}, and Ministry where there is some.', { verbLower: NOUN.verbLower }) }, ...CARD, fixed: true },
+  { id: 'lookup', targets: ['more-lookup'], scene: MORE, when: 'compact', get text() { return LOOKUP() }, ...CARD },
+  { id: 'lookup-wide', targets: ['reader-lookup'], scene: READER, when: 'wide', get text() { return LOOKUP() }, ...PILL },
+  { id: 'listen', targets: ['reader-listen'], scene: READER, get text() { return t('Read aloud: TTS, each word lit as it is read.') }, ...PILL },
   // the tab bar as one, Read among them: the reader is where the tour already is
-  { id: 'tabs', targets: ['tab-home', 'tab-read', 'tab-search', 'tab-stats', 'tab-settings'], scene: READER, text: 'Home, Search, Stats and Settings are on this bar; Read keeps your place.', ...TAB },
+  { id: 'tabs', targets: ['tab-home', 'tab-read', 'tab-search', 'tab-stats', 'tab-settings'], scene: READER, get text() { return t('Home, Search, Stats and Settings are on this bar; Read keeps your place.') }, ...TAB },
 ]
 
 /**
@@ -101,72 +103,72 @@ export const STEPS: Step[] = [
  */
 export const EXTENDED: Step[] = [
   // the reader, where the short tour left off: the toolbar left to right, then the page
-  { id: 'theme', targets: ['reader-theme'], scene: READER, text: 'Themes: 25 of them, in light, dark and true black.', ...PILL },
-  { id: 'theme-pick', targets: ['theme-first'], scene: { route: 'reader', sheet: 'themes' }, interactive: true, text: 'Tap one to try it.', pad: 8, radius: 22, maxShare: 0.5 },
-  { id: 'more', targets: ['reader-more'], scene: READER, when: 'compact', text: 'More: text size, a chapter bookmark, Ministry and paged mode.', ...PILL },
-  { id: 'more-size', targets: ['more-size'], scene: MORE, when: 'compact', text: SIZE, ...CARD },
-  { id: 'more-bookmark', targets: ['more-bookmark'], scene: MORE, when: 'compact', text: 'Bookmark the whole chapter.', ...PILL, fixed: false },
-  { id: 'more-ministry', targets: ['more-ministry'], scene: MORE, when: 'compact', text: CHAPTER_MINISTRY, ...PILL, fixed: false },
-  { id: 'more-paged', targets: ['more-paged'], scene: MORE, when: 'compact', text: PAGED, ...PILL, fixed: false },
-  { id: 'size', targets: ['reader-size-down', 'reader-size'], scene: READER, when: 'wide', text: SIZE, ...PILL },
-  { id: 'chapter-ministry', targets: ['reader-ministry'], scene: READER, when: 'wide', text: CHAPTER_MINISTRY, ...PILL },
-  { id: 'paged', targets: ['reader-paged'], scene: READER, when: 'wide', text: PAGED, ...PILL },
-  { id: 'end', targets: ['reader-end'], scene: { route: 'reader', end: true }, text: 'At a chapter’s end, pull on past it or swipe sideways for the next.', ...CARD, fixed: true },
-  { id: 'player', targets: ['player-transport'], scene: { route: 'reader', player: true }, text: 'While it reads: the verse before or after, pause and play.', ...CARD, fixed: true },
-  { id: 'listening', targets: ['listening-sheet'], scene: { route: 'reader', player: true, sheet: 'listening' }, text: 'The voice, the speed and the pauses, while it reads.', ...CARD, maxShare: 0.5 },
-  { id: 'word', targets: ['word-sheet'], scene: { route: 'reader', sheet: 'word' }, text: 'A word looked up: its Strong’s concordance entry, and its subject one tap away.', ...CARD, maxShare: 0.5 },
-  { id: 'ministry', targets: ['ministry-sheet'], scene: { route: 'reader', select: true, sheet: 'ministry' }, text: 'Ministry on a verse: what Darby, Raven and the others wrote on it, best first.', ...CARD, maxShare: 0.5 },
+  { id: 'theme', targets: ['reader-theme'], scene: READER, get text() { return t('Themes: 25 of them, in light, dark and true black.') }, ...PILL },
+  { id: 'theme-pick', targets: ['theme-first'], scene: { route: 'reader', sheet: 'themes' }, interactive: true, get text() { return t('Tap one to try it.') }, pad: 8, radius: 22, maxShare: 0.5 },
+  { id: 'more', targets: ['reader-more'], scene: READER, when: 'compact', get text() { return t('More: text size, a chapter bookmark, Ministry and paged mode.') }, ...PILL },
+  { id: 'more-size', targets: ['more-size'], scene: MORE, when: 'compact', get text() { return SIZE() }, ...CARD },
+  { id: 'more-bookmark', targets: ['more-bookmark'], scene: MORE, when: 'compact', get text() { return t('Bookmark the whole chapter.') }, ...PILL, fixed: false },
+  { id: 'more-ministry', targets: ['more-ministry'], scene: MORE, when: 'compact', get text() { return CHAPTER_MINISTRY() }, ...PILL, fixed: false },
+  { id: 'more-paged', targets: ['more-paged'], scene: MORE, when: 'compact', get text() { return PAGED() }, ...PILL, fixed: false },
+  { id: 'size', targets: ['reader-size-down', 'reader-size'], scene: READER, when: 'wide', get text() { return SIZE() }, ...PILL },
+  { id: 'chapter-ministry', targets: ['reader-ministry'], scene: READER, when: 'wide', get text() { return CHAPTER_MINISTRY() }, ...PILL },
+  { id: 'paged', targets: ['reader-paged'], scene: READER, when: 'wide', get text() { return PAGED() }, ...PILL },
+  { id: 'end', targets: ['reader-end'], scene: { route: 'reader', end: true }, get text() { return t('At a chapter’s end, pull on past it or swipe sideways for the next.') }, ...CARD, fixed: true },
+  { id: 'player', targets: ['player-transport'], scene: { route: 'reader', player: true }, get text() { return t('While it reads: the verse before or after, pause and play.') }, ...CARD, fixed: true },
+  { id: 'listening', targets: ['listening-sheet'], scene: { route: 'reader', player: true, sheet: 'listening' }, get text() { return t('The voice, the speed and the pauses, while it reads.') }, ...CARD, maxShare: 0.5 },
+  { id: 'word', targets: ['word-sheet'], scene: { route: 'reader', sheet: 'word' }, get text() { return t('A word looked up: its Strong’s concordance entry, and its subject one tap away.') }, ...CARD, maxShare: 0.5 },
+  { id: 'ministry', targets: ['ministry-sheet'], scene: { route: 'reader', select: true, sheet: 'ministry' }, get text() { return t('Ministry on a verse: what Darby, Raven and the others wrote on it, best first.') }, ...CARD, maxShare: 0.5 },
   // a work of the ministry library, as a tap in that sheet opens it
-  { id: 'library', targets: ['library-heading'], scene: { route: 'library' }, text: 'A Ministry work reads like the Bible: swipe or pull on for the next section.', ...CARD, maxShare: 0.4 },
-  { id: 'library-back', targets: ['library-back'], scene: { route: 'library' }, text: 'Back returns to the verse.', ...PILL },
+  { id: 'library', targets: ['library-heading'], scene: { route: 'library' }, get text() { return t('A Ministry work reads like the Bible: swipe or pull on for the next section.') }, ...CARD, maxShare: 0.4 },
+  { id: 'library-back', targets: ['library-back'], scene: { route: 'library' }, get text() { return t('Back returns to the verse.') }, ...PILL },
   // Home, top to bottom
-  { id: 'votd', targets: ['home-votd'], scene: HOME, text: 'Today’s verse, a new one each day; it opens its chapter.', pad: 4, radius: 30 },
-  { id: 'streak', targets: ['home-streak'], scene: HOME, account: true, text: 'Your daily streak and the week at a glance.', ...CARD },
-  { id: 'streak-out', targets: ['home-streak'], scene: HOME, account: false, text: 'A daily streak and your week, once you sign in.', ...CARD },
-  { id: 'bookmarks', targets: ['home-bookmarks'], scene: HOME, text: 'Bookmarks, grouped as books, chapters and verses.', ...CARD },
-  { id: 'chronology', targets: ['home-chronology'], scene: HOME, text: 'Darby’s table of the kings and prophets, every reference a link.', ...CARD },
-  { id: 'dictionary', targets: ['home-dictionary'], scene: HOME, text: 'Morrish’s dictionary A to Z, and Strong’s concordance through Word lookup.', ...CARD },
-  { id: 'ministry-library', targets: ['home-ministry'], scene: HOME, text: `${authorNames()}, searchable by passage or title.`, ...CARD },
-  { id: 'together', targets: ['home-together'], scene: HOME, account: true, text: 'Together: your friends and reading groups.', ...CARD, maxShare: 0.5 },
-  { id: 'together-out', targets: ['home-together'], scene: HOME, account: false, text: 'Together: reading groups, and friends once you sign in.', ...CARD },
+  { id: 'votd', targets: ['home-votd'], scene: HOME, get text() { return t('Today’s verse, a new one each day; it opens its chapter.') }, pad: 4, radius: 30 },
+  { id: 'streak', targets: ['home-streak'], scene: HOME, account: true, get text() { return t('Your daily streak and the week at a glance.') }, ...CARD },
+  { id: 'streak-out', targets: ['home-streak'], scene: HOME, account: false, get text() { return t('A daily streak and your week, once you sign in.') }, ...CARD },
+  { id: 'bookmarks', targets: ['home-bookmarks'], scene: HOME, get text() { return t('Bookmarks, grouped as books, chapters and verses.') }, ...CARD },
+  { id: 'chronology', targets: ['home-chronology'], scene: HOME, get text() { return t('Darby’s table of the kings and prophets, every reference a link.') }, ...CARD },
+  { id: 'dictionary', targets: ['home-dictionary'], scene: HOME, get text() { return t('Morrish’s dictionary A to Z, and Strong’s concordance through Word lookup.') }, ...CARD },
+  { id: 'ministry-library', targets: ['home-ministry'], scene: HOME, get text() { return t('{authors}, searchable by passage or title.', { authors: authorNames() }) }, ...CARD },
+  { id: 'together', targets: ['home-together'], scene: HOME, account: true, get text() { return t('Together: your friends and reading groups.') }, ...CARD, maxShare: 0.5 },
+  { id: 'together-out', targets: ['home-together'], scene: HOME, account: false, get text() { return t('Together: reading groups, and friends once you sign in.') }, ...CARD },
   // Outlines, on a sample the tour makes and removes
-  { id: 'outlines-new', targets: ['outlines-new'], scene: { route: 'outlines', sample: true }, text: `Start ${NOUN.a} with a title, or from verses with ${NOUN.verb}.`, ...CARD },
-  { id: 'outlines-open', targets: ['outlines-sample'], scene: { route: 'outlines', sample: true }, text: `${NOUN.A} opens to read, or Edit to change; this sample goes after.`, ...CARD },
-  { id: 'editor-add', targets: ['editor-add'], scene: { route: 'outline-edit', sample: true }, text: 'Add a passage by its reference, or a note, a link or a heading.', ...CARD },
-  { id: 'editor-items', targets: ['editor-items'], scene: { route: 'outline-edit', sample: true }, text: 'Lines move up, down and in, so points can sit under points.', ...CARD, maxShare: 0.55 },
-  { id: 'editor-share', targets: ['editor-visibility'], scene: { route: 'outline-edit', sample: true }, account: true, text: 'Private, or shared by its link.', ...CARD },
-  { id: 'editor-share-out', targets: ['editor-visibility'], scene: { route: 'outline-edit', sample: true }, account: false, text: 'Kept on this device until you sign in to share it.', ...CARD },
-  { id: 'editor-print', targets: ['print-sheet'], scene: { route: 'outline-edit', sample: true, sheet: 'print' }, text: 'Print it or save a PDF, at Bible-insert size or larger.', ...CARD, maxShare: 0.55 },
+  { id: 'outlines-new', targets: ['outlines-new'], scene: { route: 'outlines', sample: true }, get text() { return t('Start {a} with a title, or from verses with {verb}.', { a: NOUN.a, verb: NOUN.verb }) }, ...CARD },
+  { id: 'outlines-open', targets: ['outlines-sample'], scene: { route: 'outlines', sample: true }, get text() { return t('{A} opens to read, or Edit to change; this sample goes after.', { A: NOUN.A }) }, ...CARD },
+  { id: 'editor-add', targets: ['editor-add'], scene: { route: 'outline-edit', sample: true }, get text() { return t('Add a passage by its reference, or a note, a link or a heading.') }, ...CARD },
+  { id: 'editor-items', targets: ['editor-items'], scene: { route: 'outline-edit', sample: true }, get text() { return t('Lines move up, down and in, so points can sit under points.') }, ...CARD, maxShare: 0.55 },
+  { id: 'editor-share', targets: ['editor-visibility'], scene: { route: 'outline-edit', sample: true }, account: true, get text() { return t('Private, or shared by its link.') }, ...CARD },
+  { id: 'editor-share-out', targets: ['editor-visibility'], scene: { route: 'outline-edit', sample: true }, account: false, get text() { return t('Kept on this device until you sign in to share it.') }, ...CARD },
+  { id: 'editor-print', targets: ['print-sheet'], scene: { route: 'outline-edit', sample: true, sheet: 'print' }, get text() { return t('Print it or save a PDF, at Bible-insert size or larger.') }, ...CARD, maxShare: 0.55 },
   // Together: friends, then reading groups
-  { id: 'friends-out', targets: ['friends-signin'], scene: { route: 'friends' }, account: false, text: 'Friends, once you sign in: by exact handle, never by search.', ...CARD },
-  { id: 'friends-add', targets: ['friends-add'], scene: { route: 'friends' }, account: true, text: 'Add a friend by their exact handle, or with your QR code.', ...CARD, maxShare: 0.5 },
-  { id: 'friends-streak', targets: ['friends-first'], scene: { route: 'friends' }, account: true, friends: true, text: 'A friend streak: the days you both meet your goal.', ...CARD },
-  { id: 'groups-out', targets: ['groups-signin'], scene: { route: 'groups' }, account: false, text: 'Reading groups, for a few reading together, once you sign in.', ...CARD },
-  { id: 'groups-create', targets: ['groups-create'], scene: { route: 'groups' }, account: true, text: 'Start a group, then invite people with its code.', ...CARD },
-  { id: 'groups-join', targets: ['groups-join'], scene: { route: 'groups' }, account: true, text: 'Or join one with a code someone sent you.', ...CARD },
-  { id: 'group-streak', targets: ['group-streak'], scene: { route: 'group' }, account: true, group: true, text: 'The group streak: days every member met their own goal.', ...CARD, maxShare: 0.45 },
-  { id: 'group-members', targets: ['group-members'], scene: { route: 'group' }, account: true, group: true, text: 'The members; a name opens their profile.', ...CARD, maxShare: 0.45 },
-  { id: 'group-events', targets: ['group-events'], scene: { route: 'group' }, account: true, group: true, text: 'Events, each with its own leaderboard.', ...CARD, maxShare: 0.45 },
-  { id: 'group-feed', targets: ['group-feed'], scene: { route: 'group' }, account: true, group: true, text: `The feed: the ${NOUN.many} the group shares.`, ...CARD, maxShare: 0.45 },
+  { id: 'friends-out', targets: ['friends-signin'], scene: { route: 'friends' }, account: false, get text() { return t('Friends, once you sign in: by exact handle, never by search.') }, ...CARD },
+  { id: 'friends-add', targets: ['friends-add'], scene: { route: 'friends' }, account: true, get text() { return t('Add a friend by their exact handle, or with your QR code.') }, ...CARD, maxShare: 0.5 },
+  { id: 'friends-streak', targets: ['friends-first'], scene: { route: 'friends' }, account: true, friends: true, get text() { return t('A friend streak: the days you both meet your goal.') }, ...CARD },
+  { id: 'groups-out', targets: ['groups-signin'], scene: { route: 'groups' }, account: false, get text() { return t('Reading groups, for a few reading together, once you sign in.') }, ...CARD },
+  { id: 'groups-create', targets: ['groups-create'], scene: { route: 'groups' }, account: true, get text() { return t('Start a group, then invite people with its code.') }, ...CARD },
+  { id: 'groups-join', targets: ['groups-join'], scene: { route: 'groups' }, account: true, get text() { return t('Or join one with a code someone sent you.') }, ...CARD },
+  { id: 'group-streak', targets: ['group-streak'], scene: { route: 'group' }, account: true, group: true, get text() { return t('The group streak: days every member met their own goal.') }, ...CARD, maxShare: 0.45 },
+  { id: 'group-members', targets: ['group-members'], scene: { route: 'group' }, account: true, group: true, get text() { return t('The members; a name opens their profile.') }, ...CARD, maxShare: 0.45 },
+  { id: 'group-events', targets: ['group-events'], scene: { route: 'group' }, account: true, group: true, get text() { return t('Events, each with its own leaderboard.') }, ...CARD, maxShare: 0.45 },
+  { id: 'group-feed', targets: ['group-feed'], scene: { route: 'group' }, account: true, group: true, get text() { return t('The feed: the {many} the group shares.', { many: NOUN.many }) }, ...CARD, maxShare: 0.45 },
   // Search
-  { id: 'search-field', targets: ['search-field'], scene: { route: 'search' }, text: 'A reference like Rom 8:28 opens the chapter; words find every verse with them.', ...CARD },
-  { id: 'search-scope', targets: ['search-scope'], scene: { route: 'search' }, text: 'The whole Bible, or one Testament.', ...CARD },
+  { id: 'search-field', targets: ['search-field'], scene: { route: 'search' }, get text() { return t('A reference like Rom 8:28 opens the chapter; words find every verse with them.') }, ...CARD },
+  { id: 'search-scope', targets: ['search-scope'], scene: { route: 'search' }, get text() { return t('The whole Bible, or one Testament.') }, ...CARD },
   // Stats
-  { id: 'stats', targets: ['stats-tiles', 'stats-week'], scene: { route: 'stats' }, account: true, text: 'Your streak, today’s reading and the week, day by day.', ...CARD, maxShare: 0.45 },
-  { id: 'badges', targets: ['stats-badges'], scene: { route: 'stats' }, account: true, text: 'Badges for milestones, with any reactions from friends.', ...CARD, maxShare: 0.4 },
-  { id: 'stats-out', targets: ['stats-signin'], scene: { route: 'stats' }, account: false, text: 'A streak, badges and reading time, once you sign in.', ...CARD },
+  { id: 'stats', targets: ['stats-tiles', 'stats-week'], scene: { route: 'stats' }, account: true, get text() { return t('Your streak, today’s reading and the week, day by day.') }, ...CARD, maxShare: 0.45 },
+  { id: 'badges', targets: ['stats-badges'], scene: { route: 'stats' }, account: true, get text() { return t('Badges for milestones, with any reactions from friends.') }, ...CARD, maxShare: 0.4 },
+  { id: 'stats-out', targets: ['stats-signin'], scene: { route: 'stats' }, account: false, get text() { return t('A streak, badges and reading time, once you sign in.') }, ...CARD },
   // Settings, its sections top to bottom
-  { id: 'settings-text', targets: ['settings-text'], scene: SETTINGS, text: 'The reading text: typeface, size and spacing, with a preview.', ...CARD, maxShare: 0.66 },
-  { id: 'settings-reading', targets: ['settings-reading'], scene: SETTINGS, text: 'Reading: paragraphs, verse numbers, note markers and animation.', ...CARD, maxShare: 0.66 },
-  { id: 'settings-listening', targets: ['settings-listening'], scene: SETTINGS, text: 'Listening: the voice, the speed and the pauses.', ...PILL, fixed: false },
-  { id: 'settings-again', targets: ['settings-welcome'], scene: SETTINGS, text: 'The welcome and the tour, again, to show someone.', ...PILL, fixed: false },
-  { id: 'settings-account', targets: ['settings-account'], scene: SETTINGS, account: true, text: 'Your picture, friends settings and your data.', ...CARD, maxShare: 0.5 },
-  { id: 'settings-account-out', targets: ['settings-account'], scene: SETTINGS, account: false, text: 'Signing in keeps bookmarks, a streak, friends and groups.', ...CARD },
-  { id: 'settings-reset', targets: ['settings-reset'], scene: SETTINGS, text: 'Reset puts the text, theme and layout back as they came.', ...CARD },
+  { id: 'settings-text', targets: ['settings-text'], scene: SETTINGS, get text() { return t('The reading text: typeface, size and spacing, with a preview.') }, ...CARD, maxShare: 0.66 },
+  { id: 'settings-reading', targets: ['settings-reading'], scene: SETTINGS, get text() { return t('Reading: paragraphs, verse numbers, note markers and animation.') }, ...CARD, maxShare: 0.66 },
+  { id: 'settings-listening', targets: ['settings-listening'], scene: SETTINGS, get text() { return t('Listening: the voice, the speed and the pauses.') }, ...PILL, fixed: false },
+  { id: 'settings-again', targets: ['settings-welcome'], scene: SETTINGS, get text() { return t('The welcome and the tour, again, to show someone.') }, ...PILL, fixed: false },
+  { id: 'settings-account', targets: ['settings-account'], scene: SETTINGS, account: true, get text() { return t('Your picture, friends settings and your data.') }, ...CARD, maxShare: 0.5 },
+  { id: 'settings-account-out', targets: ['settings-account'], scene: SETTINGS, account: false, get text() { return t('Signing in keeps bookmarks, a streak, friends and groups.') }, ...CARD },
+  { id: 'settings-reset', targets: ['settings-reset'], scene: SETTINGS, get text() { return t('Reset puts the text, theme and layout back as they came.') }, ...CARD },
 ]
-export const FINAL_TEXT = 'That’s it. Read well.'
+export const FINAL_TEXT = N_('That’s it. Read well.')
 /** Offered where the short tour ends, before the last line. */
-export const CHOICE = { text: 'That’s the short tour.', more: 'Keep going: the full tour', enough: 'That’s enough' } as const
+export const CHOICE = { text: N_('That’s the short tour.'), more: N_('Keep going: the full tour'), enough: N_('That’s enough') } as const
 
 export type TourMode = 'short' | 'full'
 /** The reader's toolbar holds every control from this width up (ten need ~700 pt); below it the rarer ones are behind
@@ -176,11 +178,11 @@ export const TOOLBAR_WIDE = 720
 /** The 1890 edition (docs/EDITION.md) has no chronological table and no Coates, Stoney or Raven: that step goes, these
  *  say less. */
 const ONLY_1961: ReadonlySet<string> = new Set(['chronology'])
-const TEXT_1890: Readonly<Record<string, string>> = {
-  'more-ministry': 'Ministry on this chapter: Darby going through it.',
-  'chapter-ministry': 'Ministry on this chapter: Darby going through it.',
-  'ministry': `Ministry on a verse: what ${authorNames(EDITION_AUTHORS)} wrote on it, best first.`,
-  'ministry-library': `${authorNames(EDITION_AUTHORS)}, searchable by passage or title.`,
+const TEXT_1890: Readonly<Record<string, () => string>> = {
+  'more-ministry': () => t('Ministry on this chapter: Darby going through it.'),
+  'chapter-ministry': () => t('Ministry on this chapter: Darby going through it.'),
+  'ministry': () => t('Ministry on a verse: what {authors} wrote on it, best first.', { authors: authorNames(EDITION_AUTHORS) }),
+  'ministry-library': () => t('{authors}, searchable by passage or title.', { authors: authorNames(EDITION_AUTHORS) }),
 }
 
 /** Who is touring: a tablet (the toolbar holds everything) or a phone, signed in or out, in a group, with a friend, and
@@ -191,10 +193,10 @@ export function stepsFor(mode: TourMode, ctx: TourContext): Step[] {
   const e1890 = ctx.edition === '1890'
   const fits = (s: Step) => (!s.when || (s.when === 'wide') === ctx.wide) && (s.account === undefined || s.account === ctx.signedIn)
     && (!s.group || ctx.inGroup) && (!s.friends || !!ctx.hasFriends) && !(e1890 && ONLY_1961.has(s.id))
-  return (mode === 'short' ? STEPS : [...STEPS, ...EXTENDED]).filter(fits).map(s => (e1890 && TEXT_1890[s.id] ? { ...s, text: TEXT_1890[s.id] } : s))
+  return (mode === 'short' ? STEPS : [...STEPS, ...EXTENDED]).filter(fits).map(s => (e1890 && TEXT_1890[s.id] ? { ...s, text: TEXT_1890[s.id]() } : s))
 }
 /** "12 of 33" in the full tour; the short one shows dots. */
-export const progressText = (i: number, n: number) => `${i + 1} of ${n}`
+export const progressText = (i: number, n: number) => t('{i} of {n}', { i: i + 1, n })
 
 export type SceneAction =
   | { kind: 'sheet'; open: SheetId | null } | { kind: 'select'; on: boolean } | { kind: 'player'; on: boolean }
