@@ -349,6 +349,7 @@ pub fn router() -> Router<AppState> {
         .route("/stats/recheck", post(recheck))
         .merge(crate::moderation::router())
         .merge(crate::feedback::router())
+        .merge(crate::review_ask::router())
         .merge(crate::live::router())
         .nest("/outlines", crate::outlines::router())
         .nest("/groups", crate::groups::router())

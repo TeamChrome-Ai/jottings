@@ -7,6 +7,7 @@ import { useFocusEffect, useRouter } from 'expo-router'
 import { api, get, getApiBase, patch } from '../../src/lib/api'
 import * as Linking from 'expo-linking'
 import Constants from 'expo-constants'
+import { VersionLine } from '../../src/components/UpdateLine'
 import { useLazyFontState } from '../../src/lib/fonts'
 import FontLoading from '../../src/components/FontLoading'
 import AddFontSheet from '../../src/components/AddFontSheet'
@@ -226,7 +227,7 @@ export default function Settings() {
       </Card>
 
       <View style={{ alignItems: 'center', gap: 10, marginTop: 8 }}>
-        <T small muted>{BRAND.fullName} {Constants.expoConfig?.version ?? ''}</T>
+        <VersionLine text={`${BRAND.fullName} ${Constants.expoConfig?.version ?? ''}`} />
         <Row style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
           <Button small title={t('Privacy policy')} onPress={() => Linking.openURL(`${siteBase()}${policyPath('/privacy')}`)} />
           <Button small title={t('Terms')} onPress={() => Linking.openURL(`${siteBase()}/terms`)} />

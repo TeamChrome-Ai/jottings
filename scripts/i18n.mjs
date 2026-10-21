@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const ts = createRequire(path.join(ROOT, 'client/package.json'))('typescript')
 const I18N = path.join(ROOT, 'client/src/i18n')
-const LANGS = ['fr', 'fr-CA', 'de', 'nl', 'sv']
+const LANGS = ['fr', 'fr-CA', 'de', 'it', 'nl', 'sv']
 const CONTEXT = '\u0004', PLURAL = '\u0000'
 const DIRS = ['client/app', 'client/src', 'shared']
 const SKIP = /(\.test\.|\.d\.ts$|\/i18n\/|node_modules|mediaArtData|\/widgets\/.*\.json)/

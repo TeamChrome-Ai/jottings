@@ -12,6 +12,9 @@
  "an admin's name is their own": [
   "rs/src/feedback.rs:174"
  ],
+ "answer: like, dislike or later": [
+  "rs/src/review_ask.rs:59"
+ ],
  "avatar: one of the preset pictures": [
   "rs/src/routes.rs:149"
  ],
@@ -147,8 +150,11 @@
   "rs/src/groups.rs:240"
  ],
  "no such API": [
-  "rs/src/main.rs:189",
+  "rs/src/main.rs:201",
   "rs/src/testkit.rs:17"
+ ],
+ "no such ask": [
+  "rs/src/review_ask.rs:62"
  ],
  "no such author": [
   "rs/src/companion.rs:67",

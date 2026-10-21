@@ -26,6 +26,8 @@ import HomeFriends from '../../src/components/friends/HomeFriends'
 import SignInCard from '../../src/components/SignInCard'
 import PathCard from '../../src/components/PathCard'
 import Wordmark from '../../src/components/Wordmark'
+import UpdateLine from '../../src/components/UpdateLine'
+import ReviewAsk from '../../src/components/ReviewAsk'
 import { anyLocalRead, refreshPath, usePath } from '../../src/lib/paths'
 import { signInPromptBelowLibrary } from '../../src/lib/jot'
 import { pathTitle } from '@shared/paths'
@@ -187,10 +189,15 @@ export default function Home() {
         </View>
       </Enter>
 
+      {/* only while the owner has an ask running and this reader has read enough (rs/src/review_ask.rs) */}
+      <ReviewAsk />
+
       <Enter delay={340} style={{ gap: 8 }}>
         <H2>{t('Theme')}</H2>
         <ThemeStrip onMore={() => router.push('/themes')} />
       </Enter>
+
+      <UpdateLine />
 
       {Platform.OS === 'web' && (
         <View style={{ paddingTop: 8, gap: 4 }}>

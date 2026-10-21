@@ -253,9 +253,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   })
 
   // Darby's [supplied words] are read as words: some engines say "bracket" or stop dead at the marks
+  // The guard stops the voice when its run ends; it stands down once its own verse is over, or a pause's run (toggle)
+  // would leave it waiting to stop the verse the Play starts (the device voice then sat on one verse, "playing", silent).
   const speakDevice = (text: string, token: number) => new Promise<void>((resolve, reject) => {
-    Speech.speak(text.replace(/[[\]]/g, ''), { rate: prefs.get().ttsSpeed, language: speechLanguage(), onDone: () => resolve(), onStopped: () => reject(new Error(STOPPED)), onError: () => reject(new Error('device voice failed')) })
-    const guard = () => { if (run.current !== token) { Speech.stop(); return } setTimeout(guard, 200) }
+    let over = false
+    const end = (f: () => void) => () => { over = true; f() }
+    Speech.speak(text.replace(/[[\]]/g, ''), { rate: prefs.get().ttsSpeed, language: speechLanguage(), onDone: end(resolve), onStopped: end(() => reject(new Error(STOPPED))), onError: end(() => reject(new Error('device voice failed'))) })
+    const guard = () => { if (over) return; if (run.current !== token) { over = true; Speech.stop(); return } setTimeout(guard, 200) }
     guard()
   })
 
@@ -434,7 +438,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       note('pause', undefined, where())
       paused.current = true
       player.current?.pause(); numbers.current?.pause()
-      if (current.current.marks === null) Speech.stop()     // device voice cannot pause: the verse restarts on resume
+      // the device voice cannot pause: its run ends here (its guard and its verse's wait stand down at once), and Play
+      // starts the verse again in a run of its own
+      if (current.current.marks === null) { ++run.current; Speech.stop() }
       setState(s => ({ ...s, status: 'paused' }))
     } else if (state.status === 'paused') {
       note('play', undefined, where())

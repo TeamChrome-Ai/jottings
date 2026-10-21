@@ -9,10 +9,10 @@
  * current one from here, so nothing in this file needs React Native.
  */
 
-export type Lang = 'en' | 'fr' | 'fr-CA' | 'de' | 'nl' | 'sv'
-export const LANGS: readonly Lang[] = ['en', 'fr', 'fr-CA', 'de', 'nl', 'sv']
+export type Lang = 'en' | 'fr' | 'fr-CA' | 'de' | 'it' | 'nl' | 'sv'
+export const LANGS: readonly Lang[] = ['en', 'fr', 'fr-CA', 'de', 'it', 'nl', 'sv']
 /** Each language by its own name, as a language list shows it. */
-export const LANG_NAMES: Record<Lang, string> = { en: 'English', fr: 'Français', 'fr-CA': 'Français (Canada)', de: 'Deutsch', nl: 'Nederlands', sv: 'Svenska' }
+export const LANG_NAMES: Record<Lang, string> = { en: 'English', fr: 'Français', 'fr-CA': 'Français (Canada)', de: 'Deutsch', it: 'Italiano', nl: 'Nederlands', sv: 'Svenska' }
 export const isLang = (v: unknown): v is Lang => typeof v === 'string' && (LANGS as readonly string[]).includes(v)
 
 /** The language a device's locale tag asks for ("fr-CA", "fr_FR", "de-AT"…); English for anything else. */
@@ -20,7 +20,7 @@ export function langOfLocale(tag: string | null | undefined): Lang {
   const [base, region] = (tag ?? '').replace('_', '-').split('-')
   const b = base?.toLowerCase()
   if (b === 'fr') return region?.toUpperCase() === 'CA' ? 'fr-CA' : 'fr'
-  return b === 'de' || b === 'nl' || b === 'sv' ? b : 'en'
+  return b === 'de' || b === 'it' || b === 'nl' || b === 'sv' ? b : 'en'
 }
 
 export type PluralCat = 'one' | 'other'

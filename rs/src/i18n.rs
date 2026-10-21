@@ -1,11 +1,11 @@
-//! Error messages in the reader's language (docs/LANGUAGES.md): an app in French, German, Dutch or Swedish names it in
+//! Error messages in the reader's language (docs/LANGUAGES.md): an app in French, German, Italian, Dutch or Swedish names it in
 //! `x-jottings-lang`, and an error's English message is swapped for its catalogue's (rs/i18n/<lang>.json, made by
 //! `node scripts/i18n.mjs server-keys`); a message the catalogue lacks stays English.
 use axum::{body::Body, extract::Request, http::header, middleware::Next, response::Response};
 use std::{collections::HashMap, sync::LazyLock};
 
 static CATALOGS: LazyLock<HashMap<&'static str, HashMap<String, String>>> = LazyLock::new(|| {
-    [("fr", include_str!("../i18n/fr.json")), ("fr-CA", include_str!("../i18n/fr-CA.json")), ("de", include_str!("../i18n/de.json")), ("nl", include_str!("../i18n/nl.json")), ("sv", include_str!("../i18n/sv.json"))]
+    [("fr", include_str!("../i18n/fr.json")), ("fr-CA", include_str!("../i18n/fr-CA.json")), ("de", include_str!("../i18n/de.json")), ("it", include_str!("../i18n/it.json")), ("nl", include_str!("../i18n/nl.json")), ("sv", include_str!("../i18n/sv.json"))]
         .into_iter().map(|(l, s)| (l, serde_json::from_str(s).unwrap_or_default())).collect()
 });
 

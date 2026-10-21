@@ -1,5 +1,5 @@
 //! Berean server: axum + SQLite, one static binary with the client and data embedded.
-mod activity; mod auth; mod bans; mod avatars; mod badges; mod bible; mod brand; mod books; mod cleanse; mod companion; mod dictionary; mod db; mod edition; mod error; mod i18n; mod feedback; mod friends; mod google; mod groups; mod link_preview; mod me_data; mod ministry; mod ministry_offline; mod moderation; mod og; mod scan; mod outlines; mod refparse; mod search; mod tts; mod routes; mod rules; mod r#static; mod paths; mod store; mod live; mod marks; mod readthrough;
+mod activity; mod auth; mod bans; mod avatars; mod badges; mod bible; mod brand; mod books; mod cleanse; mod companion; mod dictionary; mod db; mod edition; mod error; mod i18n; mod feedback; mod friends; mod google; mod groups; mod link_preview; mod me_data; mod ministry; mod ministry_offline; mod moderation; mod og; mod scan; mod outlines; mod refparse; mod review_ask; mod search; mod tts; mod routes; mod rules; mod r#static; mod paths; mod store; mod live; mod marks; mod readthrough;
 #[cfg(test)] mod testkit;
 
 use axum::{http::{header, HeaderValue}, Router};
@@ -84,6 +84,18 @@ async fn main() -> anyhow::Result<()> {
     if argv.get(1).map(|s| s.as_str()) == Some("feedback-thank") {
         let Some(who) = argv.get(2) else { anyhow::bail!("feedback-thank <handle | message number>") };
         let conn = pool.get()?; println!("{} message(s) answered for {who}", feedback::thank(&conn, who)?); return Ok(());
+    }
+    // `berean review-ask [start [--days N] [--chapters N] [--only <handle>] | stop]`: the owner's ask for a review
+    // (review_ask.rs); with no word, what each ask brought. Only here: no web route starts one
+    if argv.get(1).map(|s| s.as_str()) == Some("review-ask") {
+        let conn = pool.get()?;
+        match argv.get(2).map(|s| s.as_str()) {
+            None => review_ask::report(&conn)?,
+            Some("start") => review_ask::start(&conn, &argv[3..])?,
+            Some("stop") => review_ask::stop(&conn)?,
+            _ => anyhow::bail!("review-ask [start [--days N] [--chapters N] [--only <handle>] | stop]"),
+        }
+        return Ok(());
     }
     // `berean store-click-hours < lines`: fills the hourly record (live.rs) for hours before the server kept one
     if argv.get(1).map(|s| s.as_str()) == Some("store-click-hours") {

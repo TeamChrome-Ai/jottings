@@ -103,12 +103,12 @@ const text = page => page.evaluate(() => document.body.innerText)
   const row = page.getByRole('button', { name: /Langue|Language/ }).first()
   await row.click(); await page.waitForTimeout(700)
   const body = await text(page)
-  check(['Français', 'Deutsch', 'Nederlands', 'Svenska', 'Darby (français)', 'Elberfelder (Deutsch)'].every(s => body.includes(s)), 'the Language sheet lists the languages and Bibles')
+  check(['Français', 'Deutsch', 'Italiano', 'Nederlands', 'Svenska', 'Darby (français)', 'Elberfelder (Deutsch)'].every(s => body.includes(s)), 'the Language sheet lists the languages and Bibles')
   await page.screenshot({ path: `${shots}/fr-language-sheet.png` })
   await ctx.close()
 }
 // every language's Home, for a look; the screens say something in the language, never a raw key or placeholder
-for (const [lang, bible, word] of [['fr', 'fr', 'Accueil'], ['fr-CA', 'fr', 'Accueil'], ['de', 'de', 'Lesen'], ['nl', 'en', 'Lezen'], ['sv', 'en', 'Läs']]) {
+for (const [lang, bible, word] of [['fr', 'fr', 'Accueil'], ['fr-CA', 'fr', 'Accueil'], ['de', 'de', 'Lesen'], ['it', 'en', 'Leggi'], ['nl', 'en', 'Lezen'], ['sv', 'en', 'Läs']]) {
   const { ctx, page, errors } = await open({ lang, bible, readerName: 'Anna' }, '/')
   const body = await text(page)
   check(body.includes(word) && !/\{[a-zA-Z]+\}|\u0004|\u0000/.test(body), `${lang}: Home in the language, no placeholders left`, body.slice(0, 160))
@@ -121,6 +121,8 @@ for (const [lang, bible, word] of [['fr', 'fr', 'Accueil'], ['fr-CA', 'fr', 'Acc
   const r = await fetch(`${base}/privacy-fr`)
   const html = await r.text()
   check(r.ok && html.includes('lang="fr"') && html.includes('Ceci est une traduction'), 'the French privacy policy is served', r.status)
+  const it = await fetch(`${base}/privacy-it`), itHtml = await it.text()
+  check(it.ok && itHtml.includes('lang="it"') && itHtml.includes('Questa è una traduzione'), 'the Italian privacy policy is served', it.status)
 }
 await browser.close()
 console.log(failed ? `${failed} FAILED` : 'all passed')

@@ -61,6 +61,19 @@ describe('a Bible kept in the English numbering', () => {
     expect(findBook('mc')?.n).toBe(41)
     expect(findBook('Genese')?.n).toBe(1)
   })
+
+  it('writes and reads Italian book names over the English Darby', () => {
+    setNamesLang('it'); setShownText('en')
+    expect(formatRef({ book: 43, chapter: 3, v1: 16 })).toBe('Giovanni 3:16')
+    expect(formatRef({ book: 19, chapter: 23 })).toBe('Salmo 23')
+    expect(BOOKS[21].name).toBe('Cantico dei Cantici')
+    expect(parseRef('Gv 3:16')).toEqual({ book: 43, chapter: 3, v1: 16 })
+    expect(parseRef('1 co 13:4-7')).toEqual({ book: 46, chapter: 13, v1: 4, v2: 7 })
+    expect(parseRef('sl 23')).toEqual({ book: 19, chapter: 23 })
+    expect(parseRef('Giosuè 1')).toEqual({ book: 6, chapter: 1 })
+    expect(findBook('Gna')?.n).toBe(32)
+    expect(scanRefs('vedi Gv 3:16 e Ro 8:28').map(s => s.ref)).toEqual([{ book: 43, chapter: 3, v1: 16 }, { book: 45, chapter: 8, v1: 28 }])
+  })
 })
 
 describe('the French Darby as built (client/public/bible-fr/map.json)', () => {
@@ -110,7 +123,10 @@ describe('phrases', () => {
     expect(langOfLocale('fr_CA')).toBe('fr-CA')
     expect(langOfLocale('fr-BE')).toBe('fr')
     expect(langOfLocale('de-AT')).toBe('de')
+    expect(langOfLocale('it-CH')).toBe('it')
     expect(langOfLocale('es-ES')).toBe('en')
+    expect(pluralCat('it', 0)).toBe('other')
+    expect(pluralCat('it', 1)).toBe('one')
     expect(pluralCat('fr', 1.5)).toBe('one')
     expect(pluralCat('de', 0)).toBe('other')
     expect(richParts('Tap <b>Read</b> to begin')).toEqual(['Tap ', { tag: 'b', text: 'Read' }, ' to begin'])

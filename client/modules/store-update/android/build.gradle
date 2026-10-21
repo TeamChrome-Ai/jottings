@@ -1,0 +1,20 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.storeupdate'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.storeupdate"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // Google Play's in-app updates: what version Play offers this phone, and since when
+  implementation 'com.google.android.play:app-update:2.1.0'
+}

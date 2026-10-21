@@ -1,10 +1,10 @@
 /**
  * The books' names in each language the app speaks (docs/LANGUAGES.md): the name a heading shows, the short form a tight
  * place shows, and the name a reference is written with where that differs ("Psaume 23" of the book "Psaumes"). French
- * follows Darby's French edition, German the Elberfelder, Dutch the Statenvertaling's spellings, Swedish the modern
- * numbered forms. Canadian French writes them as French does.
+ * follows Darby's French edition, German the Elberfelder, Italian the Nuova Riveduta, Dutch the Statenvertaling's
+ * spellings, Swedish the modern numbered forms. Canadian French writes them as French does.
  */
-export type NamesLang = 'en' | 'fr' | 'de' | 'nl' | 'sv'
+export type NamesLang = 'en' | 'fr' | 'de' | 'it' | 'nl' | 'sv'
 /** name, short form, and the reference name when it is not the name. */
 export type BookName = [name: string, abbr: string, ref?: string]
 
@@ -32,6 +32,18 @@ const de: BookName[] = [
   ['2. Thessalonicher', '2. Thes'], ['1. Timotheus', '1. Tim'], ['2. Timotheus', '2. Tim'], ['Titus', 'Tit'], ['Philemon', 'Phlm'], ['Hebräer', 'Heb'],
   ['Jakobus', 'Jak'], ['1. Petrus', '1. Pet'], ['2. Petrus', '2. Pet'], ['1. Johannes', '1. Joh'], ['2. Johannes', '2. Joh'], ['3. Johannes', '3. Joh'],
   ['Judas', 'Jud'], ['Offenbarung', 'Offb'],
+]
+const it: BookName[] = [
+  ['Genesi', 'Ge'], ['Esodo', 'Es'], ['Levitico', 'Le'], ['Numeri', 'Nu'], ['Deuteronomio', 'De'], ['Giosuè', 'Gs'], ['Giudici', 'Gc'], ['Rut', 'Ru'],
+  ['1 Samuele', '1 Sa'], ['2 Samuele', '2 Sa'], ['1 Re', '1 Re'], ['2 Re', '2 Re'], ['1 Cronache', '1 Cr'], ['2 Cronache', '2 Cr'], ['Esdra', 'Esd'],
+  ['Neemia', 'Ne'], ['Ester', 'Est'], ['Giobbe', 'Gb'], ['Salmi', 'Sl', 'Salmo'], ['Proverbi', 'Pr'], ['Ecclesiaste', 'Ec'],
+  ['Cantico dei Cantici', 'Ca', 'Cantico'], ['Isaia', 'Is'], ['Geremia', 'Gr'], ['Lamentazioni', 'La'], ['Ezechiele', 'Ez'], ['Daniele', 'Da'],
+  ['Osea', 'Os'], ['Gioele', 'Gl'], ['Amos', 'Am'], ['Abdia', 'Ad'], ['Giona', 'Gna'], ['Michea', 'Mi'], ['Naum', 'Na'], ['Abacuc', 'Ab'],
+  ['Sofonia', 'So'], ['Aggeo', 'Ag'], ['Zaccaria', 'Za'], ['Malachia', 'Ml'],
+  ['Matteo', 'Mt'], ['Marco', 'Mr'], ['Luca', 'Lu'], ['Giovanni', 'Gv'], ['Atti', 'At'], ['Romani', 'Ro'], ['1 Corinzi', '1 Co'], ['2 Corinzi', '2 Co'],
+  ['Galati', 'Ga'], ['Efesini', 'Ef'], ['Filippesi', 'Fl'], ['Colossesi', 'Cl'], ['1 Tessalonicesi', '1 Te'], ['2 Tessalonicesi', '2 Te'],
+  ['1 Timoteo', '1 Ti'], ['2 Timoteo', '2 Ti'], ['Tito', 'Tt'], ['Filemone', 'Fm'], ['Ebrei', 'Eb'], ['Giacomo', 'Gm'], ['1 Pietro', '1 Pi'],
+  ['2 Pietro', '2 Pi'], ['1 Giovanni', '1 Gv'], ['2 Giovanni', '2 Gv'], ['3 Giovanni', '3 Gv'], ['Giuda', 'Gd'], ['Apocalisse', 'Ap'],
 ]
 const nl: BookName[] = [
   ['Genesis', 'Gen'], ['Exodus', 'Ex'], ['Leviticus', 'Lev'], ['Numeri', 'Num'], ['Deuteronomium', 'Deut'], ['Jozua', 'Joz'], ['Richteren', 'Richt'], ['Ruth', 'Ruth'],
@@ -62,11 +74,12 @@ const sv: BookName[] = [
 ]
 
 /** Every language's names but English's, which live in books.ts with the parsing aliases. */
-export const BOOK_NAMES: Record<Exclude<NamesLang, 'en'>, readonly BookName[]> = { fr, de, nl, sv }
+export const BOOK_NAMES: Record<Exclude<NamesLang, 'en'>, readonly BookName[]> = { fr, de, it, nl, sv }
 /** More ways each language writes a book, for reading what a person types ("1 Moïse", "Offenbarung Johannes"). */
 export const BOOK_ALIASES: Partial<Record<Exclude<NamesLang, 'en'>, Record<number, string[]>>> = {
   fr: { 1: ['gen'], 19: ['ps', 'psaume'], 22: ['cantique', 'cant'], 23: ['esaie', 'is', 'isaie'], 26: ['ezechiel', 'ez'], 66: ['apoc'] },
   de: { 1: ['1mo', '1mos', 'genesis'], 2: ['2mo', '2mos', 'exodus'], 3: ['3mo', '3mos'], 4: ['4mo', '4mos'], 5: ['5mo', '5mos'], 18: ['ijob'], 19: ['psalm'], 66: ['offenbarung', 'apk'] },
+  it: { 1: ['gen'], 19: ['sal', 'salmo'], 22: ['cantico', 'cant'], 32: ['gio', 'gn'], 35: ['abac'], 40: ['mat'], 41: ['mc'], 42: ['lc'], 44: ['atti degli apostoli'], 66: ['apoc', 'apocalisse di giovanni'] },
   nl: { 19: ['psalm'], 40: ['matteus', 'mattheus', 'mt'], 66: ['op', 'openb'] },
   sv: { 1: ['1mosebok'], 2: ['2mosebok'], 3: ['3mosebok'], 4: ['4mosebok'], 5: ['5mosebok'], 19: ['psalm', 'psalmerna'], 66: ['uppenbarelsen'] },
 }

@@ -41,6 +41,7 @@ const LOAD: Record<Exclude<Lang, 'en'>, () => Promise<Catalog>> = {
     return { ...(fr.default as Catalog), ...(ca.default as Catalog) }
   },
   de: () => import('./de.json').then(m => m.default as Catalog),
+  it: () => import('./it.json').then(m => m.default as Catalog),
   nl: () => import('./nl.json').then(m => m.default as Catalog),
   sv: () => import('./sv.json').then(m => m.default as Catalog),
 }

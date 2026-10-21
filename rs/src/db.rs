@@ -259,6 +259,18 @@ CREATE TABLE IF NOT EXISTS ban_marks (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), PRIMARY KEY (kind, hash, user_id)
 );
 CREATE INDEX IF NOT EXISTS ban_marks_hash ON ban_marks(kind, hash);
+-- rs/src/review_ask.rs: the owner's asks for a review (`berean review-ask start`), and each reader shown one: their
+-- answer (like, dislike, later = closed unanswered), when they opened the store page, the feedback they sent from it
+CREATE TABLE IF NOT EXISTS review_asks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, min_days INTEGER NOT NULL, min_chapters INTEGER NOT NULL,
+  only_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), stopped_at TEXT
+);
+CREATE TABLE IF NOT EXISTS review_ask_answers (
+  ask_id INTEGER NOT NULL REFERENCES review_asks(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shown_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), answer TEXT, answered_at TEXT, store_at TEXT, feedback_id INTEGER,
+  PRIMARY KEY (ask_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS store_clicks (day TEXT NOT NULL, src TEXT NOT NULL DEFAULT '', n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, src));
 -- the same clicks by UTC hour (`2026-10-12T14`), for the admin's live numbers (live.rs)
 CREATE TABLE IF NOT EXISTS store_click_hours (hour TEXT PRIMARY KEY, n INTEGER NOT NULL DEFAULT 0);
