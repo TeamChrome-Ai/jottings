@@ -95,9 +95,10 @@ if (!only) {
   await page.screenshot({ path: `${out}/21-second-launch.png` })
 
   await page.goto(base + '/settings', { waitUntil: 'networkidle' })
-  // Settings → Welcome and tour → Welcome
+  // Settings → About → Welcome and tour → Welcome
+  await page.getByRole('button', { name: 'About', exact: true }).click()
   const again = page.getByRole('button', { name: 'Welcome and tour' })
-  await again.scrollIntoViewIfNeeded(); await again.click(); await page.waitForTimeout(700)
+  await again.waitFor(); await again.click(); await page.waitForTimeout(700)
   await page.screenshot({ path: `${out}/22-settings-row.png` })
   await page.getByRole('dialog').getByRole('button', { name: 'Welcome', exact: true }).click()
   check('Settings replays the welcome', await shown(skipBtn(page), 3000))

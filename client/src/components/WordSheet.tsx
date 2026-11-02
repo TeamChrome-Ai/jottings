@@ -21,6 +21,7 @@ import Disclosure from './Disclosure'
 import { refParams } from './FootnoteText'
 import { FadeSwap, Stagger, STAGGER_CAP, useFreshList, useReduceMotion } from './motion/nav'
 import Pager, { CountChip } from './Pager'
+import WordFootnotes from './WordFootnotes'
 import { Button, Card, Chip, Enter, ErrorText, H2, Row, Segmented, Sheet, SPACE, Spinner, T, Tap, TYPE, useSheetWait } from './ui'
 import { tourRef } from '../store/tour'
 
@@ -131,6 +132,7 @@ export default function WordSheet({ target, onClose }: { target: WordTarget | nu
             ? showing === 'word' ? <WordPart code={place.code} paired={parts.length > 1} nav={nav} /> : <SubjectPart word={place.word} paired={parts.length > 1} nav={nav} />
             : place.kind === 'word' ? <WordPart code={place.code} nav={nav} />
             : <SubjectPart id={place.id} nav={nav} />}
+          {place.kind === 'tap' && place.word ? <WordFootnotes word={place.word} rows={5} onOpen={nav.read} /> : null}
         </ScrollView>
       </FadeSwap>
       </View>

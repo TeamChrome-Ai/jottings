@@ -115,10 +115,11 @@ if (untagged.pick) {
   ok('Aa turns word lookup on', await p.getByLabel('Word lookup off').isVisible().catch(() => false))
   await p.screenshot({ path: `${out}/14-wide-aa.png` }); console.log('shot 14-wide-aa')
   await p.getByLabel('More').click(); await p.waitForTimeout(400)   // Reading settings sits behind More at every width
-  await p.getByRole('dialog').getByRole('button', { name: 'Reading settings' }).click(); await p.getByText('Footnote markers').waitFor()
-  await p.getByText('Footnote markers').scrollIntoViewIfNeeded(); await p.waitForTimeout(400)
-  ok('Settings → Reading has no Word lookup row', !(await p.getByText('Word lookup', { exact: true }).isVisible().catch(() => false)))
-  await p.screenshot({ path: `${out}/15-settings-reading.png` }); console.log('shot 15-settings-reading')
+  await p.getByRole('dialog').getByRole('button', { name: 'Reading settings' }).click(); await p.getByText('Text size').waitFor()
+  ok('Reading settings lands on Settings → Text', new URL(p.url()).pathname === '/settings/text')
+  await p.goto(base + '/settings/page', { waitUntil: 'networkidle' }); await p.getByText('Footnote markers').waitFor(); await p.waitForTimeout(400)
+  ok('Settings → Page has no Word lookup row', !(await p.getByText('Word lookup', { exact: true }).isVisible().catch(() => false)))
+  await p.screenshot({ path: `${out}/15-settings-page.png` }); console.log('shot 15-settings-page')
   await wctx.close()
 }
 

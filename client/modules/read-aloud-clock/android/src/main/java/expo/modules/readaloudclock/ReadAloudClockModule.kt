@@ -17,6 +17,7 @@ import com.facebook.react.bridge.ReactContext
 import com.facebook.react.bridge.UiThreadUtil
 import com.facebook.react.jstasks.HeadlessJsTaskConfig
 import com.facebook.react.jstasks.HeadlessJsTaskContext
+import com.facebook.react.jstasks.HeadlessJsTaskEventListener
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -36,6 +37,7 @@ class ReadAloudClockModule : Module() {
   private var deviceWatch: AudioDeviceCallback? = null
   private var modeWatch: AudioManager.OnModeChangedListener? = null
   private var lastScene: Map<String, Any?>? = null
+  private var watchingTasks = false
 
   private val context: Context? get() = appContext.reactContext
   private val audio: AudioManager? get() = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -48,8 +50,18 @@ class ReadAloudClockModule : Module() {
       val context = appContext.reactContext as? ReactContext ?: return@Function false
       UiThreadUtil.runOnUiThread {
         try {
+          val tasks = HeadlessJsTaskContext.getInstance(context)
+          if (!watchingTasks) {
+            watchingTasks = true
+            tasks.addTaskEventListener(object : HeadlessJsTaskEventListener {
+              override fun onHeadlessJsTaskStart(taskId: Int) { ReadingFrames.taskOpen = true }
+              override fun onHeadlessJsTaskFinish(taskId: Int) { ReadingFrames.taskOpen = tasks.hasActiveTasks() }
+            })
+          }
+          // before the task: React Native's timers hear of it first and ask for their frame then
+          ReadingFrames.taskOpen = true
           // no timeout: the reading ends it; allowed in the foreground, where the reader presses Listen
-          HeadlessJsTaskContext.getInstance(context).startTask(HeadlessJsTaskConfig(taskKey, Arguments.createMap(), 0, true))
+          tasks.startTask(HeadlessJsTaskConfig(taskKey, Arguments.createMap(), 0, true))
         } catch (e: Exception) {
           Log.w("ReadAloudClock", "could not open the read-aloud task", e)
         }
@@ -102,6 +114,7 @@ class ReadAloudClockModule : Module() {
       "sdk" to Build.VERSION.SDK_INT, "release" to Build.VERSION.RELEASE, "maker" to Build.MANUFACTURER, "model" to Build.MODEL,
       "unrestricted" to power?.isIgnoringBatteryOptimizations(ctx.packageName),
       "powerSave" to power?.isPowerSaveMode, "dozing" to power?.isDeviceIdleMode, "screenOn" to power?.isInteractive,
+      "standInReady" to ReadingFrames.inUse, "standIns" to ReadingFrames.stoodIn,
     )
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
       out["backgroundRestricted"] = activity?.isBackgroundRestricted

@@ -210,12 +210,12 @@ export function Chip({ label, detail, on = false, onPress, tab = false, accessib
 
 /** One line of a grouped list: optional icon, label, optional detail, chevron. Several go in one Card with `gap: 0`. */
 /** A row of a settings card; without `onPress` it only informs (no chevron, no press). */
-export function ListRow({ label, detail, icon, onPress, danger, disabled, ref }: { label: string; detail?: string; icon?: IconName; onPress?: () => void; danger?: boolean; disabled?: boolean; ref?: Ref<View> }) {
+export function ListRow({ label, detail, icon, lead, onPress, danger, disabled, ref }: { label: string; detail?: string; icon?: IconName; /** a 36 px mark of its own in place of the icon (a sample of what the row sets) */ lead?: ReactNode; onPress?: () => void; danger?: boolean; disabled?: boolean; ref?: Ref<View> }) {
   const c = useInks()
   const fill = useInkFill()
   return (
     <Tap ref={ref} onPress={onPress} disabled={disabled || !onPress} scaleTo={onPress ? 0.985 : 1} accessibilityRole={onPress ? 'button' : 'text'} accessibilityLabel={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 52, paddingVertical: 6, opacity: disabled ? 0.4 : 1 }}>
-      {icon ? <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: fill, alignItems: 'center', justifyContent: 'center' }}><Icon name={icon} size={18} color={danger ? c.danger : c.accent} /></View> : null}
+      {lead ?? (icon ? <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: fill, alignItems: 'center', justifyContent: 'center' }}><Icon name={icon} size={18} color={danger ? c.danger : c.accent} /></View> : null)}
       <View style={{ flex: 1, gap: 1 }}>
         <Text style={{ color: danger ? c.danger : c.text, fontSize: TYPE.body, fontWeight: '500' }}>{label}</Text>
         {detail ? <Text style={{ color: c.muted, fontSize: TYPE.small }}>{detail}</Text> : null}

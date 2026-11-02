@@ -17,7 +17,7 @@ use std::{collections::HashMap, fs, io::Write};
 #[derive(Deserialize)] struct RawChapter { c: i64, title: Option<String>, division: Option<u8>, verses: Vec<RawVerse> }
 #[derive(Deserialize)] struct RawBook { n: i64, chapters: Vec<RawChapter> }
 #[derive(Deserialize)] struct Raw { books: Vec<RawBook> }
-#[derive(Deserialize, Clone)] struct RawNote { m: String, i: i64, t: String }
+#[derive(Deserialize, Clone)] struct RawNote { m: String, i: i64, #[serde(default)] w: String, t: String }
 #[derive(Deserialize)] struct StrongsEntry { lemma: String, translit: String, pron: String, kjv: String }
 
 /// A Bible in another language, kept in the English Darby's chapters and verses (docs/LANGUAGES.md): data/text_<lang>.json.
@@ -80,25 +80,63 @@ fn word_count(s: &str) -> i64 { let mut n = 0; let mut in_w = false; for c in s.
 /// The reader's words (client/src/lib/bible.ts `tokenize`): runs of ASCII letters, digits and apostrophes.
 fn reader_words(s: &str) -> Vec<&str> { s.split(|c: char| !(c.is_ascii_alphanumeric() || c == '\'' || c == '’')).filter(|w| !w.is_empty()).collect() }
 
+/// The words `align_tags` pairs, case-folded: the reader's, except that a word with æ or œ in it is one, spelled out as
+/// ebible spells it ("Cæsarea", which the reader splits at the æ, is ebible's "Caesarea"). Each comes with the range of
+/// the reader's words it covers and its bytes in `s`.
+fn match_units(s: &str) -> Vec<(String, std::ops::Range<usize>, std::ops::Range<usize>)> {
+    let mut out: Vec<(String, std::ops::Range<usize>, std::ops::Range<usize>)> = Vec::new();
+    let (mut n, mut in_unit, mut in_word) = (0, false, false);
+    for (at, c) in s.char_indices() {
+        let lig = match c { 'æ' | 'Æ' => "ae", 'œ' | 'Œ' => "oe", _ => "" };
+        let reader = c.is_ascii_alphanumeric() || c == '\'' || c == '’';
+        if !reader && lig.is_empty() { in_unit = false; in_word = false; continue }
+        if !in_unit { out.push((String::new(), n..n, at..at)); in_unit = true; }
+        let u = out.last_mut().unwrap();
+        u.2.end = at + c.len_utf8();
+        if reader {
+            if !in_word { n += 1; u.1.end = n; in_word = true; }
+            u.0.extend(c.to_lowercase());
+        } else { in_word = false; u.0.push_str(lig); }
+    }
+    out.retain(|u| !u.1.is_empty());
+    out
+}
+
 /// words.json lists only the words ebible wrapped in `\w`, from ebible's own copy of the text, so its n-th entry is not
 /// the n-th word of ours (Matt 1:2 there has no "begat"; John 3:2 has no "thou art"), and a tag read by position landed
 /// on the wrong word more than half the time. Each tag moves to the word it pairs with in a longest common subsequence
-/// of the two lists (case-folded); a tag whose word has no partner in our text is dropped. Returns one code per word
-/// of `ours`, "" where it carries none.
-fn align_tags(ours: &[&str], theirs: &[(String, String)]) -> Vec<String> {
-    let (n, m) = (ours.len(), theirs.len());
-    let a: Vec<String> = ours.iter().map(|w| w.to_lowercase()).collect();
-    let b: Vec<String> = theirs.iter().map(|(w, _)| w.to_lowercase()).collect();
+/// of the two lists (`match_units` of each; ebible's "father-in-law" is three, like ours, each with the word's number);
+/// a tag whose word has no partner in our text is dropped. Returns one row per word of `text` as the reader tokenizes
+/// it, (word, code) with "" where it carries none, and how many of their tags found their word. A tag on several of the
+/// reader's words ("father-in-law", "Cæsarea") is one occurrence: its number is on each, so a tap on any piece opens
+/// it, and its first row holds the word as printed and the others "" (`bible::strongs_info` counts the rows with a word).
+fn align_tags(text: &str, theirs: &[(String, String)]) -> (Vec<(String, String)>, usize) {
+    let a = match_units(text);
+    let b: Vec<(String, usize)> = theirs.iter().enumerate().flat_map(|(t, (w, _))| match_units(w).into_iter().map(move |(u, ..)| (u, t))).collect();
+    let (n, m) = (a.len(), b.len());
     // lcs[i][j]: the longest common subsequence of a[i..] and b[j..]
     let mut lcs = vec![vec![0u16; m + 1]; n + 1];
-    for i in (0..n).rev() { for j in (0..m).rev() { lcs[i][j] = if a[i] == b[j] { lcs[i + 1][j + 1] + 1 } else { lcs[i + 1][j].max(lcs[i][j + 1]) }; } }
-    let mut out = vec![String::new(); n];
+    for i in (0..n).rev() { for j in (0..m).rev() { lcs[i][j] = if a[i].0 == b[j].0 { lcs[i + 1][j + 1] + 1 } else { lcs[i + 1][j].max(lcs[i][j + 1]) }; } }
+    // the units of ours each tag pairs with, in order
+    let mut found: Vec<Vec<usize>> = vec![Vec::new(); theirs.len()];
     let (mut i, mut j) = (0, 0);
     while i < n && j < m {
-        if a[i] == b[j] { out[i] = theirs[j].1.clone(); i += 1; j += 1; }
+        if a[i].0 == b[j].0 { found[b[j].1].push(i); i += 1; j += 1; }
         else if lcs[i + 1][j] >= lcs[i][j + 1] { i += 1 } else { j += 1 }
     }
-    out
+    let mut out: Vec<(String, String)> = reader_words(text).into_iter().map(|w| (w.to_string(), String::new())).collect();
+    for ((_, code), us) in theirs.iter().zip(&found) {
+        if code.is_empty() || us.is_empty() { continue }
+        // pieces side by side are one word; a tag whose pieces landed apart is one occurrence per piece
+        let whole = us.windows(2).all(|p| a[p[0]].1.end == a[p[1]].1.start);
+        for (x, &u) in us.iter().enumerate() {
+            for k in a[u].1.clone() { out[k] = (String::new(), code.clone()); }
+            if x == 0 || !whole { out[a[u].1.start].0 = text[a[u].2.clone()].to_string(); }
+        }
+        if whole { out[a[us[0]].1.start].0 = text[a[us[0]].2.start..a[*us.last().unwrap()].2.end].to_string(); }
+    }
+    let paired = theirs.iter().zip(&found).filter(|((_, c), us)| !us.is_empty() && !c.is_empty()).count();
+    (out, paired)
 }
 
 /// Lettered notes as data/notes_bf.json (1961) and data/notes_1890.json (1890) keep them: `{ "b.c.v": [{ m, i, w, t }] }`;
@@ -123,7 +161,7 @@ fn edition_notes(raw: &Raw, base: &HashMap<String, Vec<RawNote>>, lettered: Hash
                 let key = format!("{}.{}.{}", b.n, ch.c, v.v);
                 for (at, c) in v.t.char_indices() {
                     let (m, t) = match c { '·' => ("·", "El"), '†' => ("†", "Eloah"), _ => continue };
-                    notes.entry(key.clone()).or_default().push(RawNote { m: m.into(), i: word_index_at(&v.t, at), t: t.into() });
+                    notes.entry(key.clone()).or_default().push(RawNote { m: m.into(), i: word_index_at(&v.t, at), w: String::new(), t: t.into() });
                     glyphs += 1;
                 }
                 if let Some(ns) = notes.get_mut(&key) { ns.sort_by_key(|n| n.i); }
@@ -154,11 +192,10 @@ fn write_text(tx: &rusqlite::Transaction, raw: &Raw, suffix: &str, notes: &HashM
                 if let Some(ns) = notes.get(&key) { for n in ns { ins_n.execute(params![id, n.m, n.i, n.t])?; } }
                 // one row per word of the text as the reader tokenizes it, so a tag's position is the word it names
                 if let Some(ws) = words.get(&key) {
-                    let ours = reader_words(&text);
-                    let codes = align_tags(&ours, ws);
-                    tags_kept += codes.iter().filter(|c| !c.is_empty()).count();
+                    let (rows, paired) = align_tags(&text, ws);
+                    tags_kept += paired;
                     tags_all += ws.iter().filter(|(_, c)| !c.is_empty()).count();
-                    for (i, (w, c)) in ours.iter().zip(&codes).enumerate() { ins_w.execute(params![id, i as i64, w, c])?; }
+                    for (i, (w, c)) in rows.iter().enumerate() { ins_w.execute(params![id, i as i64, w, c])?; }
                 }
                 total += 1;
             }
@@ -212,11 +249,51 @@ fn overlay_entry(c1961: &serde_json::Value, c1890: &serde_json::Value) -> Option
     (!notes.is_empty()).then(|| serde_json::json!({ "notes": notes }))
 }
 
+struct Bundle<'a> { raw: &'a Raw, notes: &'a HashMap<String, Vec<RawNote>>, ed: Option<&'static str> }
+
 /// What the client bundle under `client/public/bible` carries: the 1961 edition (its notes, no `ed` mark), or with
 /// BEREAN_NEUTERED=1 the 1890 edition (its notes, every chapter marked `ed: "1890"`), so an app built from it holds no
 /// 1961 note at all. The 1890 overlay the apps lay over the bundle is then empty: there is nothing to differ from.
-fn bundle_plan<'a>(neutered: bool, raw: &'a Raw, raw_1890: Option<&'a Raw>, notes: &'a HashMap<String, Vec<RawNote>>, notes_1890: &'a HashMap<String, Vec<RawNote>>) -> (&'a Raw, &'a HashMap<String, Vec<RawNote>>, Option<&'static str>) {
-    if neutered { (raw_1890.unwrap_or(raw), notes_1890, Some("1890")) } else { (raw, notes, None) }
+fn bundle_plan<'a>(neutered: bool, raw: &'a Raw, raw_1890: Option<&'a Raw>, notes: &'a HashMap<String, Vec<RawNote>>, notes_1890: &'a HashMap<String, Vec<RawNote>>) -> Bundle<'a> {
+    if neutered { Bundle { raw: raw_1890.unwrap_or(raw), notes: notes_1890, ed: Some("1890") } } else { Bundle { raw, notes, ed: None } }
+}
+
+fn lettered(m: &str) -> bool { !m.is_empty() && m.bytes().all(|c| c.is_ascii_lowercase()) }
+
+fn clean_scan_word(w: &str) -> bool {
+    !w.is_empty() && w.split(['-', '\'', '’']).all(|run| !run.is_empty() && run.chars().all(|c| c.is_ascii_alphabetic() || "æœÆŒ".contains(c)))
+}
+
+fn note_words<'a>(reader: &[&'a str], n: &'a RawNote) -> Vec<&'a str> {
+    let Some(&word) = usize::try_from(n.i - 1).ok().and_then(|i| reader.get(i)) else { return Vec::new() };
+    let split_by_reader = clean_scan_word(&n.w) && !n.w.eq_ignore_ascii_case(word) && n.w.to_ascii_lowercase().ends_with(&word.to_ascii_lowercase());
+    if split_by_reader { vec![word, n.w.as_str()] } else { vec![word] }
+}
+
+#[derive(Default, Debug)]
+struct FootnoteIndex {
+    words: std::collections::BTreeMap<String, Vec<[i64; 5]>>,
+    listed: usize,
+    on_no_word: usize,
+}
+
+fn footnote_index(raw: &Raw, notes: &HashMap<String, Vec<RawNote>>) -> FootnoteIndex {
+    let mut index = FootnoteIndex::default();
+    let mut texts: HashMap<&str, i64> = HashMap::new();
+    for b in &raw.books { for ch in &b.chapters { for v in &ch.verses {
+        let Some(ns) = notes.get(&format!("{}.{}.{}", b.n, ch.c, v.v)) else { continue };
+        let text = v.t.replace(['·', '†'], "");
+        let reader = reader_words(&text);
+        for (i, n) in ns.iter().enumerate().filter(|(_, n)| lettered(&n.m)) {
+            let words = note_words(&reader, n);
+            if words.is_empty() { index.on_no_word += 1; continue }
+            let next = texts.len() as i64;
+            let t = *texts.entry(n.t.as_str()).or_insert(next);
+            for w in words { index.words.entry(w.to_string()).or_default().push([b.n, ch.c, v.v, i as i64, t]); }
+            index.listed += 1;
+        }
+    } } }
+    index
 }
 
 /// Every English chapter and verse has its place in `t`, in the same order: a text that lost or gained one would put a
@@ -302,6 +379,39 @@ fn lang_verse_map(t: &LangText) -> serde_json::Map<String, serde_json::Value> {
     out
 }
 
+fn br(path: &str, bytes: &[u8]) -> Result<()> {
+    fs::write(path, bytes)?;
+    let mut f = fs::File::create(format!("{path}.br"))?;
+    let mut enc = brotli::CompressorWriter::new(&mut f, 4096, 11, 22);
+    enc.write_all(bytes)?; enc.flush()?; Ok(())
+}
+
+fn write_bundle(dir: &str, chapters: &[serde_json::Value], ed: Option<&str>) -> Result<u64> {
+    fs::create_dir_all(dir)?;
+    let mut total = 0u64;
+    for c in chapters {
+        fs::create_dir_all(format!("{dir}/{}", c["book"]))?;
+        let json = serde_json::to_vec(c)?;
+        br(&format!("{dir}/{}/{}.json", c["book"], c["c"]), &json)?;
+        total += json.len() as u64;
+    }
+    let mut archive = serde_json::json!({ "v": 1, "chapters": chapters });
+    if let Some(e) = ed { archive["ed"] = serde_json::json!(e); }
+    br(&format!("{dir}/all.json"), &serde_json::to_vec(&archive)?)?;
+    Ok(total)
+}
+
+fn write_edition(dir: &str, b: &Bundle) -> Result<(Vec<serde_json::Value>, u64)> {
+    let chapters = chapter_files(b.raw, b.notes, b.ed);
+    let total = write_bundle(dir, &chapters, b.ed)?;
+    let index = footnote_index(b.raw, b.notes);
+    let json = serde_json::to_vec(&index.words)?;
+    let path = format!("{dir}/footnotes.json");
+    fs::write(&path, &json)?;
+    println!("footnotes ({}): {} lettered notes under {} words, {} KB, in {path}; {} on no word", b.ed.unwrap_or("1961"), index.listed, index.words.len(), json.len() / 1024, index.on_no_word);
+    Ok((chapters, total))
+}
+
 fn main() -> Result<()> {
     let data = std::env::args().nth(1).unwrap_or_else(|| "data".into());
     let neutered = std::env::var("BEREAN_NEUTERED").is_ok_and(|v| v == "1");
@@ -376,38 +486,15 @@ fn main() -> Result<()> {
     // single archive of every chapter (public/bible/all.json) that "Download all" unpacks into the Cache API.
     // Vite copies public/ into dist/, the .br siblings are streamed as-is to clients that accept brotli.
     let out_dir = std::env::var("BEREAN_PUBLIC").unwrap_or_else(|_| "client/public/bible".into());
-    let br = |path: &str, bytes: &[u8]| -> Result<()> {
-        fs::write(path, bytes)?;
-        let mut f = fs::File::create(format!("{path}.br"))?;
-        let mut enc = brotli::CompressorWriter::new(&mut f, 4096, 11, 22);
-        enc.write_all(bytes)?; enc.flush()?; Ok(())
-    };
-    // `ed` in the archive: absent for 1961 as before, so its files do not change
-    let write_bundle = |dir: &str, chapters: &[serde_json::Value], ed: Option<&str>| -> Result<u64> {
-        fs::create_dir_all(dir)?;
-        let mut total = 0u64;
-        for c in chapters {
-            fs::create_dir_all(format!("{dir}/{}", c["book"]))?;
-            let json = serde_json::to_vec(c)?;
-            br(&format!("{dir}/{}/{}.json", c["book"], c["c"]), &json)?;
-            total += json.len() as u64;
-        }
-        let mut archive = serde_json::json!({ "v": 1, "chapters": chapters });
-        if let Some(e) = ed { archive["ed"] = serde_json::json!(e); }
-        br(&format!("{dir}/all.json"), &serde_json::to_vec(&archive)?)?;
-        Ok(total)
-    };
-    let (bundle_raw, bundle_notes, bundle_ed) = bundle_plan(neutered, &raw, raw_1890.as_ref(), &notes, &notes_1890);
-    let all = chapter_files(bundle_raw, bundle_notes, bundle_ed);
-    let total = write_bundle(&out_dir, &all, bundle_ed)?;
-    println!("client bundle ({}): {} KB of chapter JSON, archive {} KB brotli, in {out_dir}", bundle_ed.unwrap_or("1961"), total / 1024, fs::metadata(format!("{out_dir}/all.json.br"))?.len() / 1024);
+    let bundle = bundle_plan(neutered, &raw, raw_1890.as_ref(), &notes, &notes_1890);
+    let (all, total) = write_edition(&out_dir, &bundle)?;
+    println!("client bundle ({}): {} KB of chapter JSON, archive {} KB brotli, in {out_dir}", bundle.ed.unwrap_or("1961"), total / 1024, fs::metadata(format!("{out_dir}/all.json.br"))?.len() / 1024);
 
     // The 1890 edition beside it (docs/EDITION.md): the same files for the web and the server under bible1890/, and for
     // the apps, which bundle the 1961 files, only what differs: notes/<book>.json (overlay_entry per chapter), meta.json
     // (a version of the 1890 data, whether it has its own text and notices) and notices.json (data/notices_1890.json, or null).
     let dir_1890 = format!("{out_dir}1890");
-    let all_1890 = chapter_files(raw_1890.as_ref().unwrap_or(&raw), &notes_1890, Some("1890"));
-    let total_1890 = write_bundle(&dir_1890, &all_1890, Some("1890"))?;
+    let (all_1890, total_1890) = write_edition(&dir_1890, &Bundle { raw: raw_1890.as_ref().unwrap_or(&raw), notes: &notes_1890, ed: Some("1890") })?;
     fs::create_dir_all(format!("{dir_1890}/notes"))?;
     let by_key: HashMap<(i64, i64), &serde_json::Value> = all.iter().map(|c| ((c["book"].as_i64().unwrap_or(0), c["c"].as_i64().unwrap_or(0)), c)).collect();
     let mut books: std::collections::BTreeMap<i64, serde_json::Map<String, serde_json::Value>> = std::collections::BTreeMap::new();
@@ -510,33 +597,136 @@ mod tests {
         let base = HashMap::new();
         let (n61, _) = edition_notes(&raw, &base, serde_json::from_str(r#"{"1.1.2":[{"m":"c","i":2,"t":"A note of the 1961 editors."}]}"#).unwrap());
         let (n90, _) = edition_notes(&raw, &base, serde_json::from_str(r#"{"1.1.2":[{"m":"a","i":3,"t":"Mr. Darby's own."}]}"#).unwrap());
-        let (r, n, ed) = bundle_plan(true, &raw, None, &n61, &n90);
-        let files = chapter_files(r, n, ed);
+        let b = bundle_plan(true, &raw, None, &n61, &n90);
+        let files = chapter_files(b.raw, b.notes, b.ed);
         let text = serde_json::to_string(&files).unwrap();
         assert!(!text.contains("1961 editors") && text.contains("Mr. Darby's own.") && files[0]["ed"] == "1890", "{text}");
+        let index = footnote_index(b.raw, b.notes);
+        assert!(index.words.contains_key("earth") && !index.words.contains_key("the"), "the index of a neutered bundle has the 1890 note's word only: {index:?}");
         // the 1890 text, when there is one, is the bundle's text
         let mut own = tiny();
         own.books[0].chapters[0].verses[1].t = "And the earth was without form".into();
-        let (r, _, _) = bundle_plan(true, &raw, Some(&own), &n61, &n90);
-        assert!(serde_json::to_string(&chapter_files(r, n, ed).to_vec()).unwrap().contains("without form"));
+        let b = bundle_plan(true, &raw, Some(&own), &n61, &n90);
+        assert!(serde_json::to_string(&chapter_files(b.raw, b.notes, b.ed).to_vec()).unwrap().contains("without form"));
         // unset: the 1961 bundle as always, no `ed`
-        let (r, n, ed) = bundle_plan(false, &raw, Some(&own), &n61, &n90);
-        let files = chapter_files(r, n, ed);
+        let b = bundle_plan(false, &raw, Some(&own), &n61, &n90);
+        let files = chapter_files(b.raw, b.notes, b.ed);
         assert!(serde_json::to_string(&files).unwrap().contains("1961 editors") && files[0].get("ed").is_none());
+        let index = footnote_index(b.raw, b.notes);
+        assert!(index.words.contains_key("the") && !index.words.contains_key("earth"), "the 1961 bundle's index has the 1961 note's word: {index:?}");
+    }
+
+    fn note(m: &str, i: i64, w: &str, t: &str) -> RawNote { RawNote { m: m.into(), i, w: w.into(), t: t.into() } }
+
+    #[test]
+    fn a_footnote_is_listed_under_the_word_its_marker_follows() {
+        let raw = Raw { books: vec![RawBook { n: 41, chapters: vec![RawChapter { c: 6, title: None, division: None, verses: vec![verse(21, "made a supper to his great men and to the chiliarchs and to the first of Galilee")] }] }] };
+        let notes = HashMap::from([("41.6.21".to_string(), vec![note("c", 7, "men", "Lit. 'great ones.'"), note("d", 11, "chiliarchs", "Commanders of 1,000 men.")])]);
+        let index = footnote_index(&raw, &notes);
+        assert_eq!(index.words.keys().collect::<Vec<_>>(), ["chiliarchs", "men"]);
+        assert_eq!(index.words["chiliarchs"], [[41, 6, 21, 1, 1]]);
+        assert_eq!(index.words["men"], [[41, 6, 21, 0, 0]]);
+        assert_eq!((index.listed, index.on_no_word), (2, 0));
+    }
+
+    #[test]
+    fn the_scans_word_is_a_second_key_only_when_clean_spelt_otherwise_and_ending_with_the_readers() {
+        fn on(text: &str, w: &str) -> Vec<String> {
+            let reader = reader_words(text);
+            let n = note("a", reader.len() as i64, w, "");
+            note_words(&reader, &n).into_iter().map(String::from).collect()
+        }
+        assert_eq!(on("and called it Beer-sheba", "Beer-sheba"), ["sheba", "Beer-sheba"]);
+        assert_eq!(on("Jesus the Nazaræan", "Nazaræan"), ["an", "Nazaræan"]);
+        assert_eq!(on("Jesus the Nazaræan", "Nazaraean"), ["an", "Nazaraean"]);
+        assert_eq!(on("the chiliarch", "Chiliarch"), ["chiliarch"]);
+        assert_eq!(on("the chiliarch", ""), ["chiliarch"]);
+        assert_eq!(on("If a damsel that is a", "virgin"), ["a"], "a scan word one word off is not a key (5.22.14)");
+        assert_eq!(on("the house of God", "ùGod"), ["God"]);
+        assert_eq!(on("my confidence", "confidence]"), ["confidence"]);
+        assert!(note_words(&reader_words("Beer-sheba"), &note("a", 0, "Beer-sheba", "")).is_empty(), "at a verse's start a note is on no word");
+        assert!(note_words(&reader_words("Beer-sheba"), &note("a", 3, "Beer-sheba", "")).is_empty(), "past the verse's last word a note is on no word");
+        let raw = Raw { books: vec![RawBook { n: 1, chapters: vec![RawChapter { c: 21, title: None, division: None, verses: vec![verse(31, "Therefore he called that place Beer-sheba")] }] }] };
+        let index = footnote_index(&raw, &HashMap::from([("1.21.31".to_string(), vec![note("a", 7, "Beer-sheba", "Well of the oath."), note("b", 0, "Therefore", "x")])]));
+        assert_eq!(index.words["Beer-sheba"], [[1, 21, 31, 0, 0]]);
+        assert_eq!(index.words["sheba"], [[1, 21, 31, 0, 0]]);
+        assert_eq!((index.listed, index.on_no_word), (1, 1));
+    }
+
+    #[test]
+    fn glosses_are_not_footnotes_but_count_in_the_place() {
+        let raw = tiny();
+        let (notes, _) = edition_notes(&raw, &HashMap::new(), serde_json::from_str(r#"{"1.1.1":[{"m":"b","i":5,"w":"created","t":"A note."}]}"#).unwrap());
+        let index = footnote_index(&raw, &notes);
+        assert_eq!(index.words.keys().collect::<Vec<_>>(), ["created"]);
+        assert_eq!(index.words["created"], [[1, 1, 1, 1, 0]]);
+        assert_eq!(chapter_files(&raw, &notes, None)[0]["verses"][0]["notes"][1]["marker"], "b");
+    }
+
+    #[test]
+    fn identical_texts_share_one_id_numbered_in_bible_order() {
+        let notes = HashMap::from([
+            ("1.1.1".to_string(), vec![note("a", 3, "beginning", "Or 'land.'"), note("b", 5, "created", "Or 'made.'")]),
+            ("1.1.2".to_string(), vec![note("a", 3, "earth", "Or 'land.'")]),
+        ]);
+        let index = footnote_index(&tiny(), &notes);
+        assert_eq!((index.words["beginning"][0][4], index.words["created"][0][4], index.words["earth"][0][4]), (0, 1, 0));
+    }
+
+    #[test]
+    fn every_entry_names_a_lettered_note_of_the_chapter_files_written_beside_it() {
+        let dir = std::env::temp_dir().join(format!("berean-footnotes-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let raw = tiny();
+        let (notes, _) = edition_notes(&raw, &HashMap::new(), serde_json::from_str(r#"{"1.1.1":[{"m":"a","i":3,"w":"beginning","t":"x"},{"m":"b","i":5,"w":"created","t":"y"}],"1.1.2":[{"m":"c","i":0,"w":"","t":"z"},{"m":"d","i":3,"w":"earth","t":"x"}]}"#).unwrap());
+        let dir_s = dir.to_str().unwrap();
+        write_edition(dir_s, &bundle_plan(false, &raw, None, &notes, &HashMap::new())).unwrap();
+        let read = |p: &str| -> serde_json::Value { serde_json::from_str(&fs::read_to_string(dir.join(p)).unwrap()).unwrap() };
+        let index: std::collections::BTreeMap<String, Vec<[i64; 5]>> = serde_json::from_value(read("footnotes.json")).unwrap();
+        assert_eq!(index.keys().collect::<Vec<_>>(), ["beginning", "created", "earth"]);
+        for (word, entries) in &index {
+            for &[b, c, v, i, _] in entries {
+                let verse = read(&format!("{b}/{c}.json"))["verses"].as_array().unwrap().iter().find(|x| x["v"] == v).unwrap().clone();
+                let n = &verse["notes"][i as usize];
+                assert!(lettered(n["marker"].as_str().unwrap()), "{word}: {n}");
+                assert_eq!(reader_words(verse["t"].as_str().unwrap())[n["pos"].as_i64().unwrap() as usize - 1], word);
+            }
+        }
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn tags_follow_their_words_not_their_positions() {
         // John 3:2: ebible's list lacks "thou art", so "teacher" is its 17th entry and our 19th word
-        let ours = reader_words("he came to him by night, and said to him, Rabbi, we know that thou art come a teacher from God");
+        let text = "he came to him by night, and said to him, Rabbi, we know that thou art come a teacher from God";
+        let ours = reader_words(text);
         let theirs = tagged(&[("he", ""), ("came", "G2064"), ("to", ""), ("him", ""), ("by", ""), ("night", "G3571"), ("and", ""), ("said", ""), ("to", ""), ("him", ""), ("Rabbi", "G4461"), ("we", ""), ("know", "G1492"), ("that", ""), ("come", "G2064"), ("a", ""), ("teacher", "G1320"), ("from", ""), ("God", "G2316")]);
-        let codes = align_tags(&ours, &theirs);
-        assert_eq!(codes.len(), ours.len());
-        let at = |w: &str| codes[ours.iter().position(|x| *x == w).unwrap()].as_str();
+        let (rows, paired) = align_tags(text, &theirs);
+        assert_eq!((rows.len(), paired), (ours.len(), 7));
+        assert!(rows.iter().zip(&ours).all(|((w, _), o)| w == o));
+        let at = |w: &str| rows[ours.iter().position(|x| *x == w).unwrap()].1.as_str();
         assert_eq!((at("teacher"), at("come"), at("God"), at("thou"), at("art")), ("G1320", "G2064", "G2316", "", ""));
         // a word only they have takes its tag with it; case does not matter
-        let codes = align_tags(&reader_words("Abraham begat Isaac"), &tagged(&[("abraham", "G11"), ("fathered", "G1080"), ("Isaac", "G2464")]));
-        assert_eq!(codes, ["G11", "", "G2464"]);
+        let (rows, paired) = align_tags("Abraham begat Isaac", &tagged(&[("abraham", "G11"), ("fathered", "G1080"), ("Isaac", "G2464")]));
+        assert_eq!((rows.iter().map(|(_, c)| c.as_str()).collect::<Vec<_>>(), paired), (vec!["G11", "", "G2464"], 2));
         assert_eq!(reader_words("Jesus’ disciples, don't"), ["Jesus’", "disciples", "don't"]);
+    }
+
+    #[test]
+    fn a_word_the_reader_splits_is_one_occurrence() {
+        // ebible writes "father-in-law" and "Caesarea" whole, and the fill "glad tidings"; the reader splits them at the
+        // hyphens, the æ and the space. Each piece carries the number, and the first holds the word as printed
+        let at = |text: &str, theirs: &[(&str, &str)]| align_tags(text, &tagged(theirs)).0;
+        let pair = |w: &str, c: &str| (w.to_string(), c.to_string());
+        assert_eq!(at("thy father-in-law is going up", &[("thy", ""), ("father-in-law", "H2524"), ("going", "H5927"), ("up", "")]),
+            [pair("thy", ""), pair("father-in-law", "H2524"), pair("", "H2524"), pair("", "H2524"), pair("is", ""), pair("going", "H5927"), pair("up", "")]);
+        assert_eq!(at("till he came to Cæsarea.", &[("till", "G2193"), ("came", "G2064"), ("Caesarea", "G2542")]),
+            [pair("till", "G2193"), pair("he", ""), pair("came", "G2064"), pair("to", ""), pair("Cæsarea", "G2542"), pair("", "G2542")]);
+        assert_eq!(at("a certain man, Æneas by name", &[("certain", "G5100"), ("man", "G444"), ("Aeneas", "G132"), ("name", "G3686")]),
+            [pair("a", ""), pair("certain", "G5100"), pair("man", "G444"), pair("Æneas", "G132"), pair("by", ""), pair("name", "G3686")]);
+        assert_eq!(at("to announce glad tidings to the poor", &[("announce", "G2097"), ("glad tidings", "G2098"), ("poor", "G4434")]),
+            [pair("to", ""), pair("announce", "G2097"), pair("glad tidings", "G2098"), pair("", "G2098"), pair("to", ""), pair("the", ""), pair("poor", "G4434")]);
+        // "Verily, verily" is two tags, two occurrences
+        assert_eq!(at("Verily, verily, I say", &[("Verily", "G281"), ("verily", "G281"), ("say", "G3004")]),
+            [pair("Verily", "G281"), pair("verily", "G281"), pair("I", ""), pair("say", "G3004")]);
     }
 }

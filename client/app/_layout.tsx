@@ -38,6 +38,7 @@ import { NOUN } from '@shared/brand'
 import { langOf, loadLanguage, peekLang, type Lang } from '../src/i18n'
 import { setText } from '../src/lib/text'
 import { textOf } from '@shared/texts'
+import { PAGE_TITLE, SETTINGS_PAGES } from '../src/lib/settingsIndex'
 import { t } from '@shared/i18n'
 
 SplashScreen.preventAutoHideAsync().catch(() => {})
@@ -209,6 +210,7 @@ function Navigator() {
         <Stack.Screen name="paths" options={{ title: t('Paths') }} />
         <Stack.Screen name="themes" options={{ title: t('Themes') }} />
         <Stack.Screen name="credits" options={{ title: t('Credits') }} />
+        {SETTINGS_PAGES.map(p => <Stack.Screen key={p} name={`settings/${p}`} options={{ title: t(PAGE_TITLE[p]) }} />)}
         {/* second addresses (src/components/Alias): each replaces itself with the real route at once, so no header */}
         <Stack.Screen name="ministry" options={ALIAS} />
         <Stack.Screen name="chronological" options={ALIAS} />

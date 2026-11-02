@@ -450,7 +450,7 @@ if (want('checks')) {
   const w = await trace(page.getByLabel(chipLabel).first(), chipLabel)
   writeFileSync(`${out}/wobble.json`, JSON.stringify(w))
   check('a chip releases with a wobble past rest, and is still in ~330 ms', w.peak > 1.005 && w.stillBy < 380, `pressed to ${w.min.toFixed(3)}, peak ${w.peak.toFixed(4)}, still by ${Math.round(w.stillBy)} ms`)
-  await page.goto(base + '/settings', { waitUntil: 'networkidle' }); await page.waitForTimeout(900)
+  await page.goto(base + '/settings/text', { waitUntil: 'networkidle' }); await page.waitForTimeout(900)
   const seg = page.getByRole('radio', { name: 'Sans', exact: true }).first()
   // the choice carries no label of its own: name it for the trace
   await seg.evaluate(el => el.setAttribute('aria-label', 'Sans'))
@@ -505,10 +505,10 @@ if (want('stills')) {
   const bar = { x: 0, y: VIEW.height - 68, width: VIEW.width, height: 68 }
   await sequence(page, 'tab-switch', bar, () => page.getByRole('tab', { name: /Search/ }).first().click(), { dir: 'col' })
   await sequence(page, 'tab-switch-back', bar, () => page.getByRole('tab', { name: /Home/ }).first().click(), { dir: 'col' })
-  // Settings: the segmented thumb, a switch, a slider held
-  await page.goto(base + '/settings', { waitUntil: 'networkidle' }); await page.waitForTimeout(900)
-  const group = page.getByRole('radiogroup').nth(1)
-  const seg = group.getByRole('radio').nth(2)
+  // Settings → Page: the segmented thumb (footnote letters), a switch; Settings → Text: a slider held
+  await page.goto(base + '/settings/page', { waitUntil: 'networkidle' }); await page.waitForTimeout(900)
+  const group = page.getByRole('radiogroup').nth(0)
+  const seg = group.getByRole('radio').nth(1)
   await seg.scrollIntoViewIfNeeded(); await page.waitForTimeout(300)
   const sb = await group.boundingBox()
   await sequence(page, 'segmented', { x: 0, y: sb.y - 6, width: VIEW.width, height: sb.height + 12 }, () => seg.click(), { dir: 'col' })
@@ -518,6 +518,7 @@ if (want('stills')) {
   const wb = await sw.boundingBox()
   await sequence(page, 'switch', { x: wb.x - 10, y: wb.y - 8, width: wb.width + 20, height: wb.height + 16 }, () => sw.click())
   await sw.click(); await page.waitForTimeout(400)   // verse numbers back on: the selection still below taps one
+  await page.goto(base + '/settings/text', { waitUntil: 'networkidle' }); await page.waitForTimeout(900)
   const sl = page.getByRole('slider').first()
   await sl.scrollIntoViewIfNeeded(); await page.waitForTimeout(300)
   const lb = await sl.boundingBox()
@@ -531,6 +532,7 @@ if (want('stills')) {
   await sequence(page, 'disclosure-open', { x: 0, y: db.y - 8, width: VIEW.width, height: 230 }, () => dis.click(), { ms: 1300, dir: 'col' })
   await sequence(page, 'disclosure-close', { x: 0, y: db.y - 8, width: VIEW.width, height: 230 }, () => dis.click(), { ms: 1100, dir: 'col' })
   // a tab switch: the screens crossfade
+  await page.goto(base + '/settings', { waitUntil: 'networkidle' }); await page.waitForTimeout(900)
   await sequence(page, 'tab-fade', { x: 0, y: 0, width: VIEW.width, height: VIEW.height }, () => page.getByRole('tab', { name: /Home/ }).first().click(), { ms: 1000 })
   // the selection bar docking under a tapped verse, and leaving
   await page.goReader()

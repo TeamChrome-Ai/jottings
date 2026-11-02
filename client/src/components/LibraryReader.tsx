@@ -408,7 +408,7 @@ export default function LibraryReader({ author, work, link }: { author: string; 
         {!compact ? <Button icon title="A+" accessibilityLabel={t('Larger text')} disabled={fs >= FONT_MAX} onPress={() => size(1)} textStyle={{ fontSize: 18 }} /> : null}
         {!compact ? <ToggleButton on={lookup} title="Aa" accessibilityLabel={lookup ? t('Word lookup off') : t('Word lookup')} onPress={() => setWordLookup(!lookup)} textStyle={{ fontSize: 14 }} /> : null}
         {!compact ? <Button iconName="palette" title={t('Theme')} onPress={() => setThemes(true)} /> : null}
-        {!compact ? <Button iconName="sliders" title={t('Reading settings')} onPress={() => router.push('/settings')} /> : null}
+        {!compact ? <Button iconName="sliders" title={t('Reading settings')} onPress={() => router.push('/settings/text')} /> : null}
         {compact ? <Button iconName="more" title={t('More')} primary={lookup} onPress={() => setMore(true)} /> : null}
       </View>
 
@@ -433,7 +433,7 @@ export default function LibraryReader({ author, work, link }: { author: string; 
           </View>
           <SwitchRow label={t('Word lookup')} hint={t('Tap a word: Darby’s usage, Strong’s concordance and Morrish')} value={lookup} onChange={setWordLookup} />
           <Button lead="palette" title={t('Theme')} onPress={() => { setMore(false); setTimeout(() => setThemes(true), reduce ? 0 : 220) }} />
-          <Button lead="sliders" title={t('Reading settings')} onPress={() => { setMore(false); router.push('/settings') }} />
+          <Button lead="sliders" title={t('Reading settings')} onPress={() => { setMore(false); router.push('/settings/text') }} />
         </View>
       </Sheet>
       <WordSheet target={wordTarget} onClose={() => setWordTarget(null)} />

@@ -160,7 +160,7 @@ check('both meeting the day: group streak 1, kept', gd.streak?.current === 1 && 
 // 3. Ben chooses an avatar; it shows on his profile, and in the group's member list
 {
   const { ctx, page } = await phone(ben, true)
-  await page.goto(`${base}/settings`, { waitUntil: 'networkidle' })
+  await page.goto(`${base}/settings/account`, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: 'Choose your picture' }).click()
   await page.getByText('Your picture').waitFor({ timeout: 10000 })
   await page.waitForTimeout(900)

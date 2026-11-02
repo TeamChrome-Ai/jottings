@@ -24,7 +24,7 @@ export type TargetId =
   | 'friends-signin' | 'friends-add' | 'friends-first'
   | 'groups-signin' | 'groups-create' | 'groups-join' | 'group-streak' | 'group-members' | 'group-events' | 'group-feed'
   | 'search-field' | 'search-scope' | 'stats-tiles' | 'stats-week' | 'stats-badges' | 'stats-signin'
-  | 'settings-text' | 'settings-reading' | 'settings-listening' | 'settings-welcome' | 'settings-account' | 'settings-reset'
+  | 'settings-account' | 'settings-text' | 'settings-page' | 'settings-listening' | 'settings-daily' | 'settings-about' | 'settings-reset'
 
 /** A screen the tour can stand on; `any` leaves it where it is (the tab bar shows everywhere). `library` is a work of
  * the ministry library, opened from the chapter in the reader. */
@@ -157,14 +157,15 @@ export const EXTENDED: Step[] = [
   { id: 'stats', targets: ['stats-tiles', 'stats-week'], scene: { route: 'stats' }, account: true, get text() { return t('Your streak, today’s reading and the week, day by day.') }, ...CARD, maxShare: 0.45 },
   { id: 'badges', targets: ['stats-badges'], scene: { route: 'stats' }, account: true, get text() { return t('Badges for milestones, with any reactions from friends.') }, ...CARD, maxShare: 0.4 },
   { id: 'stats-out', targets: ['stats-signin'], scene: { route: 'stats' }, account: false, get text() { return t('A streak, badges and reading time, once you sign in.') }, ...CARD },
-  // Settings, its sections top to bottom
-  { id: 'settings-text', targets: ['settings-text'], scene: SETTINGS, get text() { return t('The reading text: typeface, size and spacing, with a preview.') }, ...CARD, maxShare: 0.66 },
-  { id: 'settings-reading', targets: ['settings-reading'], scene: SETTINGS, get text() { return t('Reading: paragraphs, verse numbers, note markers and animation.') }, ...CARD, maxShare: 0.66 },
-  { id: 'settings-listening', targets: ['settings-listening'], scene: SETTINGS, get text() { return t('Listening: the voice, the speed and the pauses.') }, ...PILL, fixed: false },
-  { id: 'settings-again', targets: ['settings-welcome'], scene: SETTINGS, get text() { return t('The welcome and the tour, again, to show someone.') }, ...PILL, fixed: false },
-  { id: 'settings-account', targets: ['settings-account'], scene: SETTINGS, account: true, get text() { return t('Your picture, friends settings and your data.') }, ...CARD, maxShare: 0.5 },
+  // Settings, its index top to bottom
+  { id: 'settings-account', targets: ['settings-account'], scene: SETTINGS, account: true, get text() { return t('Your account: picture, friends, public profile and your data.') }, ...CARD, maxShare: 0.5 },
   { id: 'settings-account-out', targets: ['settings-account'], scene: SETTINGS, account: false, get text() { return t('Signing in keeps bookmarks, a streak, friends and groups.') }, ...CARD },
-  { id: 'settings-reset', targets: ['settings-reset'], scene: SETTINGS, get text() { return t('Reset puts the text, theme and layout back as they came.') }, ...CARD },
+  { id: 'settings-text', targets: ['settings-text'], scene: SETTINGS, get text() { return t('Text: the typeface, size and spacing, with a preview on its page.') }, ...PILL, fixed: false },
+  { id: 'settings-page', targets: ['settings-page'], scene: SETTINGS, get text() { return t('Page: paragraphs, verse numbers, footnote markers and highlight colours.') }, ...PILL, fixed: false },
+  { id: 'settings-listening', targets: ['settings-listening'], scene: SETTINGS, get text() { return t('Listening: the voice, the speed and the pauses.') }, ...PILL, fixed: false },
+  { id: 'settings-daily', targets: ['settings-daily'], scene: SETTINGS, account: true, get text() { return t('Daily: your goal in minutes, with a reminder and a morning verse on a phone.') }, ...PILL, fixed: false },
+  { id: 'settings-about', targets: ['settings-about'], scene: SETTINGS, get text() { return t('About: the translation, credits, feedback, and the welcome and tour again.') }, ...PILL, fixed: false },
+  { id: 'settings-reset', targets: ['settings-reset'], scene: SETTINGS, get text() { return t('Reset puts the text, page, theme, motion and listening back as they came.') }, ...CARD },
 ]
 export const FINAL_TEXT = N_('That’s it. Read well.')
 /** Offered where the short tour ends, before the last line. */

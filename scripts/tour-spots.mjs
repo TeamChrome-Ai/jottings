@@ -68,12 +68,13 @@ export const SPOTS = {
   stats: p => [text(p, 'Streak'), text(p, 'Longest')],
   badges: p => [p.getByRole('heading', { name: 'Badges' }).first()],
   'stats-out': p => [p.getByText(/Sign in to keep a streak/).first()],
-  'settings-text': p => [p.getByLabel('Preview of the reading text')],
-  'settings-reading': p => [text(p, 'Paragraphs'), text(p, 'Reduce animation')],
-  'settings-listening': p => [text(p, 'Voice, speed and pauses')],
-  'settings-again': p => [text(p, 'Welcome and tour')],
-  'settings-account': p => [btn(p, 'Choose your picture')],
+  'settings-account': p => [btn(p, /, Account$/)],
   'settings-account-out': p => [text(p, 'Not signed in')],
+  'settings-text': p => [btn(p, 'Text')],
+  'settings-page': p => [btn(p, 'Page')],
+  'settings-listening': p => [btn(p, 'Listening')],
+  'settings-daily': p => [btn(p, 'Daily')],
+  'settings-about': p => [btn(p, 'About')],
   'settings-reset': p => [btn(p, 'Reset all settings')],
 }
 

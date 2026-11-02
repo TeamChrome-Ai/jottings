@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { isLettered, letterAt, relabel } from '../client/src/lib/noteLetters'
+import { isLettered } from '../shared/footnotes'
+import { letterAt, relabel } from '../client/src/lib/noteLetters'
 
 const n = (id: number, marker: string, text: string) => ({ id, marker, text })
 

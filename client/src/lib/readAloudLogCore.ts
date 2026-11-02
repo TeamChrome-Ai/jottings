@@ -29,6 +29,7 @@ export interface Phone extends Scene {
   sdk?: number; release?: string; maker?: string; model?: string
   unrestricted?: boolean | null; powerSave?: boolean | null; dozing?: boolean | null; screenOn?: boolean | null
   backgroundRestricted?: boolean | null; bucket?: number | null
+  standInReady?: boolean; standIns?: number
 }
 export type TroubleKind = 'closed' | 'error' | 'stalled' | 'interrupted' | 'no-next'
 /** A time the reading stopped and nobody in the app had asked it to. `what` is the log's English; `d` the detail in it
@@ -110,6 +111,7 @@ export function phoneWords(p: Phone): string {
   if (p.dozing) parts.push('dozing')
   if (p.bucket != null) parts.push(`standby: ${BUCKET[p.bucket] ?? p.bucket}`)
   if (p.screenOn != null) parts.push(p.screenOn ? 'screen on' : 'screen off')
+  if (p.standInReady === false) parts.push('no frame stand-in')
   return parts.join(' · ')
 }
 
@@ -146,8 +148,9 @@ export function troubles(events: LogEvent[], exits: ExitInfo[], now: number): Tr
         // reading, or between a chapter's end and the next one starting: Android's record says whether it closed the app
         // (a hand-over it did not close and nobody else did either is lost). The FIRST exit after the reading's last sign
         // is the one that ended it: Android lists them newest first, and a process started later in the background (a
-        // car's Bluetooth asking for the media app, a reminder) and killed while cached is not the reading
-        const exit = before && (reading || handoff)
+        // car's Bluetooth asking for the media app, a reminder) and killed while cached is not the reading. Only if the list
+        // holds an older exit too: Android keeps 16, and once later processes push the reading's out, the first left is not it
+        const exit = before && (reading || handoff) && exits.some(z => z.t < before.t - 5000)
           ? exits.filter(z => z.t >= before.t - 5000 && z.t <= x.t).sort((a, b) => a.t - b.t)[0]
           : undefined
         if (exit && !exitByUser(exit)) out.push({ t: exit.t, kind: 'closed', w: where, what: `Android closed the app while it read (${exitWords(exit)})`, d: exitWords(exit) })

@@ -68,10 +68,10 @@ for (const [label, prefs, want] of [
   await page.context().close()
 }
 
-// Settings: the preview is laid out at the floor and the row says so; not at the default
+// Settings → Text: the preview is laid out at the floor and the row says so; not at the default
 {
   const page = await open({ ...PREFS, lineHeight: 1.2 })
-  await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+  await page.goto(base + '/settings/text', { waitUntil: 'networkidle' })
   const preview = page.getByLabel('Preview of the reading text')
   await preview.waitFor({ timeout: 30000 })
   await page.waitForTimeout(800)
@@ -85,7 +85,7 @@ for (const [label, prefs, want] of [
 }
 {
   const page = await open(PREFS)
-  await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+  await page.goto(base + '/settings/text', { waitUntil: 'networkidle' })
   await page.getByLabel('Preview of the reading text').waitFor({ timeout: 30000 })
   await page.waitForTimeout(500)
   ok('at 1.6 the row carries no note', await page.getByText(/Tighter than the font allows/).count() === 0)

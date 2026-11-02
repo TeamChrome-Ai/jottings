@@ -46,11 +46,12 @@ const inView = loc => loc.evaluateAll(es => es.some(e => { const r = e.getBoundi
 /** The label's words: the Skip pill sits in the footer, whose parent is the label. */
 const labelText = async page => ((await skipTour(page).last().locator('xpath=../../..').innerText().catch(() => '')) || '').split('\n')[0]
 const settle = async (page, i) => { const ok = await stepLabel(page, i).waitFor({ timeout: 12000 }).then(() => true, () => false); if (ok) await page.waitForTimeout(900); return ok }
-/** Settings → Welcome and tour → one of its three. */
+/** Settings → About → Welcome and tour → one of its three. */
 const openSettingsRow = async (page, pick) => {
   await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: 'About', exact: true }).click()
   const again = page.getByRole('button', { name: 'Welcome and tour' })
-  await again.scrollIntoViewIfNeeded(); await again.click(); await page.waitForTimeout(700)
+  await again.waitFor(); await again.click(); await page.waitForTimeout(700)
   await page.getByRole('dialog').getByRole('button', { name: pick, exact: true }).click()
 }
 const outlinesHaveSample = async page => {

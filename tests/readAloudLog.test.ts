@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { CUT_MS, KEEP_MS, MAX_EVENTS, NEXT_MS, exitByUser, interrupter, reportText, sceneKey, sceneWords, trimLog, troubles, type ExitInfo, type LogEvent } from '../client/src/lib/readAloudLogCore'
+import { CUT_MS, KEEP_MS, MAX_EVENTS, NEXT_MS, exitByUser, interrupter, phoneWords, reportText, sceneKey, sceneWords, trimLog, troubles, type ExitInfo, type LogEvent } from '../client/src/lib/readAloudLogCore'
 
 const T0 = Date.UTC(2026, 9, 18, 20, 0, 0)
 const min = 60_000
@@ -7,6 +7,7 @@ const min = 60_000
 const log = (...rows: [number, string, string?, string?][]): LogEvent[] => rows.map(([m, e, d, w]) => ({ t: T0 + m * min, e, ...(d ? { d } : {}), ...(w ? { w } : {}) }))
 const exit = (m: number, reason: number, description?: string): ExitInfo => ({ t: T0 + m * min, reason, description })
 const reading = log([0, 'launch'], [1, 'start', 'adam', 'Psalm 117:1'], [1, 'status', 'loading'], [1, 'status', 'playing'], [5, 'beat', '30.0 s, playing', 'Psalm 118:12'])
+const beforeReading = { ...exit(-60, 3), importance: 400 }
 
 describe('the read-aloud log', () => {
   it('keeps two days, and no more than its cap', () => {
@@ -20,7 +21,7 @@ describe('the read-aloud log', () => {
 
 describe('a reading that stopped by itself', () => {
   it('is Android closing the app while it read, with Android’s own reason and the verse it was on', () => {
-    const t = troubles([...reading, ...log([90, 'launch'])], [exit(7, 3, 'lmkd')], T0 + 91 * min)
+    const t = troubles([...reading, ...log([90, 'launch'])], [exit(7, 3, 'lmkd'), beforeReading], T0 + 91 * min)
     expect(t).toHaveLength(1)
     expect(t[0]).toMatchObject({ kind: 'closed', w: 'Psalm 118:12', t: T0 + 7 * min })
     expect(t[0].what).toContain('low memory')
@@ -29,18 +30,40 @@ describe('a reading that stopped by itself', () => {
   it('is not the reader closing it: swiped away, force-stopped, or the app updated', () => {
     for (const x of [exit(7, 13, 'remove task'), exit(7, 10), exit(7, 11), exit(7, 16)]) {
       expect(exitByUser(x)).toBe(true)
-      expect(troubles([...reading, ...log([90, 'launch'])], [x], T0 + 91 * min)).toEqual([])
+      expect(troubles([...reading, ...log([90, 'launch'])], [x, beforeReading], T0 + 91 * min)).toEqual([])
     }
   })
 
   it('is decided by the first exit after the reading, not a later one: Android lists them newest first', () => {
     // report #19 (1.2.0, Pixel 8): swiped away 5 s into Matthew 19, then the app's process, started again in the
     // background, killed twice for memory while cached; the newest exit was blamed and the reader told Android did it
-    const exits = [{ ...exit(140, 3, 'lmkd'), importance: 400 }, { ...exit(60, 3), importance: 400 }, exit(5.1, 13, 'remove task')]
+    const exits = [{ ...exit(140, 3, 'lmkd'), importance: 400 }, { ...exit(60, 3), importance: 400 }, exit(5.1, 13, 'remove task'), beforeReading]
     expect(troubles([...reading, ...log([370, 'launch'])], exits, T0 + 371 * min)).toEqual([])
     // and the other way round: Android's kill first, the reader's swipe on a later process
-    const t = troubles([...reading, ...log([370, 'launch'])], [exit(140, 13, 'remove task'), { ...exit(5.5, 3, 'lmkd'), importance: 125 }], T0 + 371 * min)
+    const t = troubles([...reading, ...log([370, 'launch'])], [exit(140, 13, 'remove task'), { ...exit(5.5, 3, 'lmkd'), importance: 125 }, beforeReading], T0 + 371 * min)
     expect(t.map(x => [x.kind, x.t, x.what])).toEqual([['closed', T0 + 5.5 * min, 'Android closed the app while it read (low memory (lmkd) · playing)']])
+  })
+
+  it('is not an exit Android recorded long after, when its list no longer reaches back to the reading', () => {
+    // report #26 (Galaxy S25+, Android 16): Genesis 24 read on with the screen off, then nothing until a launch the next
+    // evening; the eight records the app had all came 10 h and more after, and the first was blamed (low memory · cached)
+    const at = (s: string) => Date.parse(`2026-${s}-04:00`)
+    const ev = (s: string, e: string, d?: string, w?: string): LogEvent => ({ t: at(s), e, ...(d ? { d } : {}), ...(w ? { w } : {}) })
+    const events = [
+      ev('10-20T21:18:51', 'start', 'dominic · speed 1.1 · pause none · numbers off · next chapter on', 'Genesis 24:1'),
+      ev('10-20T21:18:51', 'status', 'loading'), ev('10-20T21:18:51', 'status', 'playing'),
+      ev('10-20T21:22:48', 'beat', '255.8 s, playing, ready · app active · screen on · volume 1/15', 'Genesis 24:27'),
+      ev('10-20T21:22:54', 'app', 'background'),
+      ev('10-20T21:23:48', 'beat', '321.8 s, playing, ready · app background · screen off · volume 1/15', 'Genesis 24:35'),
+      ev('10-20T21:24:03', 'app', 'active'), ev('10-20T21:24:07', 'app', 'background'), ev('10-20T21:24:16', 'app', 'active'),
+      ev('10-21T18:45:06', 'launch', '1.3.0 (61)'),
+    ]
+    const x = (s: string, reason: number, importance: number, description?: string): ExitInfo => ({ t: at(s), reason, importance, description })
+    const exits = [x('10-21T17:03:10', 3, 230), x('10-21T16:20:00', 3, 400), x('10-21T16:13:52', 3, 400), x('10-21T14:05:35', 2, 230),
+      x('10-21T13:33:51', 10, 400, '[REMOVE TASK] remove task'), x('10-21T12:26:49', 3, 400), x('10-21T07:42:16', 3, 400), x('10-21T07:33:56', 3, 400)]
+    expect(troubles(events, exits, at('10-21T18:46:15'))).toEqual([])
+    const kill = x('10-20T21:24:40', 3, 125)
+    expect(troubles(events, [...exits, kill, x('10-20T19:02:11', 3, 400)], at('10-21T18:46:15')).map(t => [t.kind, t.t, t.w])).toEqual([['closed', kill.t, 'Genesis 24:35']])
   })
 
   it('needs Android’s record: without one (before Android 11) a launch says nothing', () => {
@@ -73,7 +96,7 @@ describe('a reading that stopped by itself', () => {
     expect(t).toMatchObject([{ kind: 'no-next', w: 'Psalm 119' }])
     expect(troubles([...ended, ...log([20, 'app', 'active'])], [], T0 + 20 * min)).toHaveLength(1)
     // closed in the hand-over: Android's record says so, and the lost hand-over is not counted twice
-    expect(troubles([...ended, ...log([30, 'launch'])], [exit(8.05, 2)], T0 + 31 * min).map(x => x.kind)).toEqual(['closed'])
+    expect(troubles([...ended, ...log([30, 'launch'])], [exit(8.05, 2), beforeReading], T0 + 31 * min).map(x => x.kind)).toEqual(['closed'])
   })
 
   it('is a failure, or the app’s timers standing still for a minute or more', () => {
@@ -122,7 +145,7 @@ describe('the report', () => {
   const phone = { maker: 'samsung', model: 'SM-S918B', release: '14', sdk: 34, unrestricted: false, bucket: 10, screenOn: false, mode: 0, playing: [], outputs: [2], volume: 9, volumeMax: 15 }
   it('leads with the phone, the stops and Android’s records, then the events oldest first', () => {
     const events = [...reading, ...log([90, 'launch'])]
-    const exits = [exit(7, 3, 'lmkd')]
+    const exits = [exit(7, 3, 'lmkd'), beforeReading]
     const text = reportText({ app: '1.2.0 (57) · android', phone, exits, events, troubles: troubles(events, exits, T0 + 91 * min), now: T0 + 91 * min, max: 24_000 })
     const lines = text.split('\n')
     expect(lines[0]).toMatch(/^Read-aloud log · 1\.2\.0 \(57\) · android · times are the phone's \(UTC[+-]\d\d:\d\d\)$/)
@@ -131,6 +154,12 @@ describe('the report', () => {
     expect(text).toContain('Android ended the app (its own record):')
     const at = lines.indexOf('Events, oldest first:')
     expect(lines.slice(at + 1).map(l => l.split(' ')[2])).toEqual(['launch', 'start', 'status', 'status', 'beat', 'launch'])
+  })
+
+  it('says when the phone had no frame stand-in; not when it had one, or an older app sent no word of it', () => {
+    expect(phoneWords({ ...phone, standInReady: false, standIns: 0 })).toContain('no frame stand-in')
+    expect(phoneWords({ ...phone, standInReady: true, standIns: 3 })).not.toContain('stand-in')
+    expect(phoneWords(phone)).not.toContain('stand-in')
   })
 
   it('keeps the newest events when the log is longer than the room, and says how many it left out', () => {

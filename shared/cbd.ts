@@ -36,11 +36,12 @@ export function buildIndex(rows: CbdIndexRow[]): CbdIndex {
  * Singular and plural spellings of one English word, most literal first: "teachers" -> teachers, teacher. Words of
  * three letters or fewer are taken as written, so "as" never becomes "Ass" nor "has" "Ha".
  */
+export const AS_WRITTEN = 3
 export function wordForms(word: string): string[] {
   const w = nameKey(word.replace(/['’]s$/i, ''))
   if (w.length < 2) return []
   const out = [w]
-  if (w.length <= 3) return out
+  if (w.length <= AS_WRITTEN) return out
   const push = (s: string) => { if (s.length >= 3 && !out.includes(s)) out.push(s) }
   if (w.endsWith('ies')) push(w.slice(0, -3) + 'y')
   // "-es" only after a sibilant: "witnesses" -> witness, but "hates" is never "hat"
@@ -90,7 +91,7 @@ function resolve(index: CbdIndex, scored: { i: number; tier: number; why: CbdMat
 }
 
 /** Irregular plurals of the text ("men", "brethren"); `wordForms` makes the regular ones. */
-const IRREGULAR: Record<string, string> = { men: 'man', women: 'woman', children: 'child', brethren: 'brother', feet: 'foot', teeth: 'tooth', oxen: 'ox', mice: 'mouse', geese: 'goose', lice: 'louse', kine: 'cow' }
+export const IRREGULAR: Record<string, string> = { men: 'man', women: 'woman', children: 'child', brethren: 'brother', feet: 'foot', teeth: 'tooth', oxen: 'ox', mice: 'mouse', geese: 'goose', lice: 'louse', kine: 'cow' }
 /** More words that never select an article when tapped alone: pronouns, auxiliaries, the archaic verb forms. */
 const WORD_STOP = new Set([...STOP, 'am', 'are', 'been', 'being', 'did', 'doth', 'hath', 'had', 'have', 'shall', 'should', 'will', 'would', 'may', 'might', 'can', 'could', 'must', 'art', 'wast', 'were', 'if', 'me', 'my', 'mine', 'him', 'her', 'hers', 'its', 'our', 'ours', 'us', 'you', 'your', 'thee', 'thou', 'thy', 'thine', 'they', 'them', 'their', 'this', 'that', 'these', 'those', 'who', 'whom', 'whose', 'which', 'what', 'from', 'into', 'unto', 'upon', 'than', 'then', 'there', 'when', 'where', 'also', 'even', 'yet', 'nor', 'all', 'any', 'every', 'some', 'one'])
 
@@ -150,6 +151,8 @@ function wordKeys(index: CbdIndex): WordKeys {
 /** Builds `matchWord`'s keys ahead of the first tap (about 20 ms of work on the full index). */
 export function warmWordLookup(index: CbdIndex): void { wordKeys(index) }
 
+export const spellLigatures = (s: string) => s.replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/œ/g, 'oe').replace(/Œ/g, 'Oe')
+
 /**
  * Articles for a word tapped in the text with no Strong's entry to go on, best first:
  *   1. a headword or alias is the word, singular or plural ("teachers" -> Teacher; "Son" -> "Son, The" too);
@@ -159,8 +162,7 @@ export function warmWordLookup(index: CbdIndex): void { wordKeys(index) }
  * Function words select nothing. An article that only says "See X." is replaced by X, carrying its headword as `via`.
  */
 export function matchWord(index: CbdIndex, tapped: string, limit = 6): CbdMatch[] {
-  // the text spells Ænon and Judæa; the headwords Aenon and Judaea
-  const word = tapped.replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/œ/g, 'oe').replace(/Œ/g, 'Oe')
+  const word = spellLigatures(tapped)
   const w = nameKey(word.replace(/['’]s$/i, ''))
   if (!w || WORD_STOP.has(w)) return []
   const common = /^[a-z]/.test(word.trim())

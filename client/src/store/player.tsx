@@ -164,19 +164,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   /**
-   * Play the chapter from `startMs` until `endMs`, resolving when the clock gets there. `verse` is what the
-   * follow-along reports. `noSeek` continues from wherever the player is (continuous mode); `keepPlaying` leaves
-   * the audio running at the end so the next verse needs no seek. A late tick (timers throttled with the screen
-   * off) that finds the clock already past the end simply resolves; the audio has played on, nothing is replayed.
+   * Play the chapter from `startMs` until `endMs`, resolving when the clock gets there with whether the audio is still
+   * running. `verse` is what the follow-along reports. `noSeek` continues from wherever the player is (continuous
+   * mode); `keepPlaying` leaves the audio running at the end so the next verse needs no seek. A late tick (timers
+   * held back with the app off screen) that finds the clock already at `runFrom`, the next verse's first word, leaves
+   * it running too: that verse is already being heard, and a stop would cut it.
    */
-  const playSpan = (startMs: number, endMs: number, token: number, verse: number, opts: { noSeek?: boolean; keepPlaying?: boolean } = {}) => new Promise<void>(async (resolve, reject) => {
+  const playSpan = (startMs: number, endMs: number, token: number, verse: number, opts: { noSeek?: boolean; keepPlaying?: boolean; runFrom?: number } = {}) => new Promise<boolean>(async (resolve, reject) => {
     const p = player.current
     if (!p) return reject(new Error('no player'))
     try {
       if (!opts.noSeek) await p.seekTo(startMs / 1000)
       if (run.current !== token) return reject(new Error(STOPPED))
       await whilePaused(token)
-      p.play()
       // After a seek the clock can still report the old position for a tick or two. Replaying an earlier verse
       // from later in the chapter then read as "already past the end" and the verse was skipped. Until the clock
       // is seen near the start (or a grace period passes) neither the end test nor the word highlight trusts it.
@@ -191,6 +191,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const rate = Math.max(0.5, prefs.get().ttsSpeed || 1)
       const lead = opts.keepPlaying ? 0 : (Platform.OS === 'web' ? 45 : 130) * rate
       const stopAt = Math.max(startMs, endMs - lead)
+      const end = (t: number) => {
+        const running = !!opts.keepPlaying || (opts.runFrom !== undefined && t >= opts.runFrom)
+        if (!running) p.pause()
+        resolve(running)
+      }
+      // audio that ran on can be past this whole span: nothing of it is left to play, and play() on a recording that
+      // has ended starts it again from the top on the web
+      if (landed && p.currentTime * 1000 >= stopAt) return end(p.currentTime * 1000)
+      p.play()
       // how long the player has stood still by itself, once it was playing this span
       let stillSince: number | null = null
       const tick = () => {
@@ -217,7 +226,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           if (Math.abs(t - startMs) < 1200 || Date.now() - t0 > 1500) landed = true
           else return setTimeout(tick, POLL_MS)
         }
-        if (t >= stopAt || (p.duration > 0 && t >= p.duration * 1000 - 40)) { if (!opts.keepPlaying) p.pause(); return resolve() }
+        if (t >= stopAt || (p.duration > 0 && t >= p.duration * 1000 - 40)) return end(t)
         const c = current.current
         if (c.marks) {
           // only this verse's own word timings move the highlight; a clock outside the span keeps the last word.
@@ -308,10 +317,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       player.current.setPlaybackRate(p.ttsSpeed, 'high')
       // nothing between verses: let the audio run and just follow the clock
       const settled = () => { const pause = PAUSE_MS[p.ttsPause]; return { pause, continuous: pause === 0 && !p.ttsNumbers } }
+      // the audio ran on past the last span (nothing between verses, or a stop that came late): the reading follows it,
+      // with no pause and no spoken number, and never seeks back over what has been heard
+      let running = false
       if (c.heading && p.ttsHeading && c.marks.heading) {
         setState(s => ({ ...s, spoken: { book: c.book, chapter: c.chapter, v: 0, off: null } }))
-        await playSpan(c.marks.heading[0], c.marks.heading[1], token, 0, { keepPlaying: settled().continuous })
-        await wait(settled().pause, token)
+        const first = c.marks.verses[c.index]
+        running = await playSpan(c.marks.heading[0], c.marks.heading[1], token, 0, { keepPlaying: settled().continuous, runFrom: first && !first.parts?.length ? first.start : undefined })
+        if (!running) await wait(settled().pause, token)
       }
       c.heading = false
       for (; c.index < c.marks.verses.length; c.index++) {
@@ -324,7 +337,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const vm = c.marks.verses[c.index]
         const nextVm = c.marks.verses[c.index + 1]
         setState(s => ({ ...s, spoken: { book: c.book, chapter: c.chapter, v: vm.v, off: null } }))
-        if (p.ttsNumbers) { await whilePaused(token); await playNumber(vm.v, token); await wait(120, token) }
+        if (p.ttsNumbers && !running) { await whilePaused(token); await playNumber(vm.v, token); await wait(120, token) }
         const text = c.verses.find(x => x.v === vm.v)?.t.trim() ?? ''
         if (vm.parts?.length) {
           // the recording service refused part of this verse: recorded clauses play, refused ones are read by the device, in order
@@ -332,19 +345,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             if (part.start !== undefined && part.end !== undefined) await playSpan(part.start, part.end, token, vm.v)
             else { const clause = text.slice(part.a, part.b).trim(); if (clause) await speakDevice(clause, token) }
           }
+          running = false
         } else if (vm.words.length || vm.end > vm.start) {   // no word marks: span interpolated from the neighbours
           const last = c.stopAfter !== null && vm.v >= c.stopAfter
-          const keep = continuous && !last && !!nextVm && !nextVm.parts?.length && nextVm.start <= vm.end + 60
+          const onto = !last && nextVm && !nextVm.parts?.length ? nextVm : undefined
+          const keep = continuous && !!onto && onto.start <= vm.end + 60
           // The clock already sits at (or just before, in the breath) this verse's start whenever the previous
           // verse ended here: resume in place. A seek here lands a little early on Android (Ogg pages) and a
           // little late on the web, so the breath or the first syllable played twice ("...tents. A- ... And").
+          // Audio that ran on is past the start, by as much as the timers were held back: it goes on from there.
           const now = player.current.currentTime * 1000
-          const near = now <= vm.start + 60 && vm.start - now < 700
-          await playSpan(vm.start, vm.end, token, vm.v, { noSeek: near, keepPlaying: keep })
+          const near = vm.start - now < 700 && (running || now <= vm.start + 60)
+          running = await playSpan(vm.start, vm.end, token, vm.v, { noSeek: near, keepPlaying: keep, runFrom: onto?.start })
         } else if (text) { await speakDevice(text, token) }
         if (run.current === token) heard(c.book, c.chapter, vm.v)
         if (c.stopAfter !== null && vm.v >= c.stopAfter) { c.index++; break }
-        if (nextVm) await wait(pause, token)
+        if (nextVm && !running) await wait(pause, token)
       }
     } else {
       // device voice: verse by verse

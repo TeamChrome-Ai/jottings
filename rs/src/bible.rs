@@ -114,10 +114,11 @@ pub fn strongs_info(conn: &rusqlite::Connection, t: &Tables, code: &str, limit: 
         .query_row(params![code], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
         .optional()?
         .unwrap_or((None, None, None, None));
-    // `strongs <> ''` lets SQLite use the partial indexes on verse_words
-    let mut st = conn.prepare_cached(&format!("SELECT verse_id / 1000000, count(*), count(DISTINCT verse_id) FROM {} WHERE strongs=?1 AND strongs <> '' GROUP BY 1 ORDER BY 1", t.words))?;
+    // `strongs <> ''` lets SQLite use the partial indexes on verse_words. A word the reader splits ("Cæsarea") is one
+    // occurrence, counted on its first row, which holds it as printed; its other pieces' rows have no word
+    let mut st = conn.prepare_cached(&format!("SELECT verse_id / 1000000, sum(word <> ''), count(DISTINCT verse_id) FROM {} WHERE strongs=?1 AND strongs <> '' GROUP BY 1 ORDER BY 1", t.words))?;
     let books: Vec<StrongsBook> = st.query_map(params![code], |r| Ok(StrongsBook { book: r.get(0)?, occurrences: r.get(1)?, verses: r.get(2)? }))?.collect::<Result<_, _>>()?;
-    let mut st = conn.prepare_cached(&format!("SELECT word, count(*) FROM {} WHERE strongs=?1 AND strongs <> '' GROUP BY word", t.words))?;
+    let mut st = conn.prepare_cached(&format!("SELECT word, count(*) FROM {} WHERE strongs=?1 AND strongs <> '' AND word <> '' GROUP BY word", t.words))?;
     let spelled: Vec<(String, i64)> = st.query_map(params![code], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
     let mut st = conn.prepare_cached(&format!("SELECT DISTINCT verse_id FROM {} WHERE strongs=?1 AND strongs <> '' ORDER BY verse_id LIMIT ?2 OFFSET ?3", t.words))?;
     let ids: Vec<i64> = st.query_map(params![code, limit, offset], |r| r.get(0))?.collect::<Result<_, _>>()?;
@@ -198,15 +199,28 @@ mod tests {
 
     #[test]
     fn word_rows_are_the_words_of_the_text() {
-        // the reader reads a verse's tags by word position: row i must be the text's i-th word (see build_data align_tags)
+        // the reader reads a verse's tags by word position: row i is the text's i-th word (see build_data align_tags),
+        // except that a word it splits ("Cæsarea") is printed whole on its first row, and its other pieces have no word
+        // but the same number
         let c = conn();
-        for (book, chapter) in [(1, 1), (40, 1), (43, 3), (19, 119)] {
+        for (book, chapter) in [(1, 1), (40, 1), (43, 3), (19, 119), (44, 10)] {
             for v in get_chapter(&c, &T1961, book, chapter, true).unwrap().unwrap().verses {
                 let ours: Vec<&str> = v.t.split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '\'' || ch == '’')).filter(|w| !w.is_empty()).collect();
-                let rows: Vec<String> = v.words.unwrap_or_default().into_iter().map(|(w, _)| w).collect();
-                assert_eq!(rows, ours, "{book} {chapter}:{}", v.v);
+                let rows = v.words.unwrap_or_default();
+                assert_eq!(rows.len(), ours.len(), "{book} {chapter}:{}", v.v);
+                for (i, (w, code)) in rows.iter().enumerate() {
+                    let piece = w.is_empty() && !code.is_empty() && i > 0 && rows[i - 1].1 == *code;
+                    assert!(w == ours[i] || piece || (!code.is_empty() && w.contains(ours[i])), "{book} {chapter}:{} row {i} {w:?}", v.v);
+                }
             }
         }
+        // Acts 10:1: Cæsarea, which the reader reads as "C" and "sarea", is one occurrence of Καισάρεια, rendered whole
+        let cae = strongs_info(&c, &T1961, "G2542", 1000, 0).unwrap();
+        // (the text prints it "Caesarea" once)
+        assert!(cae.renderings.iter().all(|(w, _)| w.starts_with("Cæsarea") || w.starts_with("Caesarea")), "{:?}", cae.renderings);
+        assert_eq!(cae.renderings.iter().map(|r| r.1).sum::<i64>(), cae.occurrences);
+        let acts = cae.page.iter().find(|o| (o.book, o.chapter, o.verse) == (44, 10, 1)).expect("Acts 10:1");
+        assert_eq!(acts.w.len(), 2);
     }
 
     #[test]
@@ -216,7 +230,7 @@ mod tests {
         assert_eq!(all.lemma.as_deref(), Some("διδάσκαλος"));
         assert_eq!(all.pron.as_deref(), Some("did-as'-kal-os"));
         assert_eq!(all.kjv.as_deref(), Some("doctor, master, teacher"));
-        let n: i64 = c.query_row("SELECT count(*) FROM verse_words WHERE strongs='G1320'", [], |r| r.get(0)).unwrap();
+        let n: i64 = c.query_row("SELECT count(*) FROM verse_words WHERE strongs='G1320' AND word <> ''", [], |r| r.get(0)).unwrap();
         let v: i64 = c.query_row("SELECT count(DISTINCT verse_id) FROM verse_words WHERE strongs='G1320'", [], |r| r.get(0)).unwrap();
         assert!(n > 40, "{n}");
         assert_eq!((all.occurrences, all.verses, all.page.len() as i64), (n, v, v));
@@ -253,7 +267,7 @@ mod tests {
     fn ot_number_counts_every_verse_and_only_its_own_code() {
         let c = conn();
         let p = strongs_info(&c, &T1961, "H430", 30, 60).unwrap();
-        let n: i64 = c.query_row("SELECT count(*) FROM verse_words WHERE strongs='H430'", [], |r| r.get(0)).unwrap();
+        let n: i64 = c.query_row("SELECT count(*) FROM verse_words WHERE strongs='H430' AND word <> ''", [], |r| r.get(0)).unwrap();
         let v: i64 = c.query_row("SELECT count(DISTINCT verse_id) FROM verse_words WHERE strongs='H430'", [], |r| r.get(0)).unwrap();
         // exact: H4300-H4309 are other words
         let near: i64 = c.query_row("SELECT count(*) FROM verse_words WHERE strongs LIKE 'H430_'", [], |r| r.get(0)).unwrap();

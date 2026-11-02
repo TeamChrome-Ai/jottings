@@ -72,14 +72,14 @@ const beatWith = async (page, n, ms = 45000) => {
   const mark = await page.evaluate(() => JSON.parse(localStorage.getItem('berean_invite_mark') ?? 'null'))
   check('the mark holds the invite', mark?.uid === ben.id && mark.ids.length === 1, JSON.stringify(mark))
 
-  // Home's Friends card and Settings' Friends row count it
+  // Home's Friends card and the Friends row on Settings → Account count it
   await page.goto(base + '/', { waitUntil: 'networkidle' })
   const home = await page.getByText('1 invite waiting').first().waitFor({ timeout: 15000 }).then(() => true, () => false)
   check('Home: "1 invite waiting"', home)
   await page.screenshot({ path: `${out}/02-home.png` })
-  await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+  await page.goto(base + '/settings/account', { waitUntil: 'networkidle' })
   const settings = await page.getByText('1 invite waiting').first().waitFor({ timeout: 15000 }).then(() => true, () => false)
-  check('Settings: Friends row says "1 invite waiting"', settings)
+  check('Settings → Account: Friends row says "1 invite waiting"', settings)
   await page.screenshot({ path: `${out}/03-settings.png` })
 
   // a reload does not announce the same invite again

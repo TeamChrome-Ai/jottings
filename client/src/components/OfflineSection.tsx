@@ -13,7 +13,7 @@ import { authorShown } from '../lib/editionCore'
 import { cancel, download, fetchListing, offlineSupported, peekListing, remove, status, storedAuthors, subscribe } from '../lib/offlineMinistry'
 import { formatBytes, statusDetail, type OfflineStatus, type PackAuthor } from '../lib/offlineMinistryCore'
 import { useToast } from '../store/toast'
-import { Button, Card, H2, ListRow, Sheet, T } from './ui'
+import { Button, Card, ListRow, Sheet, T } from './ui'
 
 interface Row { id: string; name: string; latest: PackAuthor | null | undefined; status: OfflineStatus }
 
@@ -58,7 +58,6 @@ function OfflineRows() {
   const current = rows.find(r => r.id === open) ?? null
   return (
     <>
-      <H2>{t('Offline')}</H2>
       <Card style={{ gap: 0, paddingVertical: 8 }}>
         <ListRow icon="book" label={t('Bible')} detail={t('On this phone')} />
         <ListRow icon="dictionary" label={t('Dictionary')} detail={t('On this phone · {size}', { size: formatBytes(DICTIONARY_BYTES) })} />

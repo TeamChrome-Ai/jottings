@@ -76,7 +76,7 @@ function begin(): () => void {
     try { const k = sceneKey(s); if (k !== said) { said = k; note('scene', sceneWords(s)) } } catch { /* an answer of a shape not known */ }
   })
   const app = AppState.addEventListener('change', s => note('app', s))
-  let last = Date.now(), n = 0, wasOn = on
+  let last = Date.now(), n = 0, wasOn = on, lastStood = phone?.standIns ?? null
   const beat = () => {
     const now = Date.now()
     // a late tick counts only if a reading was on at the last one: past the reading, timers stopping is Android's due
@@ -86,7 +86,9 @@ function begin(): () => void {
     const x = describe()
     if (!x.playing) return
     const p = phoneNow()
-    note('beat', `${x.d}${p?.screenOn != null ? ` · screen ${p.screenOn ? 'on' : 'off'}` : ''}${p?.volume != null ? ` · volume ${p.volume}/${p.volumeMax}` : ''}`, x.w)
+    const stood = p?.standIns ?? null, k = stood !== null && lastStood !== null ? stood - lastStood : 0
+    lastStood = stood
+    note('beat', `${x.d}${p?.screenOn != null ? ` · screen ${p.screenOn ? 'on' : 'off'}` : ''}${p?.volume != null ? ` · volume ${p.volume}/${p.volumeMax}` : ''}${k > 0 ? ` · ${k} frames stood in` : ''}`, x.w)
   }
   const tick = setInterval(() => { try { beat() } catch { /* a beat missed */ } }, TICK_MS)
   return () => { clearInterval(tick); unscene(); app.remove(); recent = [] }

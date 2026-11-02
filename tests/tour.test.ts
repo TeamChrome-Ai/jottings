@@ -50,7 +50,8 @@ describe('steps', () => {
 })
 
 describe('the registry', () => {
-  // every element a step points at is registered where it is drawn: tourRef('…') or a tab icon's target
+  // every element a step points at is registered where it is drawn: tourRef('…'), a tab icon's target, or a Settings
+  // row's (lib/settingsIndex.ts)
   const root = join(__dirname, '../client')
   const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(e =>
     e.isDirectory() ? (e.name === 'node_modules' || e.name === 'dist' || e.name.startsWith('android') ? [] : files(join(dir, e.name))) : /\.tsx?$/.test(e.name) ? [join(dir, e.name)] : [])
@@ -58,7 +59,7 @@ describe('the registry', () => {
   for (const f of [...files(join(root, 'app')), ...files(join(root, 'src'))]) {
     if (f.endsWith('lib/tour.ts')) continue
     const src = readFileSync(f, 'utf8')
-    for (const m of src.matchAll(/tourRef\('([a-z-]+)'\)|target="([a-z-]+)"|icon\('[a-z]+', f, '([a-z-]+)'\)/g)) registered.add(m[1] ?? m[2] ?? m[3])
+    for (const m of src.matchAll(/tourRef\('([a-z-]+)'\)|target="([a-z-]+)"|icon\('[a-z]+', f, '([a-z-]+)'\)|target: '([a-z]+-[a-z-]+)'/g)) registered.add(m[1] ?? m[2] ?? m[3] ?? m[4])
   }
   it('has every step’s target', () => {
     for (const s of ALL) for (const t of s.targets) expect(registered.has(t), `${s.id} → ${t}`).toBe(true)

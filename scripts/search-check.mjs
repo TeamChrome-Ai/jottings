@@ -78,7 +78,8 @@ check('"rom 8:28" opens Romans 8', await page.waitForURL(/\/read\/45\/8/, { time
 // 2e. a book's name alone is a word: the hits, with the book offered in one row above them
 const field = () => page.getByPlaceholder('jn 3:16, words, or G1320')
 const bookRow = name => page.getByRole('button', { name, exact: true }).filter({ hasText: 'Open the book' })
-const cards = () => page.getByRole('link').evaluateAll(els => els.map(el => el.textContent))
+// the verse hits; the footnotes on the word (WordFootnotes) link verses whose note is on it, not verses holding it
+const cards = () => page.getByRole('link').evaluateAll(els => els.filter(el => !el.closest('[data-testid="word-footnotes"]')).map(el => el.textContent))
 await page.goto(base + '/search', { waitUntil: 'networkidle' })
 await field().fill('song')
 await page.getByRole('button', { name: 'Go' }).click()

@@ -2,7 +2,8 @@ import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'r
 import { Animated, Platform, StyleSheet, Text, View, type LayoutChangeEvent, type NativeSyntheticEvent, type TextLayoutEventData, type TextStyle } from 'react-native'
 import { isLookupWord, wholeWord } from '@shared/cbd'
 import { t, tc } from '@shared/i18n'
-import { isLettered, relabel } from '../lib/noteLetters'
+import { isLettered } from '@shared/footnotes'
+import { relabel } from '../lib/noteLetters'
 import type { Note, Verse } from '@shared/types'
 import type { Ref } from '@shared/ref'
 import type { ChapterData } from '../lib/bible'
@@ -26,7 +27,7 @@ export interface ParaLayout { index: number; y: number; height: number; firstVer
 export type { HlColor } from '../lib/hlColours'
 
 /** The "show all" toolbar toggle expands the lettered notes; one-word symbol glosses (· El, † Eloah) stay tap-to-open. */
-export { isLettered } from '../lib/noteLetters'
+export { isLettered } from '@shared/footnotes'
 const NO_TAGS: [string, string][] = []
 const EMPTY: ReadonlySet<number> = new Set()
 
@@ -138,7 +139,11 @@ export default memo(function ChapterView({ data, prefs, selected, flash = EMPTY,
   // The web reports a paragraph only when its size changes (a ResizeObserver), so one that grows (its footnotes
   // open) leaves every paragraph below it with a stale `y`: where a verse is, and which is at the top of the view,
   // were then wrong. After any report the others are measured again, once a frame, and the moved ones reported.
+  // The verse marks of a paragraph that reported or changed height are measured again in that frame: a mark is a
+  // zero-size view, so its own onLayout fires once at mount and never again, yet a note opening above it in its own
+  // paragraph (the run split, the Reveal growing over 220 ms) moves it by whole lines.
   const reported = useRef(new Map<number, ParaLayout>())
+  const dirty = useRef(new Set<number>())
   const sweep = useRef(0)
   useEffect(() => () => { if (sweep.current) cancelAnimationFrame(sweep.current) }, [])
   // another chapter or another grouping: every paragraph reports afresh, with its own verses
@@ -147,20 +152,28 @@ export default memo(function ChapterView({ data, prefs, selected, flash = EMPTY,
     onParaLayout(l)
     if (Platform.OS !== 'web') return
     reported.current.set(l.index, l)
+    dirty.current.add(l.index)
     if (sweep.current) return
     sweep.current = requestAnimationFrame(() => {
       sweep.current = 0
       for (const [i, was] of reported.current) {
-        const el = paraNodes.current.get(i) as unknown as { getBoundingClientRect?: () => { top: number; height: number }; parentElement?: { getBoundingClientRect: () => { top: number } } | null } | undefined
-        if (!el?.getBoundingClientRect || !el.parentElement) continue
+        const el = domOf(paraNodes.current.get(i))
+        if (!el?.parentElement) continue
         const box = el.getBoundingClientRect(), y = box.top - el.parentElement.getBoundingClientRect().top
-        if (Math.abs(y - was.y) < 0.5 && Math.abs(box.height - was.height) < 0.5) continue
+        const resized = Math.abs(box.height - was.height) >= 0.5
+        if (Math.abs(y - was.y) < 0.5 && !resized) continue
+        if (resized) dirty.current.add(i)
         const now = { ...was, y, height: box.height }
         reported.current.set(i, now)
         onParaLayout(now)
       }
+      if (onVerseLayout) for (const i of dirty.current) {
+        const el = domOf(paraNodes.current.get(i))
+        el?.querySelectorAll('[data-verse-mark]').forEach(m => onVerseLayout(Number(m.getAttribute('data-verse-mark')), i, lineTop(m, el)))
+      }
+      dirty.current.clear()
     })
-  }, [onParaLayout])
+  }, [onParaLayout, onVerseLayout])
   const noteContext = useMemo(() => ({ book: data.book, chapter: data.c }), [data.book, data.c])
   const maxWidth = READ_EM[prefs.width] ? Math.round(fs * READ_EM[prefs.width]! * (pair ? 2 : 1)) + (pair ? 64 : 40) : undefined
   return (
@@ -418,11 +431,11 @@ type RunClass = 'plain' | 'italic' | 'sep'
 const VerseSpan = memo(function VerseSpan({ verse: v, fontSize, font, wordSpacing, plainSeps, selected, flashed, hl, bookmarked, showNumbers, showNotes, tags, tapWords, onWord, reduce, onSelect, onToggleNote, paraIndex, onVerseLayout, getParaNode, spokenOff }: VerseProps) {
   const spokenWi = spokenOff === null || spokenOff === undefined ? -1 : wordIndexAt(v, spokenOff)
   const markRef = useRef<View>(null)
-  // the marker's own layout is relative to the verse span (0 on web); measure against the paragraph instead
+  // the marker's own layout is relative to the verse span (0 on web), so it is placed against the paragraph: once, at
+  // mount (a ResizeObserver's first observation); ChapterView's sweep places it again when the paragraph changes size
   const reportMark = useCallback(() => {
-    const para = getParaNode(paraIndex)
-    if (!para || !markRef.current || !onVerseLayout) return
-    markRef.current.measureLayout(para, (_x, y) => onVerseLayout(v.v, paraIndex, y), () => {})
+    const para = domOf(getParaNode(paraIndex)), mark = domOf(markRef.current)
+    if (para && mark && onVerseLayout) onVerseLayout(v.v, paraIndex, lineTop(mark, para))
   }, [getParaNode, paraIndex, onVerseLayout, v.v])
   const press = useCallback(() => onSelect(v.v), [onSelect, v.v])
   const toks = tokenize(v)
@@ -515,7 +528,7 @@ const VerseSpan = memo(function VerseSpan({ verse: v, fontSize, font, wordSpacin
   }, [v, toks, wordCount, notesAt, tags, tapWords, spokenWi, plainSeps, wordSpacing, font, fontSize, onWord, onToggleNote])
   return (
     <Text onPress={press} style={{ backgroundColor: bg, textDecorationLine: selected ? 'underline' : 'none' }} accessibilityRole="text">
-      {onVerseLayout && Platform.OS === 'web' ? <View ref={markRef} style={MARK} onLayout={reportMark} /> : null}
+      {onVerseLayout && Platform.OS === 'web' ? <View ref={markRef} style={MARK} onLayout={reportMark} {...markData(v.v)} /> : null}
       {v.s ? <InkText ink="muted" style={{ fontSize: fontSize * 0.7 }}>✦ </InkText> : null}
       {showNumbers ? <InkText ink="accent" style={{ fontSize: fontSize * 0.58, ...sansBold, ...inlineMark(fontSize * 0.58) }}>{verseLabel(v)}{bookmarked ? '▮' : ''} </InkText> : null}
       {body}
@@ -529,8 +542,29 @@ const noteWordLabel = (word: string, marker: string) => t('{word}, note {marker}
 const strongsLabel = (word: string, code: string) => t('{word}, Strong’s {code}', { word, code })
 const sansBold = face('sans', { bold: true })
 const SPOKEN = { borderRadius: 3 }
-/** Zero-size inline view whose layout gives the verse's y within its paragraph (nested text cannot be measured). */
+/** Zero-size inline view at a verse's start (web only): the line it sits on gives the verse's y within its paragraph
+ *  (nested text cannot be measured). `data-verse-mark` names its verse, so a paragraph that changed size can find its
+ *  marks again; RN's View types know no dataSet, hence the spread. */
 const MARK = { width: 0, height: 0 } as const
+const markData = (v: number) => ({ dataSet: { verseMark: v } }) as object
+/** Web: the DOM element react-native-web renders for a View; null elsewhere. */
+const domOf = (v: View | null | undefined): Element | null => Platform.OS === 'web' && v instanceof Element ? v : null
+/**
+ * Web: a verse's y inside its paragraph, as the top of the line its marker sits on. The marker is a zero-size
+ * inline-flex box, so its own top is that line's baseline, an ascent (23 px at 19/1.6) below the line's top, while the
+ * native marks (onTextLayout's lines) are line tops and every consumer (the screen's verseY and note hold,
+ * screenVerses' versesBetween, the verse index's stops) wants one. The run is the marker's first non-inline ancestor
+ * (a top-level Text, blockified as a flex item), its lines each one computed line-height tall.
+ */
+function lineTop(mark: Element, para: Element): number {
+  let run = mark.parentElement
+  while (run && getComputedStyle(run).display === 'inline') run = run.parentElement
+  const top = para.getBoundingClientRect().top, markTop = mark.getBoundingClientRect().top
+  const lh = run ? parseFloat(getComputedStyle(run).lineHeight) : NaN
+  if (!run || !(lh > 0)) return markTop - top
+  const runTop = run.getBoundingClientRect().top
+  return runTop - top + Math.floor((markTop - runTop + 0.5) / lh) * lh
+}
 /** Web only: a small sans span inside serif text keeps its own line box tight, or its different ascent pushes the line open. */
 const inlineMark = (size: number) => Platform.OS === 'web' ? { lineHeight: Math.round(size) } : null
 const styles = StyleSheet.create({

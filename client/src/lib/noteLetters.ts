@@ -1,3 +1,4 @@
+import { isLettered } from '@shared/footnotes'
 import type { Note } from '@shared/types'
 
 /**
@@ -15,9 +16,6 @@ export function letterAt(i: number): string {
   for (let n = i; n >= 0; n = Math.floor(n / 26) - 1) s = String.fromCharCode(97 + (n % 26)) + s
   return s
 }
-
-/** The printed letters, a–z only (the divine-name marks · † and the like are not letters). */
-export const isLettered = (n: Pick<Note, 'marker'>) => /^[a-z]+$/.test(n.marker)
 
 /**
  * The chapter's verses with every lettered note's marker replaced by its place in the chapter: the first distinct

@@ -180,7 +180,7 @@ function SignedIn() {
       <Card>
         <T small muted>{t('The Bible text is not personal data and is not tied to you. Preferences and offline chapters live only on this device and are removed when you uninstall the app. Data on the server is encrypted at rest and in transit.')}</T>
         <T small muted>{t('To remove everything, including the account itself, use Delete account in Settings.')}</T>
-        <Row><Button small title={t('Open Settings')} onPress={() => router.push('/settings')} /></Row>
+        <Row><Button small title={t('Open Settings')} onPress={() => router.dismissTo('/settings/account')} /></Row>
       </Card>
     </>
   )

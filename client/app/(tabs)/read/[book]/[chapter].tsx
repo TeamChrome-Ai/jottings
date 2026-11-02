@@ -8,6 +8,8 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import SwipePager, { type Page, type SwipePagerHandle } from '../../../../src/components/SwipePager'
 import ReaderPage, { type PageLayout } from '../../../../src/components/ReaderPage'
+import VerseIndex, { VersePill, type VerseIndexHandle, type VerseIndexPort } from '../../../../src/components/VerseIndex'
+import { JUMP_HOLD_MS } from '../../../../src/lib/verseIndex'
 import * as Clipboard from 'expo-clipboard'
 import type { Outline } from '@shared/types'
 import { formatRef, formatVerseRuns, type Ref } from '@shared/ref'
@@ -171,6 +173,8 @@ function ReadScreenPage() {
   }, [])
   /** The current page's scroll view. */
   const scrollRef = useMemo(() => ({ get current() { return pageRefs.current.get(liveKey.current)?.current ?? null } }), [])
+  /** The web's scroll element of the current page (null elsewhere): the true offset to hand, and whose events are the reader's. */
+  const liveScrollNode = useCallback((): HTMLElement | null => Platform.OS === 'web' ? (scrollRef.current as unknown as { getScrollableNode?: () => HTMLElement | null } | null)?.getScrollableNode?.() ?? null : null, [scrollRef])
   const paras = useRef(new Map<number, ParaLayout>())
   const scrollY = useRef(0)
   const contentH = useRef(1)
@@ -196,9 +200,9 @@ function ReadScreenPage() {
   }, [])
   /** The web reads them from the scroll element itself when a gesture begins, which is never stale. */
   const edgesNow = useCallback((): Edges => {
-    const n = Platform.OS === 'web' ? (scrollRef.current as unknown as { getScrollableNode?: () => HTMLElement | null } | null)?.getScrollableNode?.() : null
+    const n = liveScrollNode()
     return n ? edgesOf(n.scrollTop, n.scrollHeight, n.clientHeight) : edgesOf(scrollY.current, contentH.current, viewportH.current)
-  }, [])
+  }, [liveScrollNode])
   const layoutOf = useCallback((k: string) => {
     let l = pageLayouts.current.get(k)
     if (!l) {
@@ -394,9 +398,16 @@ function ReadScreenPage() {
   const markY = (v: number, index: number) => { const m = verseMarks.current.get(v); return m && m.index === index ? m.y : 0 }
   /** A finger on the page takes the place over from the hold. */
   const endNoteHold = useCallback(() => { noteHold.current = null }, [])
+  /** A finger holds the verse index: no follow-along, no credit, no progress until it lets go. */
+  const scrubbing = useRef(false)
+  /** Where the index's last jump put the page; onScroll keeps it through the scrub and a moment after against late
+   *  events, as the note hold does. */
+  const jumped = useRef<{ y: number; until: number } | null>(null)
+  const verseIndex = useRef<VerseIndexHandle>(null)
+  const onDragStart = useCallback(() => { endNoteHold(); verseIndex.current?.dragged() }, [endNoteHold])
   const toggleAllNotes = useCallback(() => {
     // the web has the true offset to hand; elsewhere it is the last one reported
-    const node = Platform.OS === 'web' ? (scrollRef.current as unknown as { getScrollableNode?: () => HTMLElement | null } | null)?.getScrollableNode?.() : null
+    const node = liveScrollNode()
     const y = node ? node.scrollTop : scrollY.current
     let first: { v: number; index: number; top: number } | null = null
     if (y > 0) for (const p of paras.current.values()) {
@@ -409,7 +420,7 @@ function ReadScreenPage() {
     }
     noteHold.current = first ? { v: first.v, index: first.index, top: first.top, above: heightAbove(first.index), mark: markY(first.v, first.index), dy: first.top - y, until: Date.now() + 2000 } : null
     setAllNotes(a => !a)
-  }, [])
+  }, [liveScrollNode])
 
   /** The streak heartbeat's hands, set once it is created below. */
   const markRef = useRef(() => {})
@@ -424,7 +435,7 @@ function ReadScreenPage() {
     lastSpokenVerse.current = spokenHere.v
     // listening is reading: it keeps the time counting without a touch
     markRef.current()
-    if (spokenHere.v > 0) { const y = verseY(spokenHere.v); if (y !== null) scrollRef.current?.scrollTo({ y, animated: !prefs.reduceMotion }) }
+    if (spokenHere.v > 0 && !scrubbing.current) { const y = verseY(spokenHere.v); if (y !== null) scrollRef.current?.scrollTo({ y, animated: !prefs.reduceMotion }) }
   }, [spokenHere, verseY, prefs.reduceMotion])
   useEffect(() => {
     player.onEnded((b, c) => {
@@ -457,12 +468,13 @@ function ReadScreenPage() {
 
   // ---- streak heartbeat ----
   const tourAtEnd = useRef(false)
-  const getProgress = useCallback(() => contentH.current <= viewportH.current ? 1 : Math.min(1, (scrollY.current + viewportH.current) / contentH.current), [])
+  // a finger on the verse index passing the end is not reading it: no progress, no end, no verses seen until it lets go
+  const getProgress = useCallback(() => scrubbing.current ? 0 : contentH.current <= viewportH.current ? 1 : Math.min(1, (scrollY.current + viewportH.current) / contentH.current), [])
   /** The shown chapter's end is on screen: only once its text is laid out, so the spinner before it does not count. */
   const atChapterEnd = useCallback((b: number, c: number) => {
     const k = chapterKeyOf(b, c)
     // the full tour showing the chapter's end is not the reader reaching it
-    if (tourAtEnd.current || k !== liveKey.current || !pageLayouts.current.get(k)?.paras.size || viewportH.current <= 1) return false
+    if (tourAtEnd.current || scrubbing.current || k !== liveKey.current || !pageLayouts.current.get(k)?.paras.size || viewportH.current <= 1) return false
     return atEnd(scrollY.current, viewportH.current, contentH.current)
   }, [])
   /** The scroll offset of the last look at the screen, per chapter: verses that moved across the screen between two looks
@@ -470,7 +482,7 @@ function ReadScreenPage() {
   const seenFrom = useRef<{ key: string; y: number } | null>(null)
   const screenVerses = useCallback((): [number, number] | null => {
     const k = liveKey.current
-    if (tourAtEnd.current || !pageLayouts.current.get(k)?.paras.size || viewportH.current <= 1) { seenFrom.current = null; return null }
+    if (tourAtEnd.current || scrubbing.current || !pageLayouts.current.get(k)?.paras.size || viewportH.current <= 1) { seenFrom.current = null; return null }
     const y = scrollY.current, h = viewportH.current
     const was = seenFrom.current?.key === k && Math.abs(seenFrom.current.y - y) <= 2 * h ? seenFrom.current.y : y
     seenFrom.current = { key: k, y }
@@ -499,13 +511,15 @@ function ReadScreenPage() {
     for (const b of r.new_badges ?? []) toast.show(t('Badge earned: {name}', { name: b.name }))
   }), [toast])
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    // while the footnote hold lasts (and a throttled event may still be on its way) the offset is where it put the text
-    const h = noteHold.current
-    scrollY.current = h && h.y !== undefined && Date.now() < h.until + 300 ? h.y : e.nativeEvent.contentOffset.y
+    // while the footnote hold lasts (and a throttled event may still be on its way) the offset is where it put the text;
+    // likewise the verse index's last jump, through the scrub and JUMP_HOLD_MS after it
+    const h = noteHold.current, j = jumped.current, now = Date.now()
+    scrollY.current = h && h.y !== undefined && now < h.until + 300 ? h.y : j && now < j.until ? j.y : e.nativeEvent.contentOffset.y
     contentH.current = e.nativeEvent.contentSize.height
     viewportH.current = e.nativeEvent.layoutMeasurement.height
     syncEdges()
     mark()
+    verseIndex.current?.scrolled()
   }, [mark, syncEdges])
 
   // ---- page turns ----
@@ -543,6 +557,16 @@ function ReadScreenPage() {
   const go = useCallback((dir: 1 | -1) => pager.current?.go(dir), [])
   const goRef = useRef(go)
   goRef.current = go
+  /** What the verse index reads and does on this screen's behalf; built once, every member reads refs at call time. */
+  const indexPort = useMemo<VerseIndexPort>(() => ({
+    page: () => pageLayouts.current.get(liveKey.current)?.paras.size && viewportH.current > 1
+      ? { paras: paras.current, marks: verseMarks.current, y: scrollY.current, contentH: contentH.current, viewportH: viewportH.current } : null,
+    owns: target => !!liveScrollNode()?.contains(target as Node),
+    jump: y => { scrollRef.current?.scrollTo({ y, animated: false }); scrollY.current = y; jumped.current = { y, until: Infinity }; syncEdges() },
+    grab: () => { scrubbing.current = true; noteHold.current = null; landed.current = null; pendingVerse.current = null; pendingEnd.current = null; seenFrom.current = null },
+    release: v => { scrubbing.current = false; if (jumped.current) jumped.current.until = Date.now() + JUMP_HOLD_MS; if (v !== null) flashVerse(v); markRef.current() },
+    turn: () => goRef.current(1),
+  }), [scrollRef, syncEdges, flashVerse, liveScrollNode])
   /** Neighbour chapters allowed to render: set once the current page has data, then kept while they stay beside it. */
   const [neighbours, setNeighbours] = useState<ReadonlySet<string>>(NO_KEYS)
   const hasData = !!data
@@ -761,6 +785,8 @@ function ReadScreenPage() {
     // the read-aloud bar covers the bottom of the page: the next cue rides above it
     inset: player.status !== 'idle' ? player.barHeight : 0,
   }
+  // the page's bottom padding under a docked bar (the selection bar, the player); the verse index ends above it too
+  const padBottom = selected.size ? 140 + extraColoursHeight(prefs.moreColours, width, fontScale) : player.status !== 'idle' ? 120 : 24
 
   return (
     <View style={[styles.fill, styles.row, { backgroundColor: colors.bg }]} onTouchStart={mark}>
@@ -770,7 +796,7 @@ function ReadScreenPage() {
       <View style={[styles.toolbar, { paddingTop: insets.top + 6, backgroundColor: colors.bar, borderBottomColor: colors.border }]}>
         <View>
           {/* the path dot scales with the system text size, so it stays a quiet mark beside a larger pill too */}
-          <Button ref={tourRef('reader-picker')} title={`${formatRef({ book: bookN, chapter: chapterN })} ▾`} onPress={() => setPicker(true)} />
+          <VersePill ref={tourRef('reader-picker')} book={bookN} chapter={chapterN} onPress={() => setPicker(true)} />
           {/* on the active path: one dot beside the ▾, nothing else changes */}
           {onPathHere.onPath ? <View pointerEvents="none" accessibilityLabel={t('On your path')} style={[styles.pathDot, { backgroundColor: colors.accent, width: pathDot, height: pathDot, borderRadius: pathDot / 2, marginTop: -pathDot / 2 }]} /> : null}
         </View>
@@ -802,19 +828,19 @@ function ReadScreenPage() {
           {compact && chapterMinistry ? <Button ref={tourRef('more-ministry')} lead="companion" title={chapterMinistry} onPress={() => openChapterMinistry(true)} /> : null}
           {compact ? <Button ref={tourRef('more-paged')} lead="pages" title={t('Paged mode')} onPress={() => { setMore(false); openFlip() }} /> : null}
           <Button lead="share" title={t('Share this chapter')} onPress={() => { setMore(false); void shareChapter(bookN, chapterN).then(r => { if (r === 'copied') toast.show(t('Link copied')) }) }} />
-          <Button lead="sliders" title={t('Reading settings')} onPress={() => { setMore(false); router.push('/settings') }} />
+          <Button lead="sliders" title={t('Reading settings')} onPress={() => { setMore(false); router.push('/settings/text') }} />
         </View>
       </Sheet>
 
       <SwipePager ref={pager} reduce={reduce} width={pageW} onTurn={onTurn} cue={cue} onPull={onPull} edges={edgesNow} prev={neighbour(prev, -1)} next={neighbour(next, 1)} page={{ key: chapterKey, index: slot.current, node: (
-        <ReaderPage book={bookN} chapter={chapterN} data={data} err={err} layout={layoutOf(chapterKey)} scrollRef={pageRef(chapterKey)} onScroll={onScroll} onDragStart={endNoteHold} onViewport={onViewport} next={next} then={thenLine} credited={readSet.has(chapterKey)} toCredit={toCredit} goToVerse={goToVerse}
-          padBottom={selected.size ? 140 + extraColoursHeight(prefs.moreColours, width, fontScale) : player.status !== 'idle' ? 120 : 24} go={go}
+        <ReaderPage book={bookN} chapter={chapterN} data={data} err={err} layout={layoutOf(chapterKey)} scrollRef={pageRef(chapterKey)} onScroll={onScroll} onDragStart={onDragStart} onViewport={onViewport} next={next} then={thenLine} credited={readSet.has(chapterKey)} toCredit={toCredit} goToVerse={goToVerse}
+          padBottom={padBottom} go={go}
           prefs={reading} selected={selected} flash={tinted} spoken={spokenHere} highlights={highlights} bookmarked={bookmarked} openNotes={openNotes}
           onNavigate={pageNavigate} allNotes={allNotes} wordTags={wordMode ? wordTags : null} tapWords={wordMode} onWord={onWord} isRead={ticks.has(chapterKey)} marked={chapterMarked} onSelect={toggleSelect} onToggleNote={toggleNote} />
       ) }} />
-      {/* tap zones on the screen edges: previous / next chapter */}
+      {/* the left edge taps to the previous chapter; the right edge is the verse index's band, which taps to the next */}
       {prev && <Pressable accessibilityLabel={t('Previous chapter')} onPress={() => go(-1)} style={[styles.edge, { left: 0 }]} />}
-      {next && <Pressable accessibilityLabel={t('Next chapter')} onPress={() => go(1)} style={[styles.edge, { right: 0 }]} />}
+      <VerseIndex ref={verseIndex} chapter={data} canTurn={!!next} dock={padBottom} port={indexPort} />
       <FontLoading state={fontState} size={52} />
       <ActionBar open={selected.size > 0} label={selLabel} shortLabel={selList.length ? formatVerseRuns(bookN, chapterN, selList, 'abbr') : ''} bookmarked={bookmarkedAll} lift={player.status !== 'idle' ? player.barHeight : 0} onListen={() => { const v = selList[0] ?? 1; const last = selList[selList.length - 1]; setSelected(new Set()); player.seekVerse(bookN, chapterN, v, prefs.ttsStopAtSelection && last ? { stopAfter: last } : undefined) }} onHighlight={highlight} onBookmark={bookmark} onCopy={copy} onShare={share} onClose={() => setSelected(new Set())}
         onJot={() => setAddOutline(true)} onMinistry={hasMinistry ? openVerseMinistry : undefined} />

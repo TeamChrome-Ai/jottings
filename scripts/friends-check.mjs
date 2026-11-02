@@ -216,7 +216,7 @@ check('one reaction per badge: a second is the first', again.body?.created === f
 }
 {
   const { ctx, page } = await phone(ben, true)
-  await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+  await page.goto(base + '/settings/account', { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: 'Friends', exact: true }).click()
   await page.getByRole('switch', { name: 'My badges' }).first().waitFor({ timeout: 15000 })
   await page.waitForTimeout(500)

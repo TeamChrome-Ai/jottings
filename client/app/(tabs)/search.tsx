@@ -16,6 +16,7 @@ import { SWAP_MS } from '../../src/lib/motionTiming'
 import SubjectLinks from '../../src/components/SubjectLinks'
 import BookGroupCard from '../../src/components/BookGroupCard'
 import OwnOutlineMatches from '../../src/components/OwnOutlineMatches'
+import WordFootnotes from '../../src/components/WordFootnotes'
 import RecentSearches from '../../src/components/RecentSearches'
 import Icon from '../../src/components/Icon'
 import { dropRecent, loadRecent, pushRecent, saveRecent } from '../../src/lib/recentSearches'
@@ -30,7 +31,7 @@ const MAX_OFFLINE_HITS = 200
 const SLOW_MS = 180
 /** The order the reader last picked, kept until the app is closed; null leaves each search to the default for its query. */
 let pickedOrder: SearchOrder | null = null
-type Shown = { hits: SearchHit[]; total: number; offline: boolean; took: number; /** the words searched */ query: string; /** what was typed ("love in the gospels") */ asked: string; /** the books the words were searched in, when the query named them */ within: { label: string; words: string } | null; order: SearchOrder | null; /** the query is also this book's name: offered above the hits */ book: number | null; /** the first `exact` hits hold the word itself, the rest a longer word it begins (0: one group) */ exact: number }
+type Shown = { hits: SearchHit[]; total: number; offline: boolean; took: number; /** the words searched */ query: string; /** what was typed ("love in the gospels") */ asked: string; /** the books the words were searched in, when the query named them */ within: { label: string; words: string } | null; scope: string; order: SearchOrder | null; /** the query is also this book's name: offered above the hits */ book: number | null; /** the first `exact` hits hold the word itself, the rest a longer word it begins (0: one group) */ exact: number }
 
 /**
  * A Strong's number ("G1320", "h430") opens that word in the word sheet. A reference with a chapter or verse resolves
@@ -130,13 +131,13 @@ export default function Search() {
       const local = await searchLocal(words, where, 100, order).catch(() => null)
       const r = local ?? await get<SearchResponse>(`/search?q=${encodeURIComponent(words)}&scope=${encodeURIComponent(where)}&limit=100${order ? `&order=${order}` : ''}`)
       if (r.kind === 'ref' && r.ref) { openRef(r.ref.book, r.ref.chapter, r.ref.v1); return }
-      showRes({ hits: r.hits, total: r.total, offline: false, took: local ? Date.now() - t0 : r.took_ms, query: words, asked: query, within: w, order: r.order ?? null, book: r.book?.book ?? null, exact: r.exact ?? 0 })
+      showRes({ hits: r.hits, total: r.total, offline: false, took: local ? Date.now() - t0 : r.took_ms, query: words, asked: query, within: w, scope: where, order: r.order ?? null, book: r.book?.book ?? null, exact: r.exact ?? 0 })
     } catch (e) {
       if (!isNetworkError(e)) { dropRes(); setErr((e as Error).message); return }
       try {
         const hits = await offlineScan(words, where)
         if (!hits.length && bookOnly) { openRef(bookOnly.n, 1); return }
-        showRes({ hits, total: hits.length, offline: true, took: Date.now() - t0, query: words, asked: query, within: w, order: null, book: bookOnly?.n ?? null, exact: 0 })
+        showRes({ hits, total: hits.length, offline: true, took: Date.now() - t0, query: words, asked: query, within: w, scope: where, order: null, book: bookOnly?.n ?? null, exact: 0 })
       } catch (e2) { dropRes(); setErr((e2 as Error).message) }
     } finally { clearTimeout(slowTimer); setSlow(false); setBusy(false) }
   }
@@ -214,6 +215,7 @@ export default function Search() {
       ) : null}
       {res && !busy ? <BookGroupCard query={res.asked} /> : null}
       {res && !busy ? <SubjectLinks query={res.query} /> : null}
+      {res && !busy ? <WordFootnotes word={res.query} rows={3} scope={res.scope} onOpen={r => openRef(r.book, r.chapter, r.v1)} onAll={w => setWord({ code: '', word: w })} /> : null}
       {res && !busy ? <OwnOutlineMatches query={res.query} /> : null}
       {list}
       <View style={{ height: 24 }} />

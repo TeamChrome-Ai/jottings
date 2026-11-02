@@ -1,5 +1,5 @@
 /**
- * One headless task held open while a reading is on, so Android keeps the app's timers running with the screen off
+ * One headless task held open while a reading is on, so the app's timers keep running with the screen off
  * (lib/readAloudClock.ts says why). The opener and the timer are passed in, so this is tested without a phone.
  *
  * The task is let go a while after the reading stops, not at once: a finished chapter moves on by the reader opening
