@@ -110,10 +110,18 @@ export interface MinistryReading { author: string; work: { id: string; title: st
 
 /**
  * How a paragraph refers to the verse, best first: it quotes the verse's words; it names the verse alone; the verse is
- * inside a range it names; it names the verse among many others (a list).
+ * inside a range it names; it names the verse among many others (a list); it names the verse's chapter, or its section
+ * is on the chapter (the index's row for the whole chapter, verse 0).
  */
-export type Mention = 'quote' | 'verse' | 'range' | 'list'
-export const MENTIONS: readonly Mention[] = ['quote', 'verse', 'range', 'list']
+export type Mention = 'quote' | 'verse' | 'range' | 'list' | 'chapter'
+export const MENTIONS: readonly Mention[] = ['quote', 'verse', 'range', 'list', 'chapter']
+
+/**
+ * Where a paragraph found by its words stands to the verses asked about, nearest first: it refers to them; it or its
+ * section refers to their chapter; it or its section refers to their book; elsewhere.
+ */
+export type Near = 'verse' | 'chapter' | 'book' | 'elsewhere'
+export const NEARS: readonly Near[] = ['verse', 'chapter', 'book', 'elsewhere']
 
 export interface MinistryItem {
   work: { id: string; title: string; collection: string }
@@ -128,13 +136,17 @@ export interface MinistryItem {
   /** The reference is a row of one of the section's figures (a table, a harmony, a chart); `para` is its slot after the
    *  section's paragraphs (shared/figures.ts `rowSlot`), where the reader lands and washes it. */
   row?: true
-  mention: Mention
-  /** About 200 characters around the reference, plain text, "…" where cut. */
+  /** How the paragraph refers to the verses; absent on a paragraph found by its words that does not refer to them. */
+  mention?: Mention
+  /** On a paragraph found by its words (`q`): how near it stands to the verses. */
+  near?: Near
+  /** About 200 characters around the reference (or the words asked for), plain text, "…" where cut. */
   snippet: string
-  /** The reference inside `snippet`, [start, end) in UTF-16 units. */
+  /** The reference (or the words asked for) inside `snippet`, [start, end) in UTF-16 units. */
   hl: [number, number]
 }
 export interface MinistryGroup { author: string; name: string; short: string; source: string; total: number; page: number; pages: number; items: MinistryItem[] }
-export interface MinistryRefs { book: number; chapter: number; verses: number[]; groups: MinistryGroup[] }
+/** `q`: the words asked for, as the server read them; the items are then the paragraphs that have them, nearest first. */
+export interface MinistryRefs { book: number; chapter: number; verses: number[]; q?: string; groups: MinistryGroup[] }
 
 export type { Passage }

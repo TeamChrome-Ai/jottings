@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AUTHORS, chipLabels, formatPassage, isWholeChapter, formatPassages, pageStarts, paragraphAnchors, paragraphFor, paragraphsOf, passageStart, searchCompanion, sectionForVerse, sectionsFor, titleIsPassage, undated, versesIn, workLine, type CompanionIndex, type Passage } from '../shared/companion'
+import { AUTHORS, chipLabels, formatPassage, isWholeChapter, formatPassages, homeOf, pageStarts, paragraphAnchors, paragraphFor, paragraphHomes, paragraphsOf, passageStart, searchCompanion, sectionForVerse, sectionsFor, titleIsPassage, undated, versesIn, workLine, type CompanionIndex, type Passage } from '../shared/companion'
 import { inlineSpans } from '../client/src/lib/intro'
 
 // small libraries shaped like data/coates/index.json and data/synopsis/index.json
@@ -151,6 +151,31 @@ describe('opening a reading at the verse', () => {
     expect(paragraphFor(a, 30, 5)).toBe(0)
     expect(isWholeChapter([[18, 3, 1, 3, 0]], 18, 3)).toBe(true)
     expect(isWholeChapter([[1, 6, 1, 8, 0]], 1, 7)).toBe(false)
+  })
+  it('lends a section with no passage of its own the book its work walks through, when the work walks through only one', () => {
+    const work = (books: number[]) => ({ sections: [{ title: 'Introduction', passages: [] as Passage[] }, ...books.map((b, i) => ({ title: `${i}`, passages: [[b, 1, 1, 2, 0]] as Passage[] }))] })
+    const intro = (books: number[], kind: 'outline' | 'papers' = 'outline') => homeOf({ work: { id: 'w', title: 'W', kind }, section: { title: 'Introduction', passages: [] } }, work(books))
+    // the Synopsis on Daniel: its introduction is on Daniel
+    expect(intro([27, 27, 27])).toEqual({ book: 27 })
+    // a volume of the Collected Writings on Genesis to Kings, or an outline of the minor prophets: on no one book
+    expect(intro([1, 2, 3, 1])).toBeUndefined()
+    expect(intro([27, 27], 'papers')).toBeUndefined()
+  })
+  it('reads each paragraph against the chapter in hand: the passage’s first, then the one last named inside it', () => {
+    const paras = ['The word “created” (v. 1) is right.', 'Read chapter 18.', 'Compare Matthew 1:1 and Genesis 49:10.', '“Abraham stood yet before the Lord” (v. 22).']
+    // Darby walks Genesis 1–50: another book does not move the chapter, another chapter of Genesis does
+    expect(paragraphHomes(paras, { book: 1 }, [[1, 1, 1, 50, 0]]).map(h => h?.chapter)).toEqual([1, 1, 18, 49])
+    // in a reading on 18–19, Genesis 49 is a glance away
+    expect(paragraphHomes(paras, { book: 1 }, [[1, 18, 1, 19, 0]]).map(h => h?.chapter)).toEqual([18, 18, 18, 18])
+    // a section on one chapter keeps it; a book's introduction, with no passage of its own, or no home, has none in hand
+    expect(paragraphHomes(paras, { book: 1, chapter: 6 }, [[1, 6, 1, 6, 0]]).map(h => h?.chapter)).toEqual([6, 6, 6, 6])
+    expect(paragraphHomes(paras, { book: 1 }, []).map(h => h?.chapter)).toEqual([undefined, undefined, undefined, undefined])
+    expect(paragraphHomes(paras, undefined, [[1, 1, 1, 50, 0]])).toEqual([undefined, undefined, undefined, undefined])
+    // the reader links them so
+    const link = (i: number, h: ReturnType<typeof paragraphHomes>) => inlineSpans(paras[i], false, h[i]).filter(s => s.ref).map(s => s.ref)
+    const walk = paragraphHomes(paras, { book: 1 }, [[1, 1, 1, 50, 0]]), reading = paragraphHomes(paras, { book: 1 }, [[1, 18, 1, 19, 0]])
+    expect(link(0, walk)).toEqual([{ book: 1, chapter: 1, v1: 1 }])
+    expect(link(3, reading)).toEqual([{ book: 1, chapter: 18, v1: 22 }])
   })
 })
 

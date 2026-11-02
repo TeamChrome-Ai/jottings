@@ -75,10 +75,33 @@ const placeOf = (index: CompanionIndex, w: WorkMeta, i: number): Place => ({ aut
 export function homeOf(place: Pick<Place, 'work' | 'section'>, work?: Pick<WorkMeta, 'sections'>): RefHome | undefined {
   if (place.work.kind === 'addresses' || place.work.kind === 'letters') return undefined
   const ps = place.section.passages
-  // a book's introduction takes the book of the walk it opens; a volume of papers has no such book
-  const p = ps[0] ?? (place.work.kind === 'outline' ? work?.sections.find(s => s.passages.length)?.passages[0] : undefined)
+  // a book's introduction takes the book of the walk it opens, when every walk of the work is through that book; a
+  // volume of papers, or of walks through several books (the Collected Writings' expository volumes, Coates's minor
+  // prophets), has no such book
+  const walks = !ps.length && place.work.kind === 'outline' ? work?.sections.filter(s => s.passages.length).map(s => s.passages[0]) ?? [] : []
+  const p = ps[0] ?? (walks.length && walks.every(q => q[0] === walks[0][0]) ? walks[0] : undefined)
   if (!p) return undefined
   return ps.length === 1 && p[1] === p[3] ? { book: p[0], chapter: p[1] } : { book: p[0] }
+}
+
+/**
+ * The home each paragraph of a section reads its shorthand against: homeOf's, and in a section on several chapters of
+ * its book, with the chapter in hand and the chapters it walks through (RefHome `walk`). The chapter in hand is the first
+ * of the section's passage, then the one of them last named, in the paragraph or one before, as a reader follows the
+ * writer through the book: in Darby's Hints on the book of Genesis, “The word ‘created’ (v. 1)” is Genesis 1:1. A
+ * chapter outside the section's passages is a glance away ("compare Matthew 13" in a reading on Matthew 24–25) and does
+ * not move it. A book's introduction, with no passage of its own, has no chapter in hand.
+ */
+export function paragraphHomes(paragraphs: readonly string[], home: RefHome | undefined, passages: readonly Passage[]): (RefHome | undefined)[] {
+  if (!home || home.chapter || !passages.length) return paragraphs.map(() => home)
+  const walk = (c: number) => passages.some(p => p[0] === home.book && c >= p[1] && c <= p[3])
+  let chapter = passages.find(p => p[0] === home.book)?.[1]
+  return paragraphs.map(par => {
+    const here: RefHome = { book: home.book, chapter, walk }
+    const named = scanPrefaceRefs(par.replace(/<[^>]+>/g, ''), here).filter(s => s.ref.book === home.book && walk(s.ref.chapter)).pop()
+    if (named) chapter = named.ref.chapter
+    return here
+  })
 }
 
 /** Every section of one author treating `book` `chapter`: the walks through a book first, in reading order, then the

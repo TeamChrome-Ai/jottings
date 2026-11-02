@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode, type Ref } from 'react'
 import { Animated, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type LayoutRectangle, type PressableProps, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBottomInset } from '../hooks/useBottomInset'
@@ -337,6 +337,9 @@ export function Segmented<V extends string>({ value, options, onChange }: { valu
   const thumb = useRef({ x: new Animated.Value(0), y: new Animated.Value(0), w: new Animated.Value(0), h: new Animated.Value(0) }).current
   const lit = useRef(new Map<string, Lit>()).current
   const [placed, setPlaced] = useState(false)
+  // the labels' inks are worked out from the boxes: options that change while shown (Ministry's authors, four for a
+  // verse and six for its words) lay out anew, and the inks must follow, or a label keeps the ink of where it stood
+  const [, relaid] = useReducer((n: number) => n + 1, 0)
   // a value chosen outside the options (an added font listed elsewhere) leaves no thumb behind
   const shown = placed && options.some(o => o.value === value)
   const move = (animate: boolean) => {
@@ -370,14 +373,20 @@ export function Segmented<V extends string>({ value, options, onChange }: { valu
     return e
   }
   return (
-    <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', flexWrap: 'wrap', alignSelf: 'flex-start', maxWidth: '100%', gap: 2, padding: 4, borderRadius: 22, backgroundColor: fill }}>
+    // a new set of options is laid out afresh: the web reports a layout only when a box changes size, not when it moves
+    <View key={options.map(o => o.value).join('|')} accessibilityRole="radiogroup" style={{ flexDirection: 'row', flexWrap: 'wrap', alignSelf: 'flex-start', maxWidth: '100%', gap: 2, padding: 4, borderRadius: 22, backgroundColor: fill }}>
       <Animated.View pointerEvents="none" style={{ position: 'absolute', left: thumb.x, top: thumb.y, width: thumb.w, height: thumb.h, borderRadius: 18, backgroundColor: c.accent, opacity: shown ? 1 : 0 }} />
       {options.map((o, i) => {
         const on = o.value === value
         const l = litFor(i)
         return (
           <Tap key={o.value} onPress={() => onChange(o.value)} accessibilityRole="radio" accessibilityState={{ selected: on, checked: on }} aria-checked={on} scaleTo={0.93} crisp
-            onLayout={e => { boxes.set(o.value, e.nativeEvent.layout); if (on) move(false) }}
+            onLayout={e => {
+              const was = boxes.get(o.value), b = e.nativeEvent.layout
+              boxes.set(o.value, b)
+              if (on) move(false)
+              if (placed && (!was || was.x !== b.x || was.y !== b.y || was.width !== b.width || was.height !== b.height)) relaid()
+            }}
             style={{ paddingHorizontal: 14, minHeight: 36, justifyContent: 'center', borderRadius: 18, backgroundColor: on && !placed ? c.accent : 'transparent' }}>
             {l ? (
               <View>

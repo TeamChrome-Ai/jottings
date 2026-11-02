@@ -1,6 +1,7 @@
 /**
- * Builds data/ministry.db: the ministry library (every enabled author's works, sections and paragraphs) and its verse
- * index (shared/ministryIndex.ts), for rs/src/ministry.rs. Node 22.5+ (node:sqlite), no dependencies:
+ * Builds data/ministry.db: the ministry library (every enabled author's works, sections and paragraphs), its verse
+ * index (shared/ministryIndex.ts) and the words of its paragraphs (paras_fts; a paragraph printed twice once, footnotes
+ * and figure rows not at all), for rs/src/ministry.rs. Node 22.5+ (node:sqlite), no dependencies:
  *
  *   node --import ./tools/ts-resolve.mjs tools/ministry_index.ts [data] [out]     (npm run ministry)
  *
@@ -19,7 +20,7 @@ import { existsSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { homeOf, paragraphsOf, type Passage, type WorkKind } from '../shared/companion.ts'
 import { MINISTRY_AUTHORS, type MinistryAuthor, type MinistrySection } from '../shared/ministry.ts'
-import { bibleWords, onPassage, paragraphHits, plainOf, rankOf, rowHits, sectionHits, verseOf, type BibleWords } from '../shared/ministryIndex.ts'
+import { bibleWords, onPassage, paragraphHits, plainOf, rankOf, rowHits, sectionHits, type BibleWords } from '../shared/ministryIndex.ts'
 import { figureRows, rowSlot } from '../shared/figures.ts'
 import type { Mention } from '../shared/ministry.ts'
 
@@ -65,6 +66,15 @@ function build() {
   const t0 = Date.now()
   const darby = readJson<{ books: { n: number; chapters: { c: number; verses: { v: number; t: string }[] }[] }[] }>(join(data, 'darby.json'))
   const bible: BibleWords = bibleWords(darby.books)
+  /** The verses index rows are on: their own, and with a chapter row (verse 0) every verse of its chapter as well. */
+  const covered = (ids: Iterable<number>) => {
+    const own = new Set<number>(), all = new Set<number>()
+    for (const id of ids) {
+      if (id % 1000) { own.add(id); all.add(id); continue }
+      for (let v = 1; v <= (bible.counts.get(id / 1000) ?? 0); v++) all.add(id + v)
+    }
+    return { own: own.size, all: all.size }
+  }
   for (const suffix of ['', '-wal', '-shm', '.tmp']) rmSync(out + suffix, { force: true })
   const tmp = out + '.tmp'
   const db = new DatabaseSync(tmp)
@@ -77,6 +87,7 @@ function build() {
     work: db.prepare('INSERT INTO works (author, id, collection, ord, title, kind, count, contents) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
     section: db.prepare('INSERT INTO sections (author, work, n, meta, notes, figures) VALUES (?, ?, ?, ?, ?, ?)'),
     para: db.prepare('INSERT INTO paras (id, author, work, n, i, text) VALUES (?, ?, ?, ?, ?, ?)'),
+    words: db.prepare('INSERT INTO paras_fts (rowid, text) VALUES (?, ?)'),
     ref: db.prepare('INSERT OR IGNORE INTO refs (verse, a, rank, para, note, start, end) VALUES (?, ?, ?, ?, ?, ?, ?)'),
     figrow: db.prepare('INSERT INTO figrows (id, author, work, n, slot, text) VALUES (?, ?, ?, ?, ?, ?)'),
     chapter: db.prepare('INSERT INTO chapters (book, chapter, verses) VALUES (?, ?, ?)'),
@@ -88,7 +99,7 @@ function build() {
     ins.author.run(author.id, a, author.name, author.short, author.born, author.died, author.enabled ? 1 : 0, author.licence, author.source)
     if (!author.enabled) return
     const cols = libraryOf(author)
-    const verses = new Set<number>(), byMention: Record<Mention, number> = { quote: 0, verse: 0, range: 0, list: 0 }
+    const verses = new Set<number>(), byMention: Record<Mention, number> = { quote: 0, verse: 0, range: 0, list: 0, chapter: 0 }
     let works = 0, sections = 0, paras = 0, words = 0, rows = 0, reprinted = 0, figrows = 0, rowRefs = 0
     const seen = new Set<string>()
     cols.forEach((col, ci) => {
@@ -106,7 +117,7 @@ function build() {
           ins.section.run(author.id, w.id, n, JSON.stringify(marked[si]), s.notes?.length ? JSON.stringify(s.notes) : null, s.figures?.length ? JSON.stringify(s.figures) : null)
           const home = homeOf({ work, section: s }, w)
           const first = paraId + 1
-          const hits = sectionHits(s.text, bible, home, s.passages as Passage[])
+          const hits = sectionHits(s.text, bible, home, s.passages as Passage[], w.kind)
           const texts = paragraphsOf(s.text)
           // the paragraphs as written, which paragraphsOf reads the same way (split at blank lines, empty ones dropped)
           const raw = s.text.split(/\n{2,}/).filter(p => p.trim())
@@ -121,6 +132,7 @@ function build() {
             // a paragraph printed twice (a paper reprinted in Miscellaneous Writings 4) is listed once, where it came first
             const key = plain.replace(/\W+/g, ' ').trim().toLowerCase()
             if (key.length >= 80) { if (seen.has(key)) { reprinted++; return } seen.add(key) }
+            ins.words.run(paraId, plain)
             for (const h of hits[i].hits) put(paraId, 0, h, hits[i].refs)
           })
           paras += texts.length
@@ -143,13 +155,14 @@ function build() {
         })
       })
     })
-    const perBook = new Map<number, number>()
-    for (const v of verses) { const b = verseOf(v).book; perBook.set(b, (perBook.get(b) ?? 0) + 1) }
+    const c = covered(verses)
     report.push(`${author.short}: ${cols.length} collections, ${works} works, ${sections} sections, ${paras} paragraphs, ${words.toLocaleString('en')} words; ` +
-      `${reprinted} paragraphs printed twice indexed once; ${rows.toLocaleString('en')} index rows (quote ${byMention.quote}, verse ${byMention.verse}, range ${byMention.range}, list ${byMention.list}; ${rowRefs.toLocaleString('en')} of them from ${figrows} rows of figures); ${verses.size.toLocaleString('en')} verses with at least one`)
+      `${reprinted} paragraphs printed twice indexed once; ${rows.toLocaleString('en')} index rows (quote ${byMention.quote}, verse ${byMention.verse}, range ${byMention.range}, list ${byMention.list}, chapter ${byMention.chapter}; ${rowRefs.toLocaleString('en')} of them from ${figrows} rows of figures); ${c.own.toLocaleString('en')} verses with at least one, ${c.all.toLocaleString('en')} with the chapter rows`)
   })
   db.exec('COMMIT')
-  const total = new Set(db.prepare('SELECT DISTINCT verse FROM refs').all().map(r => r.verse as number)).size
+  // the word table, built in many small segments, merged into one for the server's reads
+  db.exec(`INSERT INTO paras_fts (paras_fts) VALUES ('optimize')`)
+  const total = covered(db.prepare('SELECT DISTINCT verse FROM refs').all().map(r => r.verse as number))
   db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run('built', new Date().toISOString())
   db.exec('ANALYZE; VACUUM;')
   db.close()
@@ -158,7 +171,8 @@ function build() {
   renameSync(tmp, out)
   const verses = [...bible.counts.values()].reduce((x, y) => x + y, 0)
   for (const line of report) console.log(line)
-  console.log(`all authors: ${total.toLocaleString('en')} of ${verses.toLocaleString('en')} verses (${(100 * total / verses).toFixed(1)}%)`)
+  const pc = (n: number) => `${n.toLocaleString('en')} (${(100 * n / verses).toFixed(1)}%)`
+  console.log(`all authors: ${pc(total.own)} of ${verses.toLocaleString('en')} verses, ${pc(total.all)} with the chapter rows`)
   console.log(`${out}: ${(statSync(out).size / 1e6).toFixed(1)} MB in ${((Date.now() - t0) / 1000).toFixed(0)} s`)
 }
 

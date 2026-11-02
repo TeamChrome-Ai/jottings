@@ -23,5 +23,10 @@ CREATE TABLE figrows (id INTEGER PRIMARY KEY, author TEXT NOT NULL, work TEXT NO
 -- is a figure row's id in figrows) and where the reference stands in its plain text (UTF-16 units)
 CREATE TABLE refs (verse INTEGER NOT NULL, a INTEGER NOT NULL, rank INTEGER NOT NULL, para INTEGER NOT NULL, note INTEGER NOT NULL,
   start INTEGER NOT NULL, end INTEGER NOT NULL, PRIMARY KEY (verse, a, rank, para, note)) WITHOUT ROWID;
+-- a verse of 0 (book * 1e6 + chapter * 1e3) is the whole chapter: a paragraph naming the chapter alone ("Gen. 6"), or
+-- the first paragraph of a section on it (shared/ministryIndex.ts); it counts for every verse of the chapter
+-- the words of every indexed paragraph (rowid = paras.id, the text as plainOf reads it), for the words of a verse asked
+-- for in the ministry (GET /ministry/refs/...?q=); contentless: the text is in paras
+CREATE VIRTUAL TABLE paras_fts USING fts5(text, content='', tokenize='unicode61 remove_diacritics 2');
 -- verses per chapter (Darby's text), to tell a verse the Bible does not have from one nobody wrote on
 CREATE TABLE chapters (book INTEGER NOT NULL, chapter INTEGER NOT NULL, verses INTEGER NOT NULL, PRIMARY KEY (book, chapter)) WITHOUT ROWID;

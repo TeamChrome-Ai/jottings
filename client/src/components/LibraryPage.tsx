@@ -45,6 +45,8 @@ interface Props {
   padBottom: number
   go: (dir: 1 | -1) => void
   onRef: (r: Ref) => void
+  /** The heading's passage, read in the Bible. */
+  onPassage: (r: Ref) => void
   scrollRef?: RefObject<ScrollView | null>
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void
   onViewport?: (e: LayoutChangeEvent) => void
@@ -62,7 +64,7 @@ interface Props {
 /** Native pages scroll through Animated (a harmony's header rides the offset); the web's header is CSS sticky. */
 const Scroller = (Platform.OS === 'web' ? ScrollView : Animated.ScrollView) as typeof ScrollView
 
-export default memo(function LibraryPage({ place, line, section, home, unavailable, size, lineHeight, maxWidth, alignSelf, wash, prevLabel, nextLabel, source, layout, padBottom, go, onRef, scrollRef, onScroll, onViewport, offscreen = false, onWord }: Props) {
+export default memo(function LibraryPage({ place, line, section, home, unavailable, size, lineHeight, maxWidth, alignSelf, wash, prevLabel, nextLabel, source, layout, padBottom, go, onRef, onPassage, scrollRef, onScroll, onViewport, offscreen = false, onWord }: Props) {
   // a harmony's header holds at the top of the page: on native it follows the offset on the UI thread, so this page
   // reports every frame while it has one
   const sticky = Platform.OS !== 'web' && !!section?.figures?.some(f => f.kind === 'parallels')
@@ -78,7 +80,7 @@ export default memo(function LibraryPage({ place, line, section, home, unavailab
       <PageScrollCtx.Provider value={sticky ? scroll : null}>
       <View ref={scroll.content} style={[styles.column, { maxWidth, alignSelf }]}>
         <InkPage offscreen={offscreen}>
-          {place ? <View ref={offscreen ? undefined : tourRef('library-heading')}><CompanionHeading place={place} line={line} size={Math.round(size * 1.25)} onPassage={onRef} /></View> : null}
+          {place ? <View ref={offscreen ? undefined : tourRef('library-heading')}><CompanionHeading place={place} line={line} size={Math.round(size * 1.25)} onPassage={onPassage} /></View> : null}
           <View onLayout={e => layout.onText(e.nativeEvent.layout.y)} style={{ minHeight: 120 }}>
             {section === undefined ? <Spinner /> : section === null ? <ErrorText>{unavailable}</ErrorText>
               : section.figures?.length ? <WithFigures section={section} home={home} onRef={onRef} layout={layout} wash={wash} size={size} line={lineHeight} onWord={onWord} />

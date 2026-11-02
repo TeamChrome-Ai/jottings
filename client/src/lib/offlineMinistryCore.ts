@@ -124,18 +124,20 @@ export function statusDetail(status: OfflineStatus, latest: PackAuthor | null | 
 
 // ---------- Ministry on a verse, from the stored index ----------
 
-/** A row of the stored index: verse (in its chapter), rank, work (index into the author's works, library order), n,
- *  paragraph (a figure row's slot when note is -1), note (0 the text, k the k-th footnote, -1 a figure row), start,
- *  end, and for a figure row its text. Rows of a chapter come sorted by rank, then reading order. */
+/** A row of the stored index: verse (in its chapter, 0 the whole chapter), rank, work (index into the author's works,
+ *  library order), n, paragraph (a figure row's slot when note is -1), note (0 the text, k the k-th footnote, -1 a
+ *  figure row), start, end, and for a figure row its text. Rows of a chapter come sorted by rank, then reading order. */
 export type RefsRow = [verse: number, rank: number, work: number, n: number, para: number, note: number, start: number, end: number, text?: string]
 export type RefsChapters = Record<string, RefsRow[]>
 
 export const PER_PAGE = 20
 
-/** The verses of a chapter some row refers to, from every stored author. */
-export function versesOfRows(rowsByAuthor: readonly (RefsRow[] | null)[]): Set<number> {
+/** The verses of a chapter of `count` verses some row refers to, from every stored author. A row for the whole chapter
+ *  (verse 0) counts for every verse of it, as the server's /ministry/chapter answers; 0 itself is no verse. */
+export function versesOfRows(rowsByAuthor: readonly (RefsRow[] | null)[], count: number): Set<number> {
   const out = new Set<number>()
   for (const rows of rowsByAuthor) for (const r of rows ?? []) out.add(r[0])
+  if (out.delete(0)) for (let v = 1; v <= count; v++) out.add(v)
   return out
 }
 
@@ -159,7 +161,9 @@ export const notePlain = (note: string) => plainOf({ quote: false, lines: note.s
 /**
  * One author's page for the verses, as rs/src/ministry.rs `group`: a paragraph named for several selected verses is
  * listed once, at its best; best rank first, then reading order; PER_PAGE items a page, `page` clamped to the last.
- * `section` reads a stored section as stored (null when the file is not there: the item keeps an empty snippet).
+ * A row for the whole chapter (verse 0) answers for every verse, a 'chapter' mention; it ranks after every verse's row,
+ * so a paragraph that also names a selected verse is listed at that verse. `section` reads a stored section as stored
+ * (null when the file is not there: the item keeps an empty snippet).
  * `cleanse`: the rows the cleanse leaves (cleanseRows), the Synopsis's paragraphs renumbered past its sub-headings and
  * a row into one dropped, the callers out of a noteless work's snippet, a letter titled by its date.
  */
@@ -170,7 +174,7 @@ export async function groupFromRows(author: LibraryAuthor, rows: readonly RefsRo
   const seen = new Set<string>()
   const groups: RefsRow[] = []
   for (const r of cleanse ? cleanseRows(rows, author) : rows) {
-    if (!want.has(r[0])) continue
+    if (r[0] !== 0 && !want.has(r[0])) continue
     const k = `${r[2]}/${r[3]}/${r[4]}/${r[5]}`
     if (seen.has(k)) continue
     seen.add(k)
@@ -196,7 +200,7 @@ export async function groupFromRows(author: LibraryAuthor, rows: readonly RefsRo
   const p = Math.min(Math.max(1, page), pages)
   const items: MinistryItem[] = []
   for (const k of kept.slice((p - 1) * PER_PAGE, p * PER_PAGE)) {
-    const [, rank, , n, rawPara, note, start0, end0, rowText] = k.r
+    const [verse, rank, , n, rawPara, note, start0, end0, rowText] = k.r
     const w = k.w
     const s = cleanse ? k.s : await section(w.id, n)
     let plain = ''
@@ -210,7 +214,7 @@ export async function groupFromRows(author: LibraryAuthor, rows: readonly RefsRo
     // a section whose file is missing keeps an empty snippet, the reference nowhere in it
     const { snippet, hl } = plain ? snippetOf(plain, Math.min(start, plain.length), Math.min(end, plain.length)) : { snippet: '', hl: [0, 0] as [number, number] }
     const title = s ? s.title : ''
-    const item: MinistryItem = { work: { id: w.id, title: w.title, collection: w.collection }, n, section: title, para: k.para, mention: mentionOfRank(rank), snippet, hl }
+    const item: MinistryItem = { work: { id: w.id, title: w.title, collection: w.collection }, n, section: title, para: k.para, mention: verse === 0 ? 'chapter' : mentionOfRank(rank), snippet, hl }
     if (note > 0) item.note = note
     if (note < 0) item.row = true
     items.push(item)

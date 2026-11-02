@@ -659,7 +659,7 @@ function ReadScreenPage() {
     },
   }), []))
   // stable, so a state change on this screen does not re-render every (memoised) verse of the chapter
-  const onWord = useCallback((code: string, word: string) => { mark(); setWordTarget({ code, word }) }, [mark])
+  const onWord = useCallback((w: WordTarget) => { mark(); setWordTarget(w) }, [mark])
   const toggleNote = useCallback((id: number) => setOpenNotes(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n }), [])
   // one identity for every page, so the page a turn carries in keeps its memoised paragraphs
   const navigateRef = useRef(onNavigate)
@@ -695,6 +695,11 @@ function ReadScreenPage() {
     // from the More sheet: that sheet leaves before this one rises, as one sheet at a time
     if (!fromMore) { setMinistry({ open: true, scope }); return }
     setMore(false)
+    setTimeout(() => setMinistry({ open: true, scope }), reduce ? 0 : scaleMs(EXIT_MS))
+  }
+  /** The word sheet's way on: it leaves before Ministry on the word's verse rises, the word picked there. */
+  const wordMinistry = (scope: MinistryScope) => {
+    setWordTarget(null)
     setTimeout(() => setMinistry({ open: true, scope }), reduce ? 0 : scaleMs(EXIT_MS))
   }
   // the verses of this chapter some author wrote on: asked quietly when a selection first opens here, then kept, so the
@@ -867,7 +872,7 @@ function ReadScreenPage() {
       <ActionBar open={selected.size > 0} label={selLabel} shortLabel={selList.length ? formatVerseRuns(bookN, chapterN, selList, 'abbr') : ''} bookmarked={bookmarkedAll} lift={player.status !== 'idle' ? player.barHeight : 0} onListen={() => { const v = selList[0] ?? 1; const last = selList[selList.length - 1]; setSelected(new Set()); player.seekVerse(bookN, chapterN, v, prefs.ttsStopAtSelection && last ? { stopAfter: last } : undefined) }} onHighlight={highlight} onBookmark={bookmark} onCopy={copy} onShare={share} onClose={() => setSelected(new Set())}
         onJot={() => setAddOutline(true)} onMinistry={hasMinistry ? openVerseMinistry : undefined} />
       <ChapterPicker open={picker} book={bookN} chapter={chapterN} readSet={ticks} marks={marks} onMark={t => { void toggleMark(t) }} onClose={() => setPicker(false)} onPick={(b, c, v) => { setPicker(false); if (v) onNavigate({ book: b, chapter: c, v1: v }); else navigate({ book: b, chapter: c }) }} />
-      <WordSheet target={wordTarget} onClose={() => setWordTarget(null)} />
+      <WordSheet target={wordTarget} onClose={() => setWordTarget(null)} onMinistry={wordMinistry} />
       <MinistrySheet open={ministry.open} scope={ministry.scope} onClose={closeMinistry} />
       <PlayerBar flatTop={selected.size > 0} />
       <Sheet open={themes} onClose={() => setThemes(false)} title={t('Theme')}>

@@ -4,13 +4,15 @@
  * under Settings → Offline). A downloaded author's pack carries the verse index, so with every enabled author on the
  * phone a selection is answered from it without asking (offlineMinistryCore.ts mirrors the server's grouping); with
  * some of them, the server is asked first and the phone answers for its authors when the server cannot be reached.
+ * The words of a verse (`q`) are found only by the server, in its full text: the phone's index holds references.
  * Failures resolve to null and are asked again next time.
  */
 import { enabledAuthors, type MinistryRefs } from '@shared/ministry'
+import { VERSE_COUNTS } from '@shared/verseCounts'
 import { get } from './api'
-import { refsFromStored, versesOfRows, type RefsRow } from './offlineMinistryCore'
+import { cleanseRows, refsFromStored, versesOfRows, type RefsRow } from './offlineMinistryCore'
 import { offlineSupported, readRefs, readSectionRaw, storedAuthor } from './offlineMinistry'
-import { refsPath } from './ministryShared'
+import { refsPath, type RefsAsk } from './ministryShared'
 import { N_ } from '@shared/i18n'
 import { authorShown, onEditionChange, peekCleanse } from './editionCore'
 
@@ -47,7 +49,13 @@ export function ministryVerses(book: number, chapter: number): Promise<ReadonlyS
   if (!p) {
     p = (async () => {
       const { have, all } = await storedRows(book, chapter)
-      const fromPhone = () => { const set = versesOfRows(have.map(h => h.rows)); chapters.set(k, set); return set as ReadonlySet<number> }
+      // counted as the server counts them: under the cleanse, no row into a hidden work or a noteless work's footnote, so
+      // a chapter's row from one does not offer Ministry on every verse of it
+      const fromPhone = () => {
+        const set = versesOfRows(have.map(h => peekCleanse() ? cleanseRows(h.rows ?? [], h.author) : h.rows), VERSE_COUNTS[book - 1]?.[chapter - 1] ?? 0)
+        chapters.set(k, set)
+        return set as ReadonlySet<number>
+      }
       if (all) return fromPhone()
       try {
         const r = await get<{ verses: number[] }>(`/ministry/chapter/${book}/${chapter}`)
@@ -61,25 +69,28 @@ export function ministryVerses(book: number, chapter: number): Promise<ReadonlyS
 
 /** In flight by path: the reader asks for a selection's list quietly before the sheet opens, and the sheet shares it. */
 const refsInFlight = new Map<string, Promise<MinistryRefs | null>>()
-export function loadMinistryRefs(book: number, chapter: number, verses: readonly number[], author?: string, page = 1): Promise<MinistryRefs | null> {
-  const path = refsPath(book, chapter, verses, author, page)
+export function loadMinistryRefs(book: number, chapter: number, verses: readonly number[], ask: RefsAsk = {}): Promise<MinistryRefs | null> {
+  const path = refsPath(book, chapter, verses, ask)
   let p = refsInFlight.get(path)
   if (!p) {
-    p = fetchMinistryRefs(book, chapter, verses, author, page).finally(() => refsInFlight.delete(path))
+    p = fetchMinistryRefs(book, chapter, verses, ask).finally(() => refsInFlight.delete(path))
     refsInFlight.set(path, p)
   }
   return p
 }
-async function fetchMinistryRefs(book: number, chapter: number, verses: readonly number[], author?: string, page = 1): Promise<MinistryRefs | null> {
+async function fetchMinistryRefs(book: number, chapter: number, verses: readonly number[], ask: RefsAsk): Promise<MinistryRefs | null> {
+  const { author, page = 1, q } = ask
   if (author && !authorShown(author)) return null
-  const path = refsPath(book, chapter, verses, author, page)
+  const path = refsPath(book, chapter, verses, ask)
   const hit = lists.get(path)
   if (hit) return hit
-  const { have, all } = await storedRows(book, chapter, author)
+  const { have, all } = q ? { have: [], all: false } : await storedRows(book, chapter, author)
   const fromPhone = async () => { const r = await refsFromStored(book, chapter, verses, have, readSectionRaw, author, page, peekCleanse()); lists.set(path, r); return r }
   if (all) return fromPhone()
   try {
     const r = await get<MinistryRefs>(path)
+    // a server from before words were looked for answers them with the verse's own list, which is no answer to them
+    if (q && r.q === undefined) return null
     // an answer from before the server switched edition can still name an author it now leaves out
     const v = { ...r, groups: (r.groups ?? []).filter(g => authorShown(g.author)) }
     lists.set(path, v)

@@ -140,11 +140,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // a reading keeps the app's timers running with the screen off (lib/readAloudClock.ts), and its log (lib/readAloudLog.ts)
   useEffect(() => {
     const reading = state.status === 'loading' || state.status === 'playing' || state.status === 'paused'
-    keepClock(reading)
+    keepClock(reading, state.source === 'device' ? formatRef({ book: state.book, chapter: state.chapter }) : undefined)
     if (state.status !== status.current) note('status', state.status)
     status.current = state.status
     watchReading(reading, describe)
-  }, [state.status])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.status, state.source, state.book, state.chapter])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const alive = (token: number) => { if (run.current !== token) throw new Error(STOPPED) }
   const wait = (ms: number, token: number) => new Promise<void>(res => setTimeout(res, ms)).then(() => alive(token))

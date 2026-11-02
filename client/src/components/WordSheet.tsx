@@ -21,6 +21,7 @@ import Disclosure from './Disclosure'
 import { refParams } from './FootnoteText'
 import { FadeSwap, Stagger, STAGGER_CAP, useFreshList, useReduceMotion } from './motion/nav'
 import Pager, { CountChip } from './Pager'
+import { WordInMinistry, type MinistryScope } from './MinistrySheet'
 import WordFootnotes from './WordFootnotes'
 import { Button, Card, Chip, Enter, ErrorText, H2, Row, Segmented, Sheet, SPACE, Spinner, T, Tap, TYPE, useSheetWait } from './ui'
 import { tourRef } from '../store/tour'
@@ -41,14 +42,17 @@ export async function fetchWordTags(book: number, chapter: number): Promise<Word
   return m
 }
 
+/** Where a word tapped in the Bible reader stands: its verse, and its place among the verse's words (bible.ts `tokenize`, `wi`). */
+export interface WordAt { book: number; chapter: number; verse: number; wi: number }
+
 /**
  * What the sheet opens on: a tapped word and its Strong's number (`code` "" when it carries none), or a number alone
  * (`word` "": a chip in a Dictionary article, `label` its Greek or Hebrew).
  */
-export interface WordTarget { code: string; word: string; label?: string; /** Darby's own term the word matched (shared/glossary.ts): shown first */ term?: string }
+export interface WordTarget { code: string; word: string; label?: string; /** Darby's own term the word matched (shared/glossary.ts): shown first */ term?: string; /** where it stands: a tap in the Bible reader only */ at?: WordAt }
 
 /** A place inside the sheet: where it opened, a number's word study, an article. `label` names it on the way back. */
-type Place = { kind: 'tap'; code: string; word: string; label: string; term?: string } | { kind: 'word'; code: string; label: string } | { kind: 'subject'; id: string; label: string }
+type Place = { kind: 'tap'; code: string; word: string; label: string; term?: string; at?: WordAt } | { kind: 'word'; code: string; label: string } | { kind: 'subject'; id: string; label: string }
 interface Nav {
   push: (p: Place) => void
   /** leave the sheet for a verse */
@@ -71,9 +75,10 @@ const SUBJECT_HINT = N_('What it is: a person, place, thing or teaching')
  * word opens on the word, the subject one tap away on the segmented pair at the top; any other word has the subject
  * alone (`sheetParts`). The
  * Greek and Hebrew in an article open their word study, and a word study lists the articles that discuss it: each
- * opens in place, with Back to return, one sheet throughout.
+ * opens in place, with Back to return, one sheet throughout. At a word tapped in the Bible, where the ministry uses it
+ * comes last (`WordInMinistry`), with the way on to Ministry on the verse (`onMinistry`).
  */
-export default function WordSheet({ target, onClose }: { target: WordTarget | null; onClose: () => void }) {
+export default function WordSheet({ target, onClose, onMinistry }: { target: WordTarget | null; onClose: () => void; /** the host's Ministry sheet, opened on the word's verse with the word picked */ onMinistry?: (scope: MinistryScope) => void }) {
   const router = useRouter()
   // the sheet keeps showing what it showed while it slides away
   const last = useRef<WordTarget>({ code: '', word: '' })
@@ -91,7 +96,7 @@ export default function WordSheet({ target, onClose }: { target: WordTarget | nu
   if (target && target !== opening) { setOpening(target); setTrail([]); setDir(0); opened.current = new Set(); setPart(sheetParts(target.code, target.word)[0] ?? 'word') }
   const scroll = useRef<ScrollView>(null)
   const reduce = useReduceMotion()
-  const root: Place = { kind: 'tap', code: shown.code, word: shown.word, label: shown.word || shown.label || shown.code, term: shown.term }
+  const root: Place = { kind: 'tap', code: shown.code, word: shown.word, label: shown.word || shown.label || shown.code, term: shown.term, at: shown.at }
   const place = trail[trail.length - 1] ?? root
   const depth = trail.length
   const back = depth ? () => { setDir(-1); setTrail(t => t.slice(0, -1)) } : undefined
@@ -133,6 +138,7 @@ export default function WordSheet({ target, onClose }: { target: WordTarget | nu
             : place.kind === 'word' ? <WordPart code={place.code} nav={nav} />
             : <SubjectPart id={place.id} nav={nav} />}
           {place.kind === 'tap' && place.word ? <WordFootnotes word={place.word} rows={5} onOpen={nav.read} /> : null}
+          {place.kind === 'tap' && place.word && place.at ? <WordInMinistry word={place.word} at={place.at} onClose={onClose} onMore={onMinistry} /> : null}
         </ScrollView>
       </FadeSwap>
       </View>

@@ -8,6 +8,10 @@
  "(you)": "(u)",
  "[omitted]": "[weggelaten]",
  "{A} opens to read, or Edit to change; this sample goes after.": "{A} opent om te lezen, of Bewerken om te wijzigen; dit voorbeeld verdwijnt daarna.",
+ "{author} uses it in {n} paragraph.\u0000{author} uses it in {n} paragraphs.": {
+  "one": "{author} gebruikt het in {n} alinea.",
+  "other": "{author} gebruikt het in {n} alinea’s."
+ },
  "{authors}, searchable by passage or title.": "{authors}, doorzoekbaar op schriftgedeelte of titel.",
  "{book} at {time}": "{book} om {time}",
  "{book} chapter {chapter}": "{book} hoofdstuk {chapter}",
@@ -244,6 +248,10 @@
  "{n} or more papers\u0000{n} or more papers": {
   "one": "{n} of meer verhandelingen",
   "other": "{n} of meer verhandelingen"
+ },
+ "{n} other author uses it too.\u0000{n} other authors use it too.": {
+  "one": "{n} andere auteur gebruikt het ook.",
+  "other": "{n} andere auteurs gebruiken het ook."
  },
  "{n} page\u0000About {n} pages": {
   "one": "{n} pagina",
@@ -779,6 +787,7 @@
  "Edit event": "Leesactie bewerken",
  "Edit group": "Groep bewerken",
  "Eight more colours when you tap a verse": "Acht extra kleuren wanneer u op een vers tikt",
+ "Elsewhere": "Elders",
  "Email": "E-mail",
  "Email (optional)": "E-mail (optioneel)",
  "Email, if you would like a reply (optional)": "E-mail, als u een antwoord wilt (optioneel)",
@@ -813,6 +822,7 @@
  "Feedback": "Feedback",
  "Fig": "Vijg",
  "Find friends from my contacts": "Vrienden vinden via mijn contacten",
+ "Finding words in the ministry needs a connection to the server.": "Voor het zoeken naar woorden in de bediening is een verbinding met de server nodig.",
  "Finish by": "Uiterlijk klaar op",
  "finish by {day}": "uiterlijk klaar op {day}",
  "Finish by {day}": "Uiterlijk klaar op {day}",
@@ -933,6 +943,7 @@
  "In a month": "Over een maand",
  "In parallel": "Naast elkaar",
  "In the beginning": "In den beginne",
+ "In the ministry": "In de bediening",
  "In the order it happened": "In de volgorde waarin het gebeurde",
  "In this order: {books}": "In deze volgorde: {books}",
  "in use": "in gebruik",
@@ -1223,6 +1234,7 @@
  "Nothing for “{query}”.": "Niets gevonden voor “{query}”.",
  "Nothing here yet. Add a passage, a note, a link or a heading below.": "Hier staat nog niets. Voeg hieronder een schriftgedeelte, een notitie, een link of een kop toe.",
  "Nothing here.": "Hier is niets.",
+ "Nothing in the ministry has these words.": "Niets in de bediening bevat deze woorden.",
  "Nothing in this file could be read.": "Niets in dit bestand kon worden gelezen.",
  "Nothing new to add: everything in this file is already here.": "Niets nieuws toe te voegen: alles in dit bestand staat er al.",
  "Nothing on this chapter yet.": "Nog niets bij dit hoofdstuk.",
@@ -1254,6 +1266,7 @@
  "Old Testament tags are aligned by machine, so this list can miss places the word occurs.": "De koppelingen in het Oude Testament zijn machinaal gemaakt, dus deze lijst kan plaatsen missen waar het woord voorkomt.",
  "Olive": "Olijf",
  "Olive branch": "Olijftak",
+ "On {ref}": "Bij {ref}",
  "On this device": "Op dit apparaat",
  "On this phone": "Op deze telefoon",
  "On this phone · {size}": "Op deze telefoon · {size}",
@@ -1310,6 +1323,7 @@
  "paper size\u0004Letter": "Letter",
  "Paper tones for daylight": "Papiertinten voor daglicht",
  "Paragraphs": "Alinea’s",
+ "Paragraphs with “{words}”": "Alinea’s met “{words}”",
  "Paragraphs, footnotes": "Alinea’s, voetnoten",
  "Paragraphs, verse numbers": "Alinea’s, versnummers",
  "Paragraphs, verse numbers, footnotes": "Alinea’s, versnummers, voetnoten",
@@ -1631,6 +1645,7 @@
  "Take the path off the group?": "De leesweg van de groep afhalen?",
  "Taken from a published digital copy of the text and checked verse by verse against a second copy; words split across lines are rejoined and four verse divisions follow the usual numbering.": "Overgenomen uit een gepubliceerde digitale kopie van de tekst en vers voor vers gecontroleerd aan de hand van een tweede kopie; woorden die over twee regels waren afgebroken, zijn weer samengevoegd en vier versindelingen volgen de gebruikelijke nummering.",
  "Tap a theme and every screen changes at once. You are reading in {name}.": "Tik op een thema en elk scherm verandert meteen. U leest nu in {name}.",
+ "Tap a word to find it in the ministry; tap another for a phrase": "Tik op een woord om het in de bediening te zoeken; op een tweede voor een zinsdeel",
  "Tap a word: Darby’s usage, Strong’s concordance and Morrish": "Tik op een woord: gebruik bij Darby, concordantie van Strong en Morrish",
  "Tap a word: Strong’s concordance and Morrish": "Tik op een woord: concordantie van Strong en Morrish",
  "Tap one to try it.": "Tik er een aan om het te proberen.",

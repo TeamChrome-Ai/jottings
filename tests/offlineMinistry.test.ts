@@ -95,8 +95,10 @@ describe('Ministry on a verse from the stored index', () => {
   const sections: Record<string, MinistrySection> = {
     'cw-doctrinal-1/1': { title: 'On John 3', passages: [[43, 3, 1, 3, 0]], text: 'God so loved the world (John 3:16).\n\nCompare <i>verses</i> 14–18 of the chapter.[1]', notes: ['See John 3:16 again.'] },
     'cw-doctrinal-1/2': { title: 'Letter', passages: [], to: 'G. V. Wigram', text: '> A line of a hymn\n> and its second, John 3:16' },
+    'cw-doctrinal-1/3': { title: 'The New Birth', passages: [], text: 'John 3 shows the new birth.' },
   }
   const section = async (work: string, n: number) => sections[`${work}/${n}`] ?? null
+  const chapterRow: RefsRow = [0, 40_001_000, 0, 3, 0, 0, 0, 6]
 
   it('lists a paragraph once at its best, best first, the figure row last, as the server does', async () => {
     const g = await groupFromRows(darby, john3, [16], 1, section)
@@ -119,6 +121,27 @@ describe('Ministry on a verse from the stored index', () => {
     const g = await groupFromRows(darby, john3, [17], 1, section)
     expect(g.items.map(i => i.mention)).toEqual(['range'])
   })
+  it('lists a row for the whole chapter for every verse, last, as a chapter mention', async () => {
+    const rows = [...john3, chapterRow]
+    const g16 = await groupFromRows(darby, rows, [16], 1, section)
+    expect(g16.total).toBe(6)
+    expect(g16.items[5]).toMatchObject({ n: 3, para: 0, mention: 'chapter', section: 'The New Birth', snippet: 'John 3 shows the new birth.', hl: [0, 6] })
+    expect((await groupFromRows(darby, rows, [17], 1, section)).items.map(i => i.mention)).toEqual(['range', 'chapter'])
+    expect((await groupFromRows(darby, rows, [5], 1, section)).items.map(i => [i.n, i.para, i.mention])).toEqual([[3, 0, 'chapter']])
+  })
+  it('lists a paragraph named for the verse and for the chapter once, at the verse', async () => {
+    const rows: RefsRow[] = [...john3, [0, 40_001_000, 0, 1, 1, 0, 8, 25]]
+    const g16 = await groupFromRows(darby, rows, [16], 1, section)
+    expect(g16.items.map(i => [i.n, i.para, i.mention])).toEqual([[1, 0, 'quote'], [1, 1, 'verse'], [2, 0, 'verse'], [1, 1, 'range'], [1, 2, 'list']])
+    expect((await groupFromRows(darby, rows, [17], 1, section)).items.map(i => i.mention)).toEqual(['range'])
+    expect((await groupFromRows(darby, rows, [5], 1, section)).items.map(i => [i.n, i.para, i.mention])).toEqual([[1, 1, 'chapter']])
+  })
+  it('answers a verse only a row for the whole chapter covers', async () => {
+    const read = async (_a: string, w: string, n: number) => section(w, n)
+    expect((await refsFromStored(43, 3, [5], [{ author: darby, rows: john3 }], read)).groups).toEqual([])
+    const r = await refsFromStored(43, 3, [5], [{ author: coates, rows: [] }, { author: darby, rows: [...john3, chapterRow] }], read)
+    expect(r.groups.map(g => [g.author, g.total])).toEqual([['darby', 1]])
+  })
   it('pages 20 at a time and clamps to the last page', async () => {
     const many: RefsRow[] = Array.from({ length: 50 }, (_, k) => [16, 11_002_000 + k, 0, 2, k, 0, 0, 9])
     const p1 = await groupFromRows(darby, many, [16], 1, section)
@@ -139,7 +162,10 @@ describe('Ministry on a verse from the stored index', () => {
     expect(one.groups.map(g => [g.author, g.total])).toEqual([['coates', 0]])
   })
   it('collects the verses of a chapter from every author\'s rows', () => {
-    expect([...versesOfRows([john3, null, [[28, 0, 0, 1, 0, 0, 0, 1]]])].sort()).toEqual([16, 17, 28])
+    expect([...versesOfRows([john3, null, [[28, 0, 0, 1, 0, 0, 0, 1]]], 36)].sort()).toEqual([16, 17, 28])
+  })
+  it('counts a row for the whole chapter for every verse of it, never for a verse 0', () => {
+    expect([...versesOfRows([john3, [chapterRow]], 36)].sort((a, b) => a - b)).toEqual(Array.from({ length: 36 }, (_, i) => i + 1))
   })
   it('reads works in the pack\'s order and a footnote as the server quotes it', () => {
     expect(worksInOrder(coates).map(w => [w.id, w.collection])).toEqual([['romans', 'outlines'], ['believer', 'addresses']])

@@ -1,7 +1,8 @@
 //! Ministry on a verse and the ministry library: the written ministry of the enabled authors of the registry
 //! (shared/ministry.ts), from data/ministry.db (built by tools/ministry_index.ts; schema in ministry.sql). The library
 //! lists authors, collections and works and serves a section's text; the index answers which paragraphs refer to a
-//! verse, best first (shared/ministryIndex.ts has the ranking rule; the rank is stored, the order is `rank, para`).
+//! verse, best first (shared/ministryIndex.ts has the ranking rule; the rank is stored, the order is `rank, para`), and
+//! which paragraphs have the words of a verse a reader asks for, nearest the verse first (`paras_fts`).
 //! The database is opened read-only; without it the library is empty and every verse has nothing, which is how a
 //! server without the data behaves.
 use crate::cleanse;
@@ -13,7 +14,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, params_from_iter, OpenFlags, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 /// Results per page of one author's list.
@@ -22,10 +23,20 @@ pub const PER_PAGE: i64 = 20;
 const SNIPPET_CHARS: usize = 200;
 /// A selection longer than this is refused: the sheet asks for what is selected in one chapter.
 const MAX_VERSES: usize = 200;
-/// Ranks below this are the quote class (shared/ministryIndex.ts rankOf: quote 0, verse 1e7, range 2e7, list 3e7).
+/// Ranks below this are the quote class (shared/ministryIndex.ts rankOf: quote 0, verse 1e7, range 2e7, list 3e7,
+/// chapter 4e7).
 const QUOTE_RANKS: i64 = 10_000_000;
+/// Words of a verse asked for at most (`q`).
+const MAX_WORDS: usize = 12;
+/// Words too common to be looked for alone: shared/ministryIndex.ts SMALL (`isSmallWord`), kept the same by hand.
+const SMALL: &str = "a an and are as at be but by do for from had has have he her him his i if in is it me my no not of on or our she \
+    so that the thee their them then there they thou thy to unto us was we were what when which who will with ye you your said saith says say \
+    shall all this these those upon into also even";
 
-pub(crate) struct Author { pub id: String, ord: i64, name: String, short: String, born: i64, died: i64, source: String }
+pub(crate) struct Author { pub id: String, ord: i64, name: String, short: String, born: i64, died: i64, source: String,
+    /// The first and last id of the author's paragraphs (ids run in reading order, author first: ministry.sql), an
+    /// empty range when there are none.
+    ids: (i64, i64) }
 pub(crate) struct Work { pub title: String, pub kind: String, pub collection: String, pub count: i64, pub contents: Value, pub raw: String,
     /// The contents as the cleanse lists them (cleanse.rs `contents`): the Letters' entries retitled; None where nothing changes.
     cleansed: Option<(Value, String)> }
@@ -48,10 +59,14 @@ pub struct Ministry {
     library_1890: String,
     /// The 1890 library without the collections the cleanse hides (cleanse.rs).
     library_cleansed: String,
-    /// The Synopsis's sub-heading paragraphs by (work, n), ascending indices, and their `paras.id`s as a JSON array:
-    /// what the cleanse takes out of the text and the index.
+    /// The Synopsis's sub-heading paragraphs by (work, n), ascending indices, and their `paras.id`s: what the cleanse
+    /// takes out of the text and the index.
     heads: HashMap<(String, i64), Vec<i64>>,
-    pub(crate) head_ids: String,
+    head_ids: HashSet<i64>,
+    /// Every section as its first id and its work's collection, ascending: a section's paragraphs, then its figure rows,
+    /// hold the ids from its first to the next section's (ministry.sql), so any paragraph or figure row finds its
+    /// section here (`section_of`).
+    spans: Vec<(i64, String)>,
     /// What each section quotes of Scripture in the verse's own words (the index's quote class, paragraphs only), by
     /// (author, work, n): the paragraph, the verse and the quoted words, in reading order. Read once: some 46,000.
     quotes: HashMap<(String, String, i64), Vec<(i64, i64, String)>>,
@@ -59,6 +74,8 @@ pub struct Ministry {
     titles: Vec<Title>,
     /** The database has `sections.figures` (built after figures were added); an older one is served without them. */
     pub(crate) figures: bool,
+    /// The database has `paras_fts`, the paragraphs' words; in an older one no words are found.
+    fts: bool,
     /// The data's version and where its offline packs are kept (ministry_offline.rs), built on first request.
     pub(crate) version: String,
     pub(crate) offline_dir: std::path::PathBuf,
@@ -74,8 +91,8 @@ impl Ministry {
             .with_init(|c| c.execute_batch("PRAGMA query_only = ON; PRAGMA mmap_size = 268435456; PRAGMA cache_size = -16000;"));
         let pool = r2d2::Pool::builder().max_size(4).build(manager)?;
         let conn = pool.get()?;
-        let authors: Vec<Author> = conn.prepare("SELECT id, ord, name, short, born, died, source FROM authors WHERE enabled = 1 ORDER BY ord")?
-            .query_map([], |r| Ok(Author { id: r.get(0)?, ord: r.get(1)?, name: r.get(2)?, short: r.get(3)?, born: r.get(4)?, died: r.get(5)?, source: r.get(6)? }))?
+        let mut authors: Vec<Author> = conn.prepare("SELECT id, ord, name, short, born, died, source FROM authors WHERE enabled = 1 ORDER BY ord")?
+            .query_map([], |r| Ok(Author { id: r.get(0)?, ord: r.get(1)?, name: r.get(2)?, short: r.get(3)?, born: r.get(4)?, died: r.get(5)?, source: r.get(6)?, ids: (i64::MAX, i64::MIN) }))?
             .collect::<Result<_, _>>()?;
         let mut works = HashMap::new();
         let mut titles = Vec::new();
@@ -105,16 +122,31 @@ impl Ministry {
             lib.push(json!({ "id": a.id, "name": a.name, "short": a.short, "born": a.born, "died": a.died, "source": a.source, "collections": cols }));
         }
         let figures = conn.prepare("SELECT 1 FROM pragma_table_info('sections') WHERE name = 'figures'")?.exists([])?;
+        let fts = conn.prepare("SELECT 1 FROM sqlite_master WHERE name = 'paras_fts'")?.exists([])?;
+        // where each section's ids begin (a section of figures alone has no paragraph), and the ids of each author's paragraphs
+        let mut starts: HashMap<(String, String, i64), i64> = HashMap::new();
+        for ((author, work, n), lo, hi) in conn.prepare("SELECT author, work, n, min(id), max(id) FROM paras GROUP BY author, work, n")?
+            .query_map([], |r| Ok(((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?), r.get::<_, i64>(3)?, r.get::<_, i64>(4)?)))?.collect::<Result<Vec<_>, _>>()? {
+            if let Some(a) = authors.iter_mut().find(|a| a.id == author) { a.ids = (a.ids.0.min(lo), a.ids.1.max(hi)) }
+            starts.insert((author, work, n), lo);
+        }
+        for (section, lo) in conn.prepare("SELECT author, work, n, min(id) FROM figrows GROUP BY author, work, n")?
+            .query_map([], |r| Ok(((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?), r.get::<_, i64>(3)?)))?.collect::<Result<Vec<_>, _>>()? {
+            let first = starts.entry(section).or_insert(lo);
+            *first = (*first).min(lo);
+        }
+        let mut spans: Vec<(i64, String)> = starts.into_iter().map(|((author, work, _), lo)| (lo, works.get(&(author, work)).map(|w| w.collection.clone()).unwrap_or_default())).collect();
+        spans.sort_unstable();
         // the Synopsis's sub-headings (cleanse.rs is_subheading), read once: some 10,000 short paragraphs
         let mut heads: HashMap<(String, i64), Vec<i64>> = HashMap::new();
-        let mut head_ids = Vec::new();
+        let mut head_ids = HashSet::new();
         let mut synopsis: Vec<&(String, String)> = works.iter().filter(|(_, w)| w.collection == "synopsis").map(|(k, _)| k).collect();
         synopsis.sort();
         for (author, work) in synopsis {
             let mut st = conn.prepare_cached("SELECT id, n, i, text FROM paras WHERE author = ?1 AND work = ?2 ORDER BY n, i")?;
             for r in st.query_map(params![author, work], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, String>(3)?)))? {
                 let (id, n, i, text) = r?;
-                if cleanse::is_subheading(&text) { heads.entry((work.clone(), n)).or_default().push(i); head_ids.push(id); }
+                if cleanse::is_subheading(&text) { heads.entry((work.clone(), n)).or_default().push(i); head_ids.insert(id); }
             }
         }
         // the quotations: the paragraph's plain text (as the index read it) cut at the index's UTF-16 offsets
@@ -142,7 +174,7 @@ impl Ministry {
         let library = json!({ "authors": lib }).to_string();
         let version = crate::ministry_offline::version_of(path);
         let offline_dir = crate::ministry_offline::cache_dir(path, &version);
-        Ok(Some(Arc::new(Ministry { pool, authors, works, library, library_1890, library_cleansed, heads, head_ids: json!(head_ids).to_string(), quotes, titles, figures, version, offline_dir, packs: Default::default() })))
+        Ok(Some(Arc::new(Ministry { pool, authors, works, library, library_1890, library_cleansed, heads, head_ids, spans, quotes, titles, figures, fts, version, offline_dir, packs: Default::default() })))
     }
     /// The library as served: every enabled author; without Coates in 1890; without the hidden collections under the cleanse.
     pub(crate) fn library_for(&self, s: Served) -> &str { if s.cleanse { &self.library_cleansed } else if s.edition == Edition::E1890 { &self.library_1890 } else { &self.library } }
@@ -176,11 +208,14 @@ impl Ministry {
         Ok(w)
     }
     fn enabled_ords(&self, ed: Edition) -> String { self.shown(ed).map(|a| a.ord.to_string()).collect::<Vec<_>>().join(",") }
-    /// The ids of the works in `collections`, quoted for SQL (`'a','b'`; `''` when there are none).
-    fn works_in(&self, collections: &[&str]) -> String {
-        let mut ids: Vec<String> = self.works.iter().filter(|(_, w)| collections.contains(&w.collection.as_str())).map(|((_, id), _)| format!("'{}'", id.replace('\'', "''"))).collect();
-        ids.sort();
-        if ids.is_empty() { "''".into() } else { ids.join(",") }
+    /// The section a paragraph's or a figure row's id is in, as its index in `spans`.
+    fn section_of(&self, id: i64) -> usize { self.spans.partition_point(|s| s.0 <= id).saturating_sub(1) }
+    /// A row of the index the cleanse leaves out: into a work of a hidden collection, into a footnote of a work whose notes
+    /// it hides, into a Synopsis sub-heading (or a footnote of one). `para` is a paragraph's id, or with `note` -1 a
+    /// figure row's.
+    fn cleansed_out(&self, para: i64, note: i64) -> bool {
+        let collection = self.spans.get(self.section_of(para)).map_or("", |s| s.1.as_str());
+        cleanse::collection_hidden(collection) || (note > 0 && cleanse::notes_hidden(collection)) || (note >= 0 && self.head_ids.contains(&para))
     }
     async fn db<T: Send + 'static>(self: &Arc<Self>, f: impl FnOnce(&rusqlite::Connection) -> ApiResult<T> + Send + 'static) -> ApiResult<T> {
         let pool = self.pool.clone();
@@ -252,7 +287,11 @@ fn selection(sel: &str) -> Option<Vec<i64>> {
     Some(out)
 }
 
-const MENTIONS: [&str; 4] = ["quote", "verse", "range", "list"];
+/// How a paragraph refers to the verse, by its rank's class (shared/ministry.ts MENTIONS).
+const MENTIONS: [&str; 5] = ["quote", "verse", "range", "list", "chapter"];
+fn mention(rank: i64) -> &'static str { MENTIONS[(rank / QUOTE_RANKS).clamp(0, MENTIONS.len() as i64 - 1) as usize] }
+/// Where a paragraph found by its words stands to the verses asked about, nearest first (shared/ministry.ts NEARS).
+const NEARS: [&str; 4] = ["verse", "chapter", "book", "elsewhere"];
 
 /// `GET /ministry`: the library, `{ authors: [{ id, name, short, born, died, source, collections: [{ id, title, works:
 /// [{ id, title, kind, count }] }] }] }`, enabled authors only.
@@ -365,7 +404,8 @@ pub async fn search(State(s): State<AppState>, Query(q): Query<SearchQ>) -> Resp
 }
 
 /// `GET /ministry/chapter/:book/:chapter`: `{ book, chapter, verses: [16, 17, …] }`, the verses of the chapter some
-/// enabled author refers to (the selection bar's quiet check).
+/// enabled author refers to (the selection bar's quiet check). A row for the whole chapter (verse 0) counts for every
+/// verse of it: the list is expanded here, so an app that never heard of such rows reads it as it always has.
 pub async fn chapter(State(s): State<AppState>, Path((book, chapter)): Path<(i64, i64)>) -> ApiResult<Response> {
     valid_chapter(book, chapter)?;
     let served = s.served().await;
@@ -377,92 +417,173 @@ pub async fn chapter(State(s): State<AppState>, Path((book, chapter)): Path<(i64
             m.clone().db(move |c| {
                 if ords.is_empty() { return Ok(Vec::new()) }
                 let lo = book * 1_000_000 + chapter * 1000;
-                let vs = if served.cleanse {
-                    // only what the cleanse serves counts: no hidden work, no note of a noteless work, no sub-heading
-                    let (hidden, noteless) = (m.works_in(&cleanse::HIDDEN_COLLECTIONS), m.works_in(&cleanse::NOTELESS_COLLECTIONS));
-                    let sql = format!("SELECT DISTINCT r.verse FROM refs r LEFT JOIN paras p ON r.note >= 0 AND p.id = r.para LEFT JOIN figrows f ON r.note < 0 AND f.id = r.para \
-                        WHERE r.verse > ?1 AND r.verse < ?2 AND r.a IN ({ords}) AND coalesce(p.work, f.work) NOT IN ({hidden}) AND (r.note <= 0 OR p.work NOT IN ({noteless})) \
-                        AND r.para NOT IN (SELECT value FROM json_each(?3)) ORDER BY r.verse");
-                    let mut st = c.prepare_cached(&sql)?;
-                    let vs: Vec<i64> = st.query_map(params![lo, lo + 1000, m.head_ids], |r| r.get::<_, i64>(0))?.map(|v| v.map(|v| v - lo)).collect::<Result<_, _>>()?;
-                    vs
-                } else {
-                    let mut st = c.prepare_cached(&format!("SELECT DISTINCT verse FROM refs WHERE verse > ?1 AND verse < ?2 AND a IN ({ords}) ORDER BY verse"))?;
-                    let vs: Vec<i64> = st.query_map(params![lo, lo + 1000], |r| r.get::<_, i64>(0))?.map(|v| v.map(|v| v - lo)).collect::<Result<_, _>>()?;
-                    vs
-                };
-                Ok(vs)
+                let mut st = c.prepare_cached(&format!("SELECT verse, para, note FROM refs WHERE verse >= ?1 AND verse < ?2 AND a IN ({ords})"))?;
+                let mut vs = BTreeSet::new();
+                for r in st.query_map(params![lo, lo + 1000], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)))? {
+                    let (verse, para, note) = r?;
+                    if !(served.cleanse && m.cleansed_out(para, note)) { vs.insert(verse - lo); }
+                }
+                if vs.remove(&0) { vs.extend(1..=verses_in(c, book, chapter)?.unwrap_or(0)) }
+                Ok(vs.into_iter().collect())
             }).await?
         }
     };
     Ok(day(Json(json!({ "book": book, "chapter": chapter, "verses": verses })).into_response()))
 }
 
-#[derive(Deserialize)] pub struct RefsQ { author: Option<String>, page: Option<i64> }
+#[derive(Deserialize)] pub struct RefsQ { author: Option<String>, page: Option<i64>, q: Option<String> }
 
-/// One author's page of results for the verses: `{ author, name, short, source, total, page, pages, items }`.
-fn group(c: &rusqlite::Connection, m: &Ministry, a: &Author, ids: &[i64], page: i64, cleanse: bool) -> ApiResult<Value> {
-    let marks = vec!["?"; ids.len()].join(",");
-    let args = |extra: &[i64]| ids.iter().copied().chain(std::iter::once(a.ord)).chain(extra.iter().copied()).collect::<Vec<i64>>();
-    // a paragraph named for several selected verses is listed once, at its best; SQLite's bare columns come from the
-    // row that holds the MIN. Under the cleanse every row is read, what it leaves out dropped here and the page cut after
-    let sql = format!("SELECT para, note, MIN(rank), start, end FROM refs WHERE verse IN ({marks}) AND a = ? GROUP BY para, note ORDER BY 3, para, note");
-    let row = |r: &rusqlite::Row| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?));
-    let (total, page, pages, rows): (i64, i64, i64, Vec<(i64, i64, i64, i64, i64)>) = if cleanse {
-        (0, page, 0, c.prepare_cached(&sql)?.query_map(params_from_iter(args(&[])), row)?.collect::<Result<_, _>>()?)
-    } else {
-        let total: i64 = c.query_row(&format!("SELECT count(*) FROM (SELECT 1 FROM refs WHERE verse IN ({marks}) AND a = ? GROUP BY para, note)"), params_from_iter(args(&[])), |r| r.get(0))?;
-        let pages = ((total + PER_PAGE - 1) / PER_PAGE).max(1);
-        let page = page.clamp(1, pages);
-        (total, page, pages, c.prepare_cached(&format!("{sql} LIMIT ? OFFSET ?"))?.query_map(params_from_iter(args(&[PER_PAGE, (page - 1) * PER_PAGE])), row)?.collect::<Result<_, _>>()?)
-    };
+/// One author's page of a list, `{ author, name, short, source, total, page, pages, items }`: PER_PAGE items, `page`
+/// clamped to the last, `item` making each of the page's.
+fn paged<T>(a: &Author, all: Vec<T>, page: i64, mut item: impl FnMut(T) -> ApiResult<Option<Value>>) -> ApiResult<Value> {
+    let total = all.len() as i64;
+    let pages = ((total + PER_PAGE - 1) / PER_PAGE).max(1);
+    let page = page.clamp(1, pages);
     let mut items = Vec::new();
-    for (para, note, rank, start, end) in rows {
-        // note -1: a figure row (figrows), addressed by its slot after the section's paragraphs; its text is already plain
-        let from = if note < 0 { "SELECT work, n, slot, text FROM figrows WHERE id = ?1" } else { "SELECT work, n, i, text FROM paras WHERE id = ?1" };
-        let (work, n, mut i, text): (String, i64, i64, String) = c.prepare_cached(from)?.query_row([para], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
-        let Some(w) = m.works.get(&(a.id.clone(), work.clone())) else { continue };
-        if cleanse && (cleanse::collection_hidden(&w.collection) || (note > 0 && cleanse::notes_hidden(&w.collection))) { continue }
-        let mut source = if note > 0 {
-            let notes: Option<String> = c.prepare_cached("SELECT notes FROM sections WHERE author = ?1 AND work = ?2 AND n = ?3")?.query_row(params![a.id, work, n], |r| r.get(0))?;
-            let notes: Vec<String> = notes.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-            note_plain(notes.get((note - 1) as usize).map(String::as_str).unwrap_or(""))
-        } else if note < 0 { text.clone() } else { plain(&text) };
-        let (mut start, mut end) = (start as usize, end as usize);
-        if cleanse && note == 0 {
-            // the Synopsis's sub-headings are gone: a paragraph moves up by the headings before it, a heading itself is nothing
-            if let Some(heads) = m.heads_of(&work, n) { match cleanse::remap_para(i, heads) { Some(j) => i = j, None => continue } }
-            if cleanse::notes_hidden(&w.collection) { (source, start, end) = cleanse::strip_callers_at(&source, start, end) }
-        }
-        let (snippet, hl) = snippet(&source, start, end, SNIPPET_CHARS);
-        let title = w.contents_for(cleanse).get((n - 1) as usize).and_then(|s| s["title"].as_str()).unwrap_or("");
-        let mut item = json!({ "work": { "id": work, "title": w.title, "collection": w.collection }, "n": n, "section": title, "para": i,
-            "mention": MENTIONS[(rank / 10_000_000).clamp(0, 3) as usize], "snippet": snippet, "hl": hl });
-        if note > 0 { item["note"] = json!(note) }
-        if note < 0 { item["row"] = json!(true) }
-        items.push(item);
-    }
-    let (total, page, pages, items) = if cleanse {
-        let total = items.len() as i64;
-        let pages = ((total + PER_PAGE - 1) / PER_PAGE).max(1);
-        let page = page.clamp(1, pages);
-        (total, page, pages, items.into_iter().skip(((page - 1) * PER_PAGE) as usize).take(PER_PAGE as usize).collect())
-    } else { (total, page, pages, items) };
+    for x in all.into_iter().skip(((page - 1) * PER_PAGE) as usize).take(PER_PAGE as usize) { items.extend(item(x)?) }
     Ok(json!({ "author": a.id, "name": a.name, "short": a.short, "source": a.source, "total": total, "page": page, "pages": pages, "items": items }))
+}
+
+/// An item of an author's list: the paragraph `para` (its footnote `note`; with note -1, a figure row) placed as the
+/// served text counts it, and about SNIPPET_CHARS of it around what `at` finds in its plain text ([start, end), UTF-16
+/// units). What the cleanse leaves out is the caller's to drop first (`cleansed_out`); None for a work not loaded.
+fn item(c: &rusqlite::Connection, m: &Ministry, a: &Author, para: i64, note: i64, cleanse: bool, at: impl FnOnce(&str) -> (usize, usize)) -> ApiResult<Option<Value>> {
+    // note -1: a figure row (figrows), addressed by its slot after the section's paragraphs; its text is already plain
+    let from = if note < 0 { "SELECT work, n, slot, text FROM figrows WHERE id = ?1" } else { "SELECT work, n, i, text FROM paras WHERE id = ?1" };
+    let (work, n, mut i, text): (String, i64, i64, String) = c.prepare_cached(from)?.query_row([para], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+    let Some(w) = m.works.get(&(a.id.clone(), work.clone())) else { return Ok(None) };
+    let mut source = if note > 0 {
+        let notes: Option<String> = c.prepare_cached("SELECT notes FROM sections WHERE author = ?1 AND work = ?2 AND n = ?3")?.query_row(params![a.id, work, n], |r| r.get(0))?;
+        let notes: Vec<String> = notes.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+        note_plain(notes.get((note - 1) as usize).map(String::as_str).unwrap_or(""))
+    } else if note < 0 { text } else { plain(&text) };
+    let (mut start, mut end) = at(&source);
+    if cleanse && note == 0 {
+        // the Synopsis's sub-headings are gone: a paragraph moves up by the headings before it
+        if let Some(heads) = m.heads_of(&work, n) { match cleanse::remap_para(i, heads) { Some(j) => i = j, None => return Ok(None) } }
+        if cleanse::notes_hidden(&w.collection) { (source, start, end) = cleanse::strip_callers_at(&source, start, end) }
+    }
+    let (snippet, hl) = snippet(&source, start, end, SNIPPET_CHARS);
+    let title = w.contents_for(cleanse).get((n - 1) as usize).and_then(|s| s["title"].as_str()).unwrap_or("");
+    let mut item = json!({ "work": { "id": work, "title": w.title, "collection": w.collection }, "n": n, "section": title, "para": i, "snippet": snippet, "hl": hl });
+    if note > 0 { item["note"] = json!(note) }
+    if note < 0 { item["row"] = json!(true) }
+    Ok(Some(item))
+}
+
+/// One author's page of the paragraphs referring to the verses `ids` (of one chapter), best first.
+fn group(c: &rusqlite::Connection, m: &Ministry, a: &Author, ids: &[i64], page: i64, cleanse: bool) -> ApiResult<Value> {
+    // the index's row for the whole chapter (verse 0) answers for every verse of it
+    let ids: Vec<i64> = std::iter::once(ids[0] / 1000 * 1000).chain(ids.iter().copied()).collect();
+    let marks = vec!["?"; ids.len()].join(",");
+    // a paragraph named for several selected verses, or for one and for the chapter, is listed once, at its best;
+    // SQLite's bare columns come from the row that holds the MIN
+    let sql = format!("SELECT para, note, MIN(rank), start, end FROM refs WHERE verse IN ({marks}) AND a = ? GROUP BY para, note ORDER BY 3, para, note");
+    let mut rows: Vec<(i64, i64, i64, i64, i64)> = c.prepare_cached(&sql)?.query_map(params_from_iter(ids.iter().chain([&a.ord])), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?.collect::<Result<_, _>>()?;
+    if cleanse { rows.retain(|&(para, note, ..)| !m.cleansed_out(para, note)) }
+    paged(a, rows, page, |(para, note, rank, start, end)| {
+        Ok(item(c, m, a, para, note, cleanse, |_| (start as usize, end as usize))?.map(|mut i| { i["mention"] = json!(mention(rank)); i }))
+    })
+}
+
+// ---------- the words of a verse ----------
+
+/// The words of a verse a reader asks for (`q`): as read (trimmed, spaces collapsed), folded (`words`), and the FTS5
+/// phrase that finds them in `paras_fts`.
+struct Asked { q: String, words: Vec<String>, phrase: String }
+
+/// None for words not to look for: none, more than MAX_WORDS, or only small words.
+fn asked(q: &str) -> Option<Asked> {
+    let q = q.split_whitespace().collect::<Vec<_>>().join(" ");
+    let ws = words(&q);
+    if ws.is_empty() || ws.len() > MAX_WORDS || ws.iter().all(|w| SMALL.split(' ').any(|s| s == w)) { return None }
+    // the words as the index's tokenizer (unicode61) parts them, which folds case and accents its own way: at an
+    // apostrophe too, where `fold` drops it ("Lord's" is "lord s" there)
+    let phrase = format!("\"{}\"", q.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" "));
+    Some(Asked { q, words: ws, phrase })
+}
+
+/// Where `words` (folded) first stand in `plain` in that order with nothing but spaces and punctuation between them,
+/// [start, end) in UTF-16 units; [0, 0) when they do not. The text's words are read as `words` reads them: letters and
+/// digits, an apostrophe inside a word dropped.
+fn at_words(plain: &str, words: &[String]) -> (usize, usize) {
+    if words.is_empty() { return (0, 0) }
+    let mut found: Vec<(String, usize, usize)> = Vec::new();
+    let (mut open, mut u) = (false, 0);
+    for ch in plain.chars() {
+        if ch.is_alphanumeric() {
+            match found.last_mut() { Some(w) if open => { w.0.push(ch); w.2 = u + ch.len_utf16() } _ => found.push((ch.to_string(), u, u + ch.len_utf16())) }
+            open = true;
+        } else if !matches!(ch, '\'' | '’') { open = false }
+        u += ch.len_utf16();
+    }
+    let folded: Vec<String> = found.iter().map(|w| fold(&w.0)).collect();
+    folded.windows(words.len()).position(|ws| ws == words).map_or((0, 0), |i| (found[i].1, found[i + words.len() - 1].2))
+}
+
+/// One author's page of the paragraphs that have the words, nearest the verses `ids` first: a paragraph referring to one
+/// of them (by its best rank there), then one whose section has a row in their chapter (verse 0 too), then in their
+/// book, then the rest; each after the first in reading order. Footnotes and figure rows are not searched.
+fn found(c: &rusqlite::Connection, m: &Ministry, a: &Author, ids: &[i64], w: &Asked, page: i64, cleanse: bool) -> ApiResult<Value> {
+    let (book, chapter) = (ids[0] / 1_000_000, ids[0] / 1000);
+    let mut best: HashMap<i64, i64> = HashMap::new();
+    let (mut in_chapter, mut in_book) = (HashSet::new(), HashSet::new());
+    let mut st = c.prepare_cached("SELECT verse, para, note, rank FROM refs WHERE verse >= ?1 AND verse < ?2 AND a = ?3")?;
+    for r in st.query_map(params![book * 1_000_000, (book + 1) * 1_000_000, a.ord], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?)))? {
+        let (verse, para, note, rank) = r?;
+        if cleanse && m.cleansed_out(para, note) { continue }
+        let s = m.section_of(para);
+        in_book.insert(s);
+        if verse / 1000 == chapter { in_chapter.insert(s); }
+        if note >= 0 && ids.binary_search(&verse).is_ok() { best.entry(para).and_modify(|b| *b = (*b).min(rank)).or_insert(rank); }
+    }
+    // (near, rank on the verses, id), sorted
+    let mut hits: Vec<(usize, i64, i64)> = Vec::new();
+    let mut st = c.prepare_cached("SELECT rowid FROM paras_fts WHERE paras_fts MATCH ?1 AND rowid BETWEEN ?2 AND ?3")?;
+    for id in st.query_map(params![w.phrase, a.ids.0, a.ids.1], |r| r.get::<_, i64>(0))? {
+        let id = id?;
+        if cleanse && m.cleansed_out(id, 0) { continue }
+        let s = m.section_of(id);
+        hits.push(match best.get(&id) {
+            Some(&rank) => (0, rank, id),
+            None => (if in_chapter.contains(&s) { 1 } else if in_book.contains(&s) { 2 } else { 3 }, 0, id),
+        });
+    }
+    hits.sort_unstable();
+    paged(a, hits, page, |(near, rank, id)| {
+        Ok(item(c, m, a, id, 0, cleanse, |p| at_words(p, &w.words))?.map(|mut i| {
+            i["near"] = json!(NEARS[near]);
+            if near == 0 { i["mention"] = json!(mention(rank)) }
+            i
+        }))
+    })
 }
 
 /// `GET /ministry/refs/:book/:chapter/:verses?author=&page=`: the paragraphs referring to the verses ("16", "16-18",
 /// "1,3,7-9"), per author, best first: `{ book, chapter, verses, groups: [{ author, name, short, source, total, page,
 /// pages, items: [{ work: { id, title, collection }, n, section, para, note?, row?, mention, snippet, hl }] }] }`; `row`: the
-/// item is a row of one of the section's figures, `para` its slot after the paragraphs. Without
+/// item is a row of one of the section's figures, `para` its slot after the paragraphs. A row for the whole chapter
+/// counts for each verse (`mention` "chapter"). Without
 /// `author`, the first page of every enabled author that has something; with it, that author's `page`. 404 for a verse
 /// or chapter the Bible does not have and for an author not enabled; 400 for a selection that does not read.
+///
+/// `q`, words of the verse (one to MAX_WORDS, not all small words; 400 otherwise): the items are instead the
+/// paragraphs that have them, nearest the verses first (`found`), each with `near` (shared/ministry.ts NEARS), `mention`
+/// only when it refers to the verses, and the words' first place as `hl`; `q` is echoed as read. A database without
+/// `paras_fts` answers no groups.
 pub async fn refs(State(s): State<AppState>, Path((book, chapter, sel)): Path<(i64, i64, String)>, Query(q): Query<RefsQ>) -> ApiResult<Response> {
     valid_chapter(book, chapter)?;
     let verses = selection(&sel).ok_or_else(|| ApiError::bad("verses: a verse, a range or a list, as 16, 16-18 or 1,3,7-9"))?;
+    let asked_for = q.q.as_deref().map(|w| asked(w).ok_or_else(|| ApiError::bad(format!("q: one to {MAX_WORDS} words of the verse, not only small words such as \"the\" or \"of\"")))).transpose()?;
+    let said = asked_for.as_ref().map(|w| w.q.clone());
+    let answer = move |verses: Vec<i64>, groups: Vec<Value>| {
+        let mut body = json!({ "book": book, "chapter": chapter, "verses": verses, "groups": groups });
+        if let Some(q) = said { body["q"] = json!(q) }
+        body
+    };
     let Some(m) = get(&s).cloned() else {
         if q.author.is_some() { return Err(ApiError::not_found("no such author")) }
-        return Ok(day(Json(json!({ "book": book, "chapter": chapter, "verses": verses, "groups": [] })).into_response()));
+        return Ok(day(Json(answer(verses, Vec::new())).into_response()));
     };
     let served = s.served().await;
     if let Some(a) = &q.author { m.author_in(a, served.edition)?; }
@@ -472,11 +593,12 @@ pub async fn refs(State(s): State<AppState>, Path((book, chapter, sel)): Path<(i
         if verses.iter().any(|&v| v > count) { return Err(ApiError::not_found("no such verse")) }
         let ids: Vec<i64> = verses.iter().map(|v| book * 1_000_000 + chapter * 1000 + v).collect();
         let mut groups = Vec::new();
-        for a in m.shown(served.edition).filter(|a| q.author.as_deref().is_none_or(|x| x == a.id)) {
-            let g = group(c, &m, a, &ids, if q.author.is_some() { page } else { 1 }, served.cleanse)?;
+        let page = if q.author.is_some() { page } else { 1 };
+        for a in m.shown(served.edition).filter(|a| q.author.as_deref().is_none_or(|x| x == a.id)).filter(|_| asked_for.is_none() || m.fts) {
+            let g = match &asked_for { Some(w) => found(c, &m, a, &ids, w, page, served.cleanse)?, None => group(c, &m, a, &ids, page, served.cleanse)? };
             if q.author.is_some() || g["total"].as_i64() > Some(0) { groups.push(g) }
         }
-        Ok(json!({ "book": book, "chapter": chapter, "verses": verses, "groups": groups }))
+        Ok(answer(verses, groups))
     }).await?;
     Ok(day(Json(body).into_response()))
 }
@@ -486,7 +608,8 @@ pub mod tests {
     use super::*;
     use crate::testkit::{app_with_ministry, call};
 
-    /// A small ministry.db: Darby and Coates enabled, Kelly disabled with rows of his own on the same verses.
+    /// A small ministry.db: Darby and Coates enabled, Kelly disabled with rows of his own on the same verses. Ids run in
+    /// reading order as the builder gives them (ministry.sql): Darby's from 1, Coates's from 1000, Kelly's from 2000.
     pub fn fixture() -> String {
         let path = std::env::temp_dir().join(format!("berean-ministry-{}.db", crate::auth::random_token(8)));
         let c = rusqlite::Connection::open(&path).unwrap();
@@ -495,25 +618,69 @@ pub mod tests {
             INSERT INTO authors VALUES ('darby', 0, 'J. N. Darby', 'Darby', 1800, 1882, 1, 'pd', 'Darby source'),
               ('coates', 1, 'C. A. Coates', 'Coates', 1862, 1945, 1, 'pd', 'Coates source'), ('kelly', 2, 'W. Kelly', 'Kelly', 1821, 1906, 0, 'pd', '');
             INSERT INTO collections VALUES ('darby', 'cw', 0, 'Collected Writings'), ('coates', 'outlines', 0, 'Outlines'), ('kelly', 'lectures', 0, 'Lectures');
-            INSERT INTO chapters VALUES (43, 3, 36), (45, 8, 39);
+            INSERT INTO chapters VALUES (43, 3, 36), (43, 4, 54), (45, 8, 39);
             INSERT INTO works VALUES ('darby', 'cw-doctrinal-1', 'cw', 0, 'Collected Writings 3: Doctrinal 1', 'papers', 2, '[{"title":"On John 3","passages":[[43,3,1,3,0]]},{"title":"Letter","passages":[],"to":"G. V. Wigram"}]'),
               ('coates', 'romans', 'outlines', 0, 'An Outline of Romans', 'outline', 1, '[{"title":"Chapter 8","passages":[[45,8,1,8,0]]}]'),
               ('kelly', 'john', 'lectures', 0, 'Lectures on John', 'outline', 1, '[{"title":"John 3","passages":[]}]');
             INSERT INTO sections VALUES ('darby', 'cw-doctrinal-1', 1, '{"title":"On John 3","passages":[[43,3,1,3,0]]}', '["See John 3:16 again."]', '[{"kind":"table","source":"p. 1","columns":["Verse"],"rows":[["John 3:16"]]}]'),
               ('darby', 'cw-doctrinal-1', 2, '{"title":"Letter","passages":[],"to":"G. V. Wigram"}', NULL, NULL),
               ('coates', 'romans', 1, '{"title":"Chapter 8","passages":[[45,8,1,8,0]]}', NULL, NULL), ('kelly', 'john', 1, '{"title":"John 3","passages":[]}', NULL, NULL);
-            INSERT INTO figrows VALUES (6, 'darby', 'cw-doctrinal-1', 1, 2, 'Whosoever · John 3:16');
+            INSERT INTO figrows VALUES (3, 'darby', 'cw-doctrinal-1', 1, 2, 'Whosoever · John 3:16');
             INSERT INTO paras VALUES (1, 'darby', 'cw-doctrinal-1', 1, 0, 'God so loved the world (John 3:16).'),
               (2, 'darby', 'cw-doctrinal-1', 1, 1, 'Compare <i>verses</i> 14–18 of the chapter.[1]'),
-              (3, 'darby', 'cw-doctrinal-1', 2, 0, '> A line of a hymn' || char(10) || '> and its second, John 3:16'),
-              (4, 'coates', 'romans', 1, 0, 'All things work together for good (Romans 8:28).'),
-              (5, 'kelly', 'john', 1, 0, 'Kelly on John 3:16.');
-            -- ranks per shared/ministryIndex.ts rankOf: quote 0, verse 1e7, range 2e7, list 3e7
+              (4, 'darby', 'cw-doctrinal-1', 2, 0, '> A line of a hymn' || char(10) || '> and its second, John 3:16'),
+              (1000, 'coates', 'romans', 1, 0, 'All things work together for good (Romans 8:28).'),
+              (2000, 'kelly', 'john', 1, 0, 'Kelly on John 3:16.');
+            -- ranks per shared/ministryIndex.ts rankOf: quote 0, verse 1e7, range 2e7, list 3e7, chapter 4e7; verse 0 is the
+            -- whole chapter (one on the footnote, as a footnote naming John 3 alone would have)
             INSERT INTO refs VALUES (43003016, 0, 1001000, 1, 0, 0, 34), (43003016, 0, 21001000, 2, 0, 8, 25), (43003017, 0, 21001000, 2, 0, 8, 25),
-              (43003016, 0, 11001000, 3, 0, 36, 43), (43003016, 0, 11001000, 2, 1, 4, 13), (45008028, 1, 11001000, 4, 0, 34, 46),
-              (43003016, 2, 0, 5, 0, 9, 18), (43003017, 2, 0, 5, 0, 9, 18), (43003016, 0, 32001000, 6, -1, 12, 21);
+              (43003016, 0, 11001000, 4, 0, 36, 43), (43003016, 0, 11001000, 2, 1, 4, 13), (43003000, 0, 40002000, 2, 1, 4, 10), (45008028, 1, 11001000, 1000, 0, 34, 46),
+              (43003016, 2, 0, 2000, 0, 9, 18), (43003017, 2, 0, 2000, 0, 9, 18), (43004000, 2, 40001000, 2000, 0, 9, 15), (43003016, 0, 32001000, 3, -1, 12, 21);
         "#).unwrap();
+        index_words(&c);
         path.to_str().unwrap().to_string()
+    }
+
+    /// `paras_fts` as the builder fills it: every paragraph's plain text under its id.
+    pub fn index_words(c: &rusqlite::Connection) {
+        c.execute_batch("INSERT INTO paras_fts (paras_fts) VALUES ('delete-all')").unwrap();
+        let paras: Vec<(i64, String)> = c.prepare("SELECT id, text FROM paras").unwrap().query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap();
+        for (id, text) in paras { c.execute("INSERT INTO paras_fts (rowid, text) VALUES (?1, ?2)", params![id, plain(&text)]).unwrap(); }
+    }
+
+    /// `fixture()` (or `cleanse_fixture()`) with "loved the world" at every distance from John 3:16: a paper of Darby's
+    /// with sections on John 3 as a whole, on John 3:16 (notes, one of them naming it in a footnote), on John 1, a table
+    /// alone naming John 3:5, on John 3:3 and on Romans; one paragraph of Coates's and one of Kelly's.
+    fn with_words(path: &str) {
+        let c = rusqlite::Connection::open(path).unwrap();
+        c.execute_batch(r#"
+            INSERT INTO works VALUES ('darby', 'cw-expository-1', 'cw', 1, 'Collected Writings 4: Expository', 'papers', 6,
+              '[{"title":"John 3","passages":[[43,3,1,3,0]]},{"title":"Notes","passages":[]},{"title":"John 1","passages":[[43,1,1,1,0]]},{"title":"Table","passages":[]},{"title":"Born anew","passages":[]},{"title":"Romans","passages":[]}]');
+            INSERT INTO sections VALUES ('darby', 'cw-expository-1', 1, '{"title":"John 3","passages":[[43,3,1,3,0]]}', NULL, NULL),
+              ('darby', 'cw-expository-1', 2, '{"title":"Notes","passages":[]}', '["John 3:16."]', NULL),
+              ('darby', 'cw-expository-1', 3, '{"title":"John 1","passages":[[43,1,1,1,0]]}', NULL, NULL),
+              ('darby', 'cw-expository-1', 4, '{"title":"Table","passages":[]}', NULL, '[{"kind":"table","source":"p. 2","columns":["Verse"],"rows":[["John 3:5"]]}]'),
+              ('darby', 'cw-expository-1', 5, '{"title":"Born anew","passages":[]}', NULL, NULL),
+              ('darby', 'cw-expository-1', 6, '{"title":"Romans","passages":[]}', NULL, NULL);
+            INSERT INTO paras VALUES (150, 'darby', 'cw-expository-1', 1, 0, 'On the chapter as a whole.'),
+              (151, 'darby', 'cw-expository-1', 1, 1, 'Loved, the' || char(10) || 'World!'),
+              (160, 'darby', 'cw-expository-1', 2, 0, 'He loved the world (John 3:16).'),
+              (161, 'darby', 'cw-expository-1', 2, 1, 'Quoted: God so loved the world.'),
+              (162, 'darby', 'cw-expository-1', 2, 2, 'See[1] how he loved the world.'),
+              (170, 'darby', 'cw-expository-1', 3, 0, 'In the beginning was the Word (John 1:1).'),
+              (171, 'darby', 'cw-expository-1', 3, 1, 'And he loved the world.'),
+              (175, 'darby', 'cw-expository-1', 5, 0, 'On John 3:3, of being born anew.'),
+              (176, 'darby', 'cw-expository-1', 5, 1, 'Thus he loved the world.'),
+              (180, 'darby', 'cw-expository-1', 6, 0, 'He loved the world (Romans 8:28).'),
+              (181, 'darby', 'cw-expository-1', 6, 1, 'The world loved the darkness; the Lord’s supper.'),
+              (1001, 'coates', 'romans', 1, 1, 'God loved the world.'),
+              (2001, 'kelly', 'john', 1, 1, 'Kelly: God loved the world.');
+            INSERT INTO figrows VALUES (172, 'darby', 'cw-expository-1', 4, 0, 'John 3:5');
+            INSERT INTO refs VALUES (43003000, 0, 40000000, 150, 0, 0, 0), (43003016, 0, 11001000, 160, 0, 20, 29), (43003016, 0, 1002000, 161, 0, 8, 30),
+              (43003016, 0, 11002000, 162, 1, 0, 9), (43001001, 0, 11001000, 170, 0, 31, 39), (43003005, 0, 32001000, 172, -1, 0, 8),
+              (43003003, 0, 11001000, 175, 0, 3, 11), (45008028, 0, 11001000, 180, 0, 20, 31);
+        "#).unwrap();
+        index_words(&c);
     }
 
     /// `fixture()` with what the cleanse acts on: a Synopsis work with two sub-headings (one carrying the only reference
@@ -538,6 +705,7 @@ pub mod tests {
             INSERT INTO refs VALUES (1001001, 0, 11001000, 201, 0, 18, 29), (1001002, 0, 11001000, 202, 0, 11, 22), (1001003, 0, 11001000, 203, 0, 14, 25),
               (43003016, 0, 11001000, 210, 0, 5, 14), (43003016, 0, 11001000, 220, 0, 28, 37);
         "#).unwrap();
+        index_words(&c);
         path
     }
 
@@ -658,14 +826,17 @@ pub mod tests {
         let (_, r) = call(&app, "GET", "/ministry/refs/43/3/16-17", None, Value::Null).await;
         assert_eq!(r["groups"][0]["total"], 5);
         assert_eq!(r["verses"], json!([16, 17]));
-        // 17 alone: only the range, and never Kelly's row
+        // 17 alone: the range and the footnote naming the chapter, and never Kelly's row
         let (_, r) = call(&app, "GET", "/ministry/refs/43/3/17", None, Value::Null).await;
-        assert_eq!(r["groups"][0]["items"].as_array().unwrap().len(), 1);
+        let got: Vec<(i64, &str)> = r["groups"][0]["items"].as_array().unwrap().iter().map(|i| (i["para"].as_i64().unwrap(), i["mention"].as_str().unwrap())).collect();
+        assert_eq!(got, [(1, "range"), (1, "chapter")]);
         assert_eq!(r["groups"].as_array().unwrap().len(), 1);
 
-        // the quiet check: verses of a chapter with anything, from enabled authors only
+        // the quiet check: verses of a chapter with anything, from enabled authors only; the footnote's row for John 3
+        // answers for all of it, Kelly's for John 4 for none
         let (st, ch) = call(&app, "GET", "/ministry/chapter/43/3", None, Value::Null).await;
-        assert_eq!((st, ch["verses"].clone()), (200, json!([16, 17])));
+        assert_eq!((st, ch["verses"].clone()), (200, json!((1..=36).collect::<Vec<_>>())));
+        assert_eq!(call(&app, "GET", "/ministry/chapter/43/4", None, Value::Null).await.1["verses"], json!([]));
         let (_, ch) = call(&app, "GET", "/ministry/chapter/45/8", None, Value::Null).await;
         assert_eq!(ch["verses"], json!([28]));
         let (_, ch) = call(&app, "GET", "/ministry/chapter/1/1", None, Value::Null).await;
@@ -720,6 +891,45 @@ pub mod tests {
     }
 
     #[tokio::test]
+    async fn a_row_for_the_whole_chapter_counts_for_every_verse() {
+        let path = cleanse_fixture();
+        // a paper of a collection the cleanse hides, on Genesis 1 as a whole; a letter on John 4 as a whole; a footnote of
+        // a Synopsis sub-heading on Genesis 1:4
+        rusqlite::Connection::open(&path).unwrap().execute_batch("INSERT INTO refs VALUES (1001000, 0, 40001000, 220, 0, 0, 0), (43004000, 0, 40001000, 210, 0, 0, 0),
+            (1001004, 0, 11001000, 202, 1, 0, 0)").unwrap();
+        let (app, pool) = app_with_ministry(&path);
+        let get = |uri: &'static str| { let app = app.clone(); async move { call(&app, "GET", uri, None, Value::Null).await.1 } };
+        let items = |r: &Value| r["groups"][0]["items"].as_array().unwrap().iter().map(|i| (i["work"]["id"].as_str().unwrap().to_string(), i["para"].as_i64().unwrap(),
+            i["note"].as_i64(), i["mention"].as_str().unwrap().to_string())).collect::<Vec<_>>();
+
+        // John 3:1 has nothing of its own: the footnote naming John 3 answers for it
+        let r = get("/ministry/refs/43/3/1").await;
+        assert_eq!(items(&r), [("cw-doctrinal-1".into(), 1, Some(1), "chapter".into())]);
+        let u: Vec<u16> = r["groups"][0]["items"][0]["snippet"].as_str().unwrap().encode_utf16().collect();
+        let hl = &r["groups"][0]["items"][0]["hl"];
+        assert_eq!(String::from_utf16_lossy(&u[hl[0].as_u64().unwrap() as usize..hl[1].as_u64().unwrap() as usize]), "John 3");
+        // John 3:16: the footnote names the verse too and is listed once, at its best
+        let r = get("/ministry/refs/43/3/16").await;
+        assert_eq!(items(&r).iter().filter(|i| i.2 == Some(1)).map(|i| i.3.as_str()).collect::<Vec<_>>(), ["verse"]);
+        assert_eq!(r["groups"][0]["total"], 7);
+        assert_eq!(items(&get("/ministry/refs/1/1/5").await), [("other-x".into(), 0, None, "chapter".into())]);
+        assert_eq!(items(&get("/ministry/refs/1/1/4").await)[0], ("genesis".into(), 2, Some(1), "verse".into()));
+        assert_eq!(get("/ministry/chapter/43/3").await["verses"], json!((1..=36).collect::<Vec<_>>()));
+        assert_eq!(get("/ministry/chapter/1/1").await["verses"], json!((1..=31).collect::<Vec<_>>()));
+
+        // under the cleanse neither a footnote of the Collected Writings, nor the hidden collection, nor a sub-heading's
+        // footnote counts; the letter does
+        crate::cleanse::apply(&pool.get().unwrap()).unwrap();
+        assert_eq!(get("/ministry/refs/43/3/1").await["groups"], json!([]));
+        assert_eq!(get("/ministry/refs/1/1/5").await["groups"], json!([]));
+        assert_eq!(get("/ministry/refs/1/1/4").await["groups"], json!([]));
+        assert_eq!(get("/ministry/chapter/43/3").await["verses"], json!([16, 17]));
+        assert_eq!(get("/ministry/chapter/1/1").await["verses"], json!([1, 3]));
+        assert_eq!(items(&get("/ministry/refs/43/4/54").await), [("letters-1".into(), 0, None, "chapter".into())]);
+        assert_eq!(get("/ministry/chapter/43/4").await["verses"], json!((1..=54).collect::<Vec<_>>()));
+    }
+
+    #[tokio::test]
     async fn sections_carry_their_quotations() {
         let path = cleanse_fixture();
         // a quotation in the Synopsis after its two sub-headings: under the cleanse its paragraph is two further up
@@ -737,12 +947,162 @@ pub mod tests {
         assert!(call(&app, "GET", "/ministry/darby/cw-doctrinal-1/2", None, Value::Null).await.1["section"].get("quotes").is_none());
     }
 
+    #[test]
+    fn small_words_are_the_index_builders() {
+        let ts = include_str!("../../shared/ministryIndex.ts");
+        let at = ts.find("const SMALL = new Set((").expect("shared/ministryIndex.ts has SMALL");
+        let list: String = ts[at..at + ts[at..].find(".split(' ')").unwrap()].split('\'').skip(1).step_by(2).collect();
+        assert_eq!(list.split(' ').collect::<Vec<_>>(), SMALL.split(' ').collect::<Vec<_>>());
+    }
+
+    fn hl_text(snippet: &str, hl: (usize, usize)) -> String { String::from_utf16_lossy(&snippet.encode_utf16().collect::<Vec<_>>()[hl.0..hl.1]) }
+    fn item_hl(i: &Value) -> String { hl_text(i["snippet"].as_str().unwrap(), (i["hl"][0].as_u64().unwrap() as usize, i["hl"][1].as_u64().unwrap() as usize)) }
+
+    #[test]
+    fn words_asked_and_where_they_stand() {
+        let t = "So the Sons, of\u{a0}GOD: and the sons of God.";
+        assert_eq!(hl_text(t, at_words(t, &words("sons of god"))), "Sons, of\u{a0}GOD");
+        // an apostrophe in a word is dropped as `words` drops it; a quotation mark around it is not part of it
+        let t = "‘the Lord’s supper’";
+        assert_eq!(hl_text(t, at_words(t, &words("Lord's supper"))), "Lord’s supper");
+        assert_eq!(at_words("𝔊 sons of God", &words("sons of god")), (3, 14), "UTF-16 units");
+        assert_eq!(at_words("sons, not of God", &words("sons of god")), (0, 0));
+        // as read: trimmed, spaces collapsed; the phrase parted as the index's tokenizer parts it, folded by it
+        let a = asked("  the  Lord's\tsupper ").unwrap();
+        assert_eq!((a.q.as_str(), a.words.join(" "), a.phrase.as_str()), ("the Lord's supper", "the lords supper".into(), "\"the Lord s supper\""));
+        for q in ["of the", "", " - ", "Unto them"] { assert!(asked(q).is_none(), "{q}") }
+        assert!(asked(&"word ".repeat(MAX_WORDS)).is_some() && asked(&"word ".repeat(MAX_WORDS + 1)).is_none());
+    }
+
+    /// An author's items found by their words: (work, n, para, near, mention).
+    fn found_items(g: &Value) -> Vec<(String, i64, i64, String, Option<String>)> {
+        g["items"].as_array().unwrap().iter().map(|i| (i["work"]["id"].as_str().unwrap().into(), i["n"].as_i64().unwrap(), i["para"].as_i64().unwrap(),
+            i["near"].as_str().unwrap().into(), i["mention"].as_str().map(String::from))).collect()
+    }
+    fn it(work: &str, n: i64, para: i64, near: &str, mention: Option<&str>) -> (String, i64, i64, String, Option<String>) { (work.into(), n, para, near.into(), mention.map(String::from)) }
+
+    #[tokio::test]
+    async fn words_of_a_verse_nearest_first() {
+        let path = fixture();
+        with_words(&path);
+        let (app, _) = app_with_ministry(&path);
+        let (st, r) = call(&app, "GET", "/ministry/refs/43/3/16?q=%20%20loved%20%20the%20World%20", None, Value::Null).await;
+        assert_eq!(st, 200, "{r}");
+        assert_eq!((r["q"].as_str(), r["verses"].clone()), (Some("loved the World"), json!([16])));
+        assert_eq!(r["groups"].as_array().unwrap().iter().map(|g| g["author"].as_str().unwrap()).collect::<Vec<_>>(), ["darby", "coates"], "Kelly never");
+        // on the verse by rank (the quotation, the one quoted later on, the one naming it, the one whose footnote names
+        // it), then the chapter (a section on all of it; another paragraph of the section naming John 3:3), the book (the
+        // table alone on John 3:5 between does not bring John 1 nearer), the rest
+        assert_eq!(found_items(&r["groups"][0]), [it("cw-doctrinal-1", 1, 0, "verse", Some("quote")), it("cw-expository-1", 2, 1, "verse", Some("quote")),
+            it("cw-expository-1", 2, 0, "verse", Some("verse")), it("cw-expository-1", 2, 2, "verse", Some("verse")), it("cw-expository-1", 1, 1, "chapter", None),
+            it("cw-expository-1", 5, 1, "chapter", None), it("cw-expository-1", 3, 1, "book", None), it("cw-expository-1", 6, 0, "elsewhere", None)]);
+        assert_eq!((r["groups"][0]["total"].as_i64(), r["groups"][0]["pages"].as_i64()), (Some(8), Some(1)));
+        assert_eq!(found_items(&r["groups"][1]), [it("romans", 1, 1, "elsewhere", None)]);
+        assert!(r["groups"][0]["items"].as_array().unwrap().iter().all(|i| i.get("note").is_none() && i.get("row").is_none()));
+        // the words lit where they stand, whatever the case, the punctuation and a line break between them
+        for i in r["groups"].as_array().unwrap().iter().flat_map(|g| g["items"].as_array().unwrap()) {
+            let t = item_hl(i);
+            assert!(words(&t) == words("loved the world") && t.starts_with(char::is_alphanumeric) && t.ends_with(char::is_alphanumeric), "{i}");
+        }
+        let line = &r["groups"][0]["items"][4];
+        assert_eq!((line["snippet"].as_str(), item_hl(line).as_str()), (Some("Loved, the World!"), "Loved, the World"));
+        // an apostrophe: the index parts "Lord’s" where the words keep it whole
+        let (_, r) = call(&app, "GET", "/ministry/refs/43/3/16?q=the%20Lord%27s%20supper", None, Value::Null).await;
+        assert_eq!(found_items(&r["groups"][0]), [it("cw-expository-1", 6, 1, "elsewhere", None)]);
+        assert_eq!(item_hl(&r["groups"][0]["items"][0]), "the Lord’s supper");
+        // words a paragraph has, but in an order nobody wrote them: nothing
+        assert_eq!(call(&app, "GET", "/ministry/refs/43/3/16?q=world%20the%20loved", None, Value::Null).await.1["groups"], json!([]));
+        // without q the list is as it was, with no q
+        let (_, r) = call(&app, "GET", "/ministry/refs/43/3/16", None, Value::Null).await;
+        assert!(r.get("q").is_none() && r["groups"][0]["items"][0].get("near").is_none());
+
+        // refused: small words alone, none, more than 12; 12 are read
+        for q in ["of%20the", "", "%20%20", "-", &"word%20".repeat(13)] {
+            assert_eq!(call(&app, "GET", &format!("/ministry/refs/43/3/16?q={q}"), None, Value::Null).await.0, 400, "{q}");
+        }
+        assert_eq!(call(&app, "GET", &format!("/ministry/refs/43/3/16?q={}", "word%20".repeat(12)), None, Value::Null).await.0, 200);
+        // a verse the chapter does not have and an author not enabled are 404s, as without q
+        assert_eq!(call(&app, "GET", "/ministry/refs/43/3/37?q=loved", None, Value::Null).await.0, 404);
+        assert_eq!(call(&app, "GET", "/ministry/refs/43/3/16?q=loved&author=kelly", None, Value::Null).await.0, 404);
+    }
+
+    #[tokio::test]
+    async fn words_of_a_verse_by_author_and_page() {
+        let path = fixture();
+        with_words(&path);
+        {
+            let c = rusqlite::Connection::open(&path).unwrap();
+            for k in 0..18i64 { c.execute("INSERT INTO paras VALUES (?1, 'darby', 'cw-expository-1', 6, ?2, 'Again he loved the world.')", params![182 + k, 2 + k]).unwrap(); }
+            index_words(&c);
+        }
+        let (app, _) = app_with_ministry(&path);
+        let get = |uri: String| { let app = app.clone(); async move { call(&app, "GET", &uri, None, Value::Null).await.1 } };
+        let q = "q=loved%20the%20world";
+        let r = get(format!("/ministry/refs/43/3/16?{q}")).await;
+        let g = &r["groups"][0];
+        assert_eq!((g["total"].as_i64(), g["page"].as_i64(), g["pages"].as_i64(), g["items"].as_array().unwrap().len()), (Some(26), Some(1), Some(2), 20));
+        let r = get(format!("/ministry/refs/43/3/16?author=darby&page=2&{q}")).await;
+        let p2 = &r["groups"][0];
+        assert_eq!((p2["page"].as_i64(), p2["items"].as_array().unwrap().len()), (Some(2), 6));
+        assert_eq!(found_items(p2).last().unwrap(), &it("cw-expository-1", 6, 19, "elsewhere", None), "reading order to the last");
+        assert_eq!(get(format!("/ministry/refs/43/3/16?author=darby&page=9&{q}")).await["groups"][0]["page"], 2);
+        let r = get(format!("/ministry/refs/43/3/16?author=coates&{q}")).await;
+        assert_eq!((r["groups"].as_array().unwrap().len(), r["groups"][0]["total"].as_i64(), r["q"].as_str()), (1, Some(1), Some("loved the world")));
+        // an author with nothing has a group of nothing when asked for by name
+        assert_eq!(get("/ministry/refs/43/3/16?author=coates&q=supper".into()).await["groups"][0]["total"], 0);
+    }
+
+    #[tokio::test]
+    async fn words_of_a_verse_under_the_cleanse() {
+        let path = cleanse_fixture();
+        with_words(&path);
+        {
+            // the same words in a sub-heading of the Synopsis and in a collection the cleanse hides (in a paper on John 3:16)
+            let c = rusqlite::Connection::open(&path).unwrap();
+            c.execute_batch("INSERT INTO paras VALUES (204, 'darby', 'genesis', 1, 4, '<i>Loved the world</i>'), (221, 'darby', 'other-x', 1, 1, 'Loved the world, said another.')").unwrap();
+            index_words(&c);
+        }
+        let (app, pool) = app_with_ministry(&path);
+        let uri = "/ministry/refs/43/3/16?q=loved%20the%20world";
+        let r = call(&app, "GET", uri, None, Value::Null).await.1;
+        assert_eq!(found_items(&r["groups"][0]), [it("cw-doctrinal-1", 1, 0, "verse", Some("quote")), it("cw-expository-1", 2, 1, "verse", Some("quote")),
+            it("cw-expository-1", 2, 0, "verse", Some("verse")), it("cw-expository-1", 2, 2, "verse", Some("verse")), it("cw-expository-1", 1, 1, "chapter", None),
+            it("cw-expository-1", 5, 1, "chapter", None), it("other-x", 1, 1, "chapter", None), it("cw-expository-1", 3, 1, "book", None),
+            it("cw-expository-1", 6, 0, "elsewhere", None), it("genesis", 1, 4, "elsewhere", None)]);
+
+        crate::cleanse::apply(&pool.get().unwrap()).unwrap();
+        let r = call(&app, "GET", uri, None, Value::Null).await.1;
+        assert_eq!(r["groups"].as_array().unwrap().len(), 1, "Coates is not in 1890: {r}");
+        // no sub-heading, nothing hidden; the paragraph whose footnote named the verse stands with the chapter now, its
+        // footnote's caller out of the snippet
+        assert_eq!(found_items(&r["groups"][0]), [it("cw-doctrinal-1", 1, 0, "verse", Some("quote")), it("cw-expository-1", 2, 1, "verse", Some("quote")),
+            it("cw-expository-1", 2, 0, "verse", Some("verse")), it("cw-expository-1", 1, 1, "chapter", None), it("cw-expository-1", 2, 2, "chapter", None),
+            it("cw-expository-1", 5, 1, "chapter", None), it("cw-expository-1", 3, 1, "book", None), it("cw-expository-1", 6, 0, "elsewhere", None)]);
+        assert_eq!(r["groups"][0]["total"], 8);
+        let caller = &r["groups"][0]["items"][4];
+        assert_eq!((caller["snippet"].as_str(), item_hl(caller).as_str()), (Some("See how he loved the world."), "loved the world"));
+    }
+
+    #[tokio::test]
+    async fn words_of_a_verse_in_an_older_database() {
+        let path = fixture();
+        rusqlite::Connection::open(&path).unwrap().execute_batch("DROP TABLE paras_fts").unwrap();
+        let (app, _) = app_with_ministry(&path);
+        for uri in ["/ministry/refs/43/3/16?q=loved%20the%20world", "/ministry/refs/43/3/16?q=loved%20the%20world&author=darby"] {
+            let (st, r) = call(&app, "GET", uri, None, Value::Null).await;
+            assert_eq!((st, r["groups"].clone(), r["q"].as_str()), (200, json!([]), Some("loved the world")), "{uri}");
+        }
+        assert_eq!(call(&app, "GET", "/ministry/refs/43/3/16?q=of%20the", None, Value::Null).await.0, 400);
+        assert_eq!(call(&app, "GET", "/ministry/refs/43/3/16", None, Value::Null).await.1["groups"][0]["total"], 5);
+    }
+
     #[tokio::test]
     async fn without_the_database() {
         let (app, _) = crate::testkit::app();
         assert_eq!(call(&app, "GET", "/ministry", None, Value::Null).await.1, json!({ "authors": [] }));
         assert_eq!(call(&app, "GET", "/ministry/chapter/43/3", None, Value::Null).await.1["verses"], json!([]));
         assert_eq!(call(&app, "GET", "/ministry/refs/43/3/16", None, Value::Null).await.1["groups"], json!([]));
+        assert_eq!(call(&app, "GET", "/ministry/refs/43/3/16?q=loved", None, Value::Null).await.1, json!({ "book": 43, "chapter": 3, "verses": [16], "q": "loved", "groups": [] }));
         assert_eq!(call(&app, "GET", "/ministry/darby/cw-doctrinal-1", None, Value::Null).await.0, 404);
         assert_eq!(call(&app, "GET", "/ministry/search?q=john", None, Value::Null).await.1, json!({ "hits": [] }));
     }

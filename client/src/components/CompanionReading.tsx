@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useMemo, useState, type ReactNode } from 'react'
 import { Platform, Text, View, type TextStyle } from 'react-native'
-import { formatPassages, paragraphsOf, passageStart, titleIsPassage, workLine, type Place, type Section } from '@shared/companion'
+import { formatPassages, paragraphHomes, paragraphsOf, passageStart, titleIsPassage, workLine, type Place, type Section } from '@shared/companion'
 import type { MinistrySectionMeta } from '@shared/ministry'
 import { formatRef, type Ref, type RefHome } from '@shared/ref'
 import { isLookupWord } from '@shared/cbd'
@@ -8,11 +8,11 @@ import { t } from '@shared/i18n'
 import { proseWords, wordTapAt, type WordTap } from '@shared/wordTap'
 import { wordAtPoint } from '../lib/wordAtPoint'
 import { inlineSpans, superscript, type Span } from '../lib/intro'
-import { quoteLinks, type QuoteLink } from '../lib/quoteLinks'
+import { quotedRefs, quoteLinks, type QuoteLink } from '../lib/quoteLinks'
 import { useReadingFont } from '../hooks/useReadingFont'
 import { usePageInks } from '../hooks/useTheme'
 import InkText from './InkText'
-import { face } from '../theme'
+import { face, TEXT_FIT } from '../theme'
 import type { Font } from '../store/prefs'
 import { PulseOnce } from './motion/community'
 import { easeNextLayout, useReduceMotion } from './motion/nav'
@@ -51,44 +51,48 @@ export function CompanionHeading({ place, size = 22, title = true, line, onPassa
   )
 }
 
-interface Ink { italic: TextStyle; onRef: (r: Ref) => void; onNote: (id: string) => void }
+interface Ink { italic: TextStyle; nest: TextStyle; onRef: (r: Ref) => void; onNote: (id: string) => void }
 
 const LINK: TextStyle = { textDecorationLine: 'underline' }
 /** Inline spans: italics, references linked into the reader, footnote callers as superior figures in the accent. Their
- *  colours are leaves (InkText): a theme change never walks a section's paragraphs. With `onWord` on the phone, every
- *  word that could name an article is its own Text (the Bible reader's pattern under its switch): the cost of a node
- *  per word is paid only by a reader who turned Word lookup on. The web finds the word from the click point instead
- *  (Paragraph), so its spans stay whole. `links`: the line's quotations of Scripture (lib/quoteLinks.ts), set in the
- *  accent without the reference's underline; a tap opens the verse quoted, ahead of Word lookup, as a reference does. */
+ *  colours are leaves (InkText): a theme change never walks a section's paragraphs. Plain runs stay strings inside the
+ *  paragraph Text (the Bible reader's pattern): an extra Text around every span made Android wrap the same line twice
+ *  and paint it on top of itself. Nested Text that must exist (italic, a link, a lookup word) gets `ink.nest` so its
+ *  line box matches the parent. With `onWord` on the phone, every word that could name an article is its own Text: the
+ *  cost of a node per word is paid only by a reader who turned Word lookup on. The web finds the word from the click
+ *  point instead (Paragraph), so its spans stay whole. `links`: the line's quotations of Scripture (lib/quoteLinks.ts),
+ *  set in the accent without the reference's underline; a tap opens the verse quoted, ahead of Word lookup, as a
+ *  reference does. */
 function Spans({ spans, ink, onWord, links }: { spans: Span[]; ink: Ink; onWord?: (t: WordTap) => void; links?: readonly QuoteLink[] }) {
   const words = onWord && Platform.OS !== 'web' ? lineWords(spans) : null
   let at = 0
   return spans.map((s, i) => {
-    const style = s.italic ? ink.italic : undefined
+    const style = s.italic ? [ink.italic, ink.nest] : undefined
     const start = at
     at += s.text.length
     if (s.note !== undefined) {
       const id = s.note
-      return <InkText key={i} ink="accent" accessibilityRole="button" accessibilityLabel={t('Footnote {marker}', { marker: id })} onPress={() => ink.onNote(id)} style={style}>{s.text}</InkText>
+      return <InkText key={i} ink="accent" accessibilityRole="button" accessibilityLabel={t('Footnote {marker}', { marker: id })} onPress={() => ink.onNote(id)} style={[ink.nest, style]}>{s.text}</InkText>
     }
     if (s.ref) {
       const ref = s.ref
-      return <InkText key={i} ink="accent" accessibilityRole="link" onPress={() => ink.onRef(ref)} style={[style, LINK]}>{s.text}</InkText>
+      return <InkText key={i} ink="accent" accessibilityRole="link" onPress={() => ink.onRef(ref)} style={[ink.nest, style, LINK]}>{s.text}</InkText>
     }
-    const prose = (from: number, to: number) => { const t = s.text.slice(from - start, to - start); return words ? tappable(t, from, words, onWord!) : t }
+    const prose = (from: number, to: number) => { const t = s.text.slice(from - start, to - start); return words ? tappable(t, from, words, onWord!, ink.nest) : t }
     const end = at
     const quoted = links?.filter(l => l.a < end && start < l.b)
-    if (!quoted?.length) return <Text key={i} style={style}>{prose(start, end)}</Text>
+    const wrap = (inner: ReactNode) => style ? <Text key={i} style={style}>{inner}</Text> : <Fragment key={i}>{inner}</Fragment>
+    if (!quoted?.length) return wrap(prose(start, end))
     const parts: ReactNode[] = []
     let pos = start
     quoted.forEach((l, k) => {
       const a = Math.max(l.a, start), b = Math.min(l.b, end)
       if (a > pos) parts.push(<Fragment key={`p${k}`}>{prose(pos, a)}</Fragment>)
-      parts.push(<InkText key={`q${k}`} ink="accent" accessibilityRole="link" accessibilityHint={t('Opens {ref}', { ref: formatRef(l.ref) })} onPress={() => ink.onRef(l.ref)}>{s.text.slice(a - start, b - start)}</InkText>)
+      parts.push(<InkText key={`q${k}`} ink="accent" accessibilityRole="link" accessibilityHint={t('Opens {ref}', { ref: formatRef(l.ref) })} onPress={() => ink.onRef(l.ref)} style={ink.nest}>{s.text.slice(a - start, b - start)}</InkText>)
       pos = b
     })
     if (pos < end) parts.push(<Fragment key="p">{prose(pos, end)}</Fragment>)
-    return <Text key={i} style={style}>{parts}</Text>
+    return wrap(parts)
   })
 }
 
@@ -99,7 +103,7 @@ function lineWords(spans: Span[]): LineWords {
   return { at, names: at.map(w => w.word) }
 }
 /** A span's text with each lookup word (whole within the span) answering a tap; the rest stays plain string. */
-function tappable(text: string, start: number, words: LineWords, onWord: (t: WordTap) => void): ReactNode[] {
+function tappable(text: string, start: number, words: LineWords, onWord: (t: WordTap) => void, nest: TextStyle): ReactNode[] {
   const out: ReactNode[] = []
   const end = start + text.length
   let pos = 0
@@ -107,7 +111,7 @@ function tappable(text: string, start: number, words: LineWords, onWord: (t: Wor
     if (w.at < start || w.at + w.word.length > end) return
     const local = w.at - start
     if (local > pos) out.push(text.slice(pos, local))
-    out.push(isLookupWord(w.word) ? <Text key={k} onPress={() => onWord(wordTapAt(words.names, k))}>{w.word}</Text> : w.word)
+    out.push(isLookupWord(w.word) ? <Text key={k} onPress={() => onWord(wordTapAt(words.names, k))} style={nest}>{w.word}</Text> : w.word)
     pos = local + w.word.length
   })
   if (pos < text.length) out.push(text.slice(pos))
@@ -133,7 +137,7 @@ const Paragraph = memo(function Paragraph({ i, lines, quote, f, q, ink, open, no
     <View testID={`para-${i}`} onLayout={onPara ? e => onPara(i, e.nativeEvent.layout.y) : undefined}>
       {washed ? <View pointerEvents="none" style={{ position: 'absolute', left: -10, right: -10, top: -6, bottom: -6 }}><PulseOnce delay={washDelay} radius={RADIUS.control} strength={0.16} /></View> : null}
       <InkText ink="text" style={[quote ? q.body : f.body, quote ? QUOTE : null]} {...(onClick ? { onClick } as object : null)}>
-        {lines.map((l, j) => <Text key={j}>{j ? '\n' : ''}<Spans spans={l} ink={ink} onWord={onWord} links={links.length ? links.filter(x => x.line === j) : undefined} /></Text>)}
+        {lines.map((l, j) => <Fragment key={j}>{j ? '\n' : null}<Spans spans={l} ink={ink} onWord={onWord} links={links.length ? links.filter(x => x.line === j) : undefined} /></Fragment>)}
       </InkText>
       {open ? <SectionNote marker={open} text={noteText(open)} size={size} font={f.font} home={home} ink={ink} /> : null}
     </View>
@@ -145,9 +149,10 @@ const NO_LINKS: QuoteLink[] = []
 /**
  * A section's text, typeset like the About notices: paragraphs in the reader's font, block quotations (hymns, a long
  * verse) set in from the left with their lines kept, scripture references linked through `onRef` (`home`, the book the
- * section is on, gives "chapter 9" and "verse 4" their book), footnote callers that open their note under the
- * paragraph. `from`/`to` show a page of the paragraphs; `onPara` reports where each one lands
- * (for opening at the verse in view); `wash` is the paragraph that was opened at, washed once in the accent. `size` and
+ * section is on, gives "chapter 9" and "verse 4" their book, and "(v. 1)" the chapter in hand: paragraphHomes),
+ * footnote callers that open their note under the paragraph. `from`/`to` show a page of the paragraphs; `onPara`
+ * reports where each one lands (for opening at the verse in view); `wash` is the paragraph that was opened at, washed
+ * once in the accent. `size` and
  * `line` set the reading size and line height (the library reads at the reader's own; the sheet at READING_SIZE).
  * `onWord`: Word lookup is on; a tap on a word of the prose reports it with its neighbours (references stay links).
  * The section's quotations of Scripture (`section.quotes`, from the ministry's verse index) are links to the verse
@@ -162,21 +167,30 @@ export const CompanionText = memo(function CompanionText({ section, home, from =
   const q = useReadingFont(size - 1, Math.max(1.2, line - 0.05))
   const notes = section.notes ?? NO_NOTES
   const paras = useMemo(() => paragraphsOf(section.text), [section.text])
-  const spans = useMemo(() => paras.map(p => p.lines.map(l => inlineSpans(l, notes.length > 0, home))), [paras, notes.length, home?.book, home?.chapter])  // eslint-disable-line react-hooks/exhaustive-deps
+  // each paragraph's "(v. 1)" in the chapter in hand, as the verse index reads it
+  const homes = useMemo(() => paragraphHomes(paras.map(p => p.lines.join(' ')), home, section.passages), [paras, home?.book, home?.chapter, section.passages])  // eslint-disable-line react-hooks/exhaustive-deps
+  const spans = useMemo(() => paras.map((p, i) => p.lines.map(l => inlineSpans(l, notes.length > 0, homes[i]))), [paras, notes.length, homes])
   const links = useMemo(() => {
     const quoted = new Map<number, { verse: number; words: string }[]>()
     for (const [i, verse, words] of section.quotes ?? []) quoted.set(i, [...(quoted.get(i) ?? []), { verse, words }])
     return spans.map((lines, i) => { const qs = quoted.get(i); return qs ? quoteLinks(lines.map(l => l.map(s => s.text).join('')), qs) : NO_LINKS })
   }, [spans, section.quotes])
+  // “…” (verse 8) after a quotation of another book's verse 8 is that verse
+  const linked = useMemo(() => spans.map((lines, i) => quotedRefs(lines, links[i])), [spans, links])
   const [openNote, setOpenNote] = useState<string | null>(null)
   const onNote = useCallback((id: string) => { easeNextLayout(reduce); setOpenNote(o => o === id ? null : id) }, [reduce])
-  const ink = useMemo<Ink>(() => ({ italic: f.italic, onRef, onNote }), [f.italic, onRef, onNote])
+  const ink = useMemo<Ink>(() => ({
+    italic: f.italic,
+    nest: { lineHeight: f.body.lineHeight, ...TEXT_FIT },
+    onRef,
+    onNote,
+  }), [f.italic, f.body.lineHeight, onRef, onNote])
   const noteText = useCallback((id: string) => notes[+id - 1] ?? '', [notes])
   return (
     <View style={{ gap: Math.round(size * line * 0.55) }}>
       {paras.slice(from, to).map((p, k) => {
         const i = from + k
-        const lines = spans[i]
+        const lines = linked[i]
         const open = openNote !== null && lines.some(l => l.some(s => s.note === openNote)) ? openNote : null
         return <Paragraph key={i} i={i} lines={lines} quote={p.quote} f={f} q={q} ink={ink} open={open} noteText={noteText} onPara={onPara} washed={wash === i} washDelay={washDelay} size={size} home={home} onWord={onWord} links={links[i]} />
       })}

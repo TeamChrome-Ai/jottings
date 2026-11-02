@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { quoteLinks, quoteWords, refOfVerse } from '../client/src/lib/quoteLinks'
+import { quotedRefs, quoteLinks, quoteWords, refOfVerse } from '../client/src/lib/quoteLinks'
 import { inlineSpans } from '../client/src/lib/intro'
 
 /** A line as the reader shows it: its spans' text joined. */
@@ -26,6 +26,16 @@ describe('a quotation of Scripture in the ministry', () => {
     const lines = ['The Lord is my shepherd;', 'I shall not want.']
     const links = quoteLinks(lines, [{ verse: 19023001, words: 'The Lord is my shepherd; I shall not want' }])
     expect(links.map(l => [l.line, at(lines[l.line], l)])).toEqual([[0, 'The Lord is my shepherd'], [1, 'I shall not want']])
+  })
+
+  it('takes a bare “(verse 8)” closing a quotation of a verse 8 to it, as the verse index reads it', () => {
+    // Coates, reading Ezra 4, quotes Haggai and gives only the verse
+    const spans = inlineSpans('“The silver is mine, and the gold is mine, saith the Lord of hosts” (verse 8). And (v. 9) after.', false, { book: 15, chapter: 4 })
+    const quote = 'The silver is mine, and the gold is mine, saith the Lord of hosts'
+    const refs = (verse: number) => quotedRefs([spans], quoteLinks([spans.map(s => s.text).join('')], [{ verse, words: quote }]))[0].filter(s => s.ref).map(s => [s.text, s.ref])
+    expect(refs(37002008)).toEqual([['verse 8', { book: 37, chapter: 2, v1: 8 }], ['v. 9', { book: 15, chapter: 4, v1: 9 }]])
+    // a quotation of another verse number leaves it
+    expect(refs(37002007)).toEqual([['verse 8', { book: 15, chapter: 4, v1: 8 }], ['v. 9', { book: 15, chapter: 4, v1: 9 }]])
   })
 
   it('links nothing when the words are not there, and leaves the rest of the paragraph alone', () => {

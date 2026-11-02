@@ -319,6 +319,8 @@ mod tests {
         assert_eq!((rows[0][0].as_i64(), rows[0][1].as_i64(), rows[0][2].as_i64()), (Some(16), Some(1_001_000), Some(0)), "the quotation first: {}", rows[0]);
         let last = rows.iter().filter(|r| r[0] == 16).last().unwrap();
         assert_eq!((last[5].as_i64(), last[8].as_str()), (Some(-1), Some("Whosoever · John 3:16")));
+        // the row for the whole chapter as stored: verse 0, after every verse's rows (an app before such rows asks for no verse 0)
+        assert_eq!(rows.last().unwrap(), &serde_json::json!([0, 40_002_000, 0, 1, 1, 1, 4, 10]));
 
         // one work uncompressed, the index alone, and a 304 for the version held
         let (st, w) = call(&app, "GET", "/ministry/offline/darby/cw-doctrinal-1", None, Value::Null).await;

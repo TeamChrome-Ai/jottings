@@ -1,6 +1,7 @@
 // Ministry at a 412 px phone width: select John 3:16 and the bar offers Ministry; the sheet lists Darby and Coates as
-// segments, best first; an item opens in the library's reader at its paragraph; a reference there goes into the Bible
-// reader; "Back to the verse" comes home. Romans 8:28 the same, with a page turn when Darby runs to more than one page.
+// segments, best first; an item opens in the library's reader at its paragraph; a reference there opens Ministry on its
+// verse over the reading (its Read goes into the Bible reader; a chapter goes there at once); "Back to the verse" comes
+// home. Romans 8:28 the same, with a page turn when Darby runs to more than one page.
 // A verse nobody wrote on: no Ministry in the bar. More → "Ministry on this chapter" on Genesis 1.
 // BASE=http://127.0.0.1:8841 OUT=/tmp/wt-ministry node scripts/ministry-check.mjs   (REDUCE=1: Reduce animation on)
 import { chromium } from 'playwright'
@@ -59,14 +60,23 @@ await page.waitForTimeout(1600)
 const url = new URL(page.url())
 ok(`the item opens the library reader at its place (${url.pathname}${url.search})`, url.searchParams.get('p') !== null && url.searchParams.get('from') === '43.3.16')
 await shot('04-item-in-context')
-// a reference in the reading goes into the Bible reader, and back
+// a reference in the reading: a verse opens Ministry on it over the reading, whose Read goes into the Bible reader; a
+// chapter goes there at once; and back
 const link = page.getByRole('link').filter({ hasText: /\d/ }).first()
 if (await link.count()) {
   const label = await link.textContent()
   await link.scrollIntoViewIfNeeded()
   await link.click()
-  await page.waitForURL(/\/read\/\d+\/\d+/, { timeout: 15000 }); await page.waitForTimeout(1200)
-  ok(`following “${label}” opens the Bible reader (${new URL(page.url()).pathname})`, true)
+  const read = dialog().getByRole('button', { name: /^Read / })
+  await Promise.race([page.waitForURL(/\/read\/\d+\/\d+/, { timeout: 15000 }).catch(() => {}), read.waitFor({ timeout: 15000 }).catch(() => {})])
+  if (await read.count()) {
+    ok(`“${label}” opens Ministry on it over the reading`, /\/companion/.test(page.url()))
+    await shot('05-reference-sheet')
+    await read.click()
+    await page.waitForURL(/\/read\/\d+\/\d+/, { timeout: 15000 })
+  }
+  await page.waitForTimeout(1200)
+  ok(`following “${label}” opens the Bible reader (${new URL(page.url()).pathname})`, /\/read\/\d+\/\d+/.test(page.url()))
   await shot('05-reference-followed')
   await page.goBack(); await page.waitForTimeout(1500)
   ok('back returns to the library reader', /\/companion/.test(page.url()))
@@ -92,9 +102,10 @@ if (await next.count() && await next.isEnabled()) {
 }
 await page.keyboard.press('Escape'); await page.waitForTimeout(600)
 
-// 3. a verse nobody wrote on: no Ministry, and the bar is the height it always is
-const plainHeight = await (async () => { await select(13, 1, /The sons of Japheth/); return barHeight() })()
-ok('1 Chronicles 1:5 selected: no Ministry in the bar', !(await ministryButton().count()))
+// 3. a verse nobody wrote on: no Ministry, and the bar is the height it always is (with rows for whole chapters, Jeremiah
+// 40 and 47 are the only chapters no author touches)
+const plainHeight = await (async () => { await select(24, 47, /waters rise up out of the north/); return barHeight() })()
+ok('Jeremiah 47:2 selected: no Ministry in the bar', !(await ministryButton().count()))
 await shot('09-no-ministry-bar')
 await select(43, 3, /For God so/)
 ok(`the bar does not change height for Ministry (${Math.round(plainHeight)} and ${Math.round(await barHeight())} px)`, Math.abs(plainHeight - await barHeight()) < 1)

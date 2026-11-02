@@ -8,6 +8,10 @@
  "(you)": "(du)",
  "[omitted]": "[utelämnad]",
  "{A} opens to read, or Edit to change; this sample goes after.": "En anteckning öppnas för läsning, eller med Redigera för ändringar; det här exemplet försvinner efteråt.",
+ "{author} uses it in {n} paragraph.\u0000{author} uses it in {n} paragraphs.": {
+  "one": "{author} använder det i {n} stycke.",
+  "other": "{author} använder det i {n} stycken."
+ },
  "{authors}, searchable by passage or title.": "{authors}, sökbara på bibelställe eller titel.",
  "{book} at {time}": "{book} kl. {time}",
  "{book} chapter {chapter}": "{book} kapitel {chapter}",
@@ -244,6 +248,10 @@
  "{n} or more papers\u0000{n} or more papers": {
   "one": "{n} eller fler skrifter",
   "other": "{n} eller fler skrifter"
+ },
+ "{n} other author uses it too.\u0000{n} other authors use it too.": {
+  "one": "{n} annan författare använder det också.",
+  "other": "{n} andra författare använder det också."
  },
  "{n} page\u0000About {n} pages": {
   "one": "{n} sida",
@@ -779,6 +787,7 @@
  "Edit event": "Redigera aktiviteten",
  "Edit group": "Redigera gruppen",
  "Eight more colours when you tap a verse": "Åtta färger till när du trycker på en vers",
+ "Elsewhere": "På andra ställen",
  "Email": "E-post",
  "Email (optional)": "E-post (valfritt)",
  "Email, if you would like a reply (optional)": "E-post, om du vill ha svar (valfritt)",
@@ -813,6 +822,7 @@
  "Feedback": "Synpunkter",
  "Fig": "Fikon",
  "Find friends from my contacts": "Hitta vänner bland mina kontakter",
+ "Finding words in the ministry needs a connection to the server.": "Att söka efter ord i förkunnelsen kräver en anslutning till servern.",
  "Finish by": "Klar senast",
  "finish by {day}": "klar senast {day}",
  "Finish by {day}": "Klar senast {day}",
@@ -933,6 +943,7 @@
  "In a month": "Om en månad",
  "In parallel": "Parallellt",
  "In the beginning": "I begynnelsen",
+ "In the ministry": "I förkunnelsen",
  "In the order it happened": "I den ordning det hände",
  "In this order: {books}": "I den här ordningen: {books}",
  "in use": "används",
@@ -1223,6 +1234,7 @@
  "Nothing for “{query}”.": "Inga träffar för ”{query}”.",
  "Nothing here yet. Add a passage, a note, a link or a heading below.": "Inget här än. Lägg till ett bibelställe, en notering, en länk eller en rubrik nedan.",
  "Nothing here.": "Här finns ingenting.",
+ "Nothing in the ministry has these words.": "Inget i förkunnelsen innehåller de här orden.",
  "Nothing in this file could be read.": "Inget i filen kunde läsas.",
  "Nothing new to add: everything in this file is already here.": "Inget nytt att lägga till: allt i filen finns redan här.",
  "Nothing on this chapter yet.": "Inget om det här kapitlet än.",
@@ -1254,6 +1266,7 @@
  "Old Testament tags are aligned by machine, so this list can miss places the word occurs.": "Taggarna i Gamla testamentet är maskinellt kopplade, så listan kan missa ställen där ordet förekommer.",
  "Olive": "Oliv",
  "Olive branch": "Olivkvist",
+ "On {ref}": "Om {ref}",
  "On this device": "På den här enheten",
  "On this phone": "På telefonen",
  "On this phone · {size}": "På telefonen · {size}",
@@ -1310,6 +1323,7 @@
  "paper size\u0004Letter": "Letter",
  "Paper tones for daylight": "Papperstoner för dagsljus",
  "Paragraphs": "Stycken",
+ "Paragraphs with “{words}”": "Stycken med ”{words}”",
  "Paragraphs, footnotes": "Stycken, fotnoter",
  "Paragraphs, verse numbers": "Stycken, versnummer",
  "Paragraphs, verse numbers, footnotes": "Stycken, versnummer, fotnoter",
@@ -1631,6 +1645,7 @@
  "Take the path off the group?": "Ta bort läsplanen från gruppen?",
  "Taken from a published digital copy of the text and checked verse by verse against a second copy; words split across lines are rejoined and four verse divisions follow the usual numbering.": "Hämtad från en publicerad digital kopia av texten och kontrollerad vers för vers mot en andra kopia; ord som delats mellan rader har förenats igen, och fyra versindelningar följer den vanliga numreringen.",
  "Tap a theme and every screen changes at once. You are reading in {name}.": "Tryck på ett tema så ändras alla skärmar på en gång. Du läser i {name}.",
+ "Tap a word to find it in the ministry; tap another for a phrase": "Tryck på ett ord för att söka det i förkunnelsen; på ett till för en fras",
  "Tap a word: Darby’s usage, Strong’s concordance and Morrish": "Tryck på ett ord: Darbys bruk, Strongs konkordans och Morrish",
  "Tap a word: Strong’s concordance and Morrish": "Tryck på ett ord: Strongs konkordans och Morrish",
  "Tap one to try it.": "Tryck på ett för att prova det.",

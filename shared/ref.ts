@@ -238,12 +238,13 @@ export function romanToInt(s: string): number | undefined {
 const PN = String.raw`(?:\d[\dI]{0,2}|I\d{1,2})(?![\dA-Za-z])`
 const PRANGE = String.raw`\s?(?:--|[-–—])\s?`
 const PREFACE_RE = new RegExp([
-  // Book chapter[.verse[-verse]]: "John xix. 34", "Rev. xxii. 14", "I Cor. xv. 49", "Romans XV. I2", "Psalm 147.1", "Gen. 5. 3 -- 29", "John viii"
-  String.raw`\b((?:(?:[1-3]|I{1,3})\s?)?[A-Z][a-z]+\.?(?:\s(?:of\s)?[A-Z][a-z]+\.?)?)(?:\s?(\d{1,3})(?![\dA-Za-z])|\s([ivxlc]+)\b|\s([IVXLC]+)(?=\.))(?:\s?[:.]\s?(${PN})(?:${PRANGE}(${PN}))?)?`,
+  // Book chapter[.verse[-verse]]: "John xix. 34", "Rev. xxii. 14", "I Cor. xv. 49", "Romans XV. I2", "Psalm 147.1", "Gen. 5. 3 -- 29", "John viii";
+  // not "Verses 23–33" opening a sentence, which the next one reads with its range
+  String.raw`\b(?!Verses?\b)((?:(?:[1-3]|I{1,3})\s?)?[A-Z][a-z]+\.?(?:\s(?:of\s)?[A-Z][a-z]+\.?)?)(?:\s?(\d{1,3})(?![\dA-Za-z])|\s([ivxlc]+)\b|\s([IVXLC]+)(?=\.))(?:\s?[:.]\s?(${PN})(?:${PRANGE}(${PN}))?)?`,
   // "ch. 3. 30", "verse 21": relative to the reference just before ("v. 33" is a roman chapter in these lists); with a
   // home book also "chapter 9", "chap. 3:2", "verses 13–14", "vv. 4–6"
   String.raw`\b(chapters?|chaps?\.|chs?\.|[Vv]erses|[Vv]er(?:se|s)?\b\.?|vv\.)\s?(\d{1,3})(?![\dA-Za-z])(?:\s?[:.]\s?(${PN}))?(?:${PRANGE}(${PN}))?`,
-  // bare "ii. 13" continuing the book: "Matt. i. 20, 22; ii. 13"
+  // bare "ii. 13" continuing the book: "Matt. i. 20, 22; ii. 13"; else "(v. 13)", a verse
   String.raw`\b([ivxlc]+|[IVXLC]+)\.\s?(${PN})(?:${PRANGE}(${PN}))?`,
   // bare "7. 11" continuing the book: "Gen. 5. 3 -- 29; 7. 11"
   String.raw`\b(\d{1,3})\s?[:.]\s?(${PN})(?:${PRANGE}(${PN}))?`,
@@ -261,8 +262,15 @@ const HOME_REACH = 60
 /** The keywords only a home book gives a meaning to (the notices never use them for a reference). */
 const HOME_ONLY = /^(?:chapters?|chaps?\.|verses|vv\.)$/i
 
-/** The book a text is about, and its chapter when it is about one: where "chapter 9" and "verse 4" point. */
-export interface RefHome { book: number; chapter?: number }
+/**
+ * The book a text is about, and its chapter when it is about one: where "chapter 9" and "verse 4" point. `walk`, for a
+ * text going on through several chapters of the book: the chapters whose naming takes it on to them
+ * (shared/companion.ts paragraphHomes).
+ */
+export interface RefHome { book: number; chapter?: number; walk?: (chapter: number) => boolean }
+/** Where a sentence ends: a full stop, a question or an exclamation (and a closing quotation mark or bracket), then a
+ *  capital. "Isa. 18" and "Psa. 116" end none. */
+const SENTENCE_END = /[.!?][”’")\]]*\s+[(“‘"]?[A-Z]/
 
 /**
  * References as the 1871-1961 prefaces print them, for the About screen: roman chapters ("John xix. 34", "1 John ii. 13",
@@ -271,14 +279,22 @@ export interface RefHome { book: number; chapter?: number }
  * semicolon and a bare verse after a comma keep the book. "ch. 3. 30" and "verse 21" resolve against the reference just
  * before. A capitalised word must be a real book with a chapter it has: "Depot i", "Greek l", "Nehemiah 80" stay text.
  *
+ * "(v. 13)" is a verse, read as "verse 13" is, unless a list of roman chapters runs on to it ("iv. 7, 10; v. 33").
+ *
  * With a `home` (a commentary on a book: Darby's Synopsis, Coates's Outlines), "chapter 9", "ch. 9", "chap. 3:2" and
  * "Chapter 9" are that book's unless a reference stands just before (within HOME_REACH), and "verse 4", "verses 13–14",
- * "vv. 4–6" the home chapter, or, when the text is on several chapters, the one last named.
+ * "vv. 4–6", "(v. 4)" are in the chapter in hand: the home book's chapter named earlier in the same sentence ("chapter
+ * 12 of this book, “…” (verse 23)"), else the one the text has gone on to (one of its `walk`; with no home chapter, any
+ * of the book named), else the home chapter. Another chapter named in a text on one ("Psa. 116:11" in a note on Psalm
+ * 31) is a glance that ends with its sentence.
  */
 export function scanPrefaceRefs(text: string, home?: RefHome): RefSpan[] {
   const out: RefSpan[] = []
-  // the book and chapter the next bare continuation belongs to, and where the last reference ended
-  const at: { cur: { book: BookMeta; chapter: number } | null; end: number } = { cur: null, end: -1 }
+  const homeBook = home ? BOOKS[home.book - 1] : undefined
+  // the book and chapter the next bare continuation belongs to and where the last reference ended; the home book's
+  // chapter named last and where, and the one the text has gone on to
+  type At = { book: BookMeta; chapter: number }
+  const at: { cur: At | null; end: number; glance: (At & { end: number }) | null; home: At | null } = { cur: null, end: -1, glance: null, home: null }
   const num = (s: string) => parseInt(s.replace(/I/g, '1'), 10)
   const push = (start: number, end: number, book: BookMeta, chapter: number, v1?: string, v2?: string) => {
     const ref: Ref = { book: book.n, chapter }
@@ -289,9 +305,11 @@ export function scanPrefaceRefs(text: string, home?: RefHome): RefSpan[] {
     out.push({ start, end, ref })
     at.cur = { book, chapter }
     at.end = end
+    if (book !== homeBook) return
+    at.glance = { book, chapter, end }
+    if (home?.walk?.(chapter) ?? !home?.chapter) at.home = at.cur
   }
   const gap = (re: RegExp, to: number) => at.end >= 0 && re.test(text.slice(at.end, to))
-  const homeBook = home ? BOOKS[home.book - 1] : undefined
   /** "chapter 9" / "verse 4" at [start, end): against the reference just before, or with a home book against it. */
   const relative = (word: string, start: number, end: number, n: string, v?: string, v2?: string) => {
     const cur = at.cur
@@ -304,7 +322,8 @@ export function scanPrefaceRefs(text: string, home?: RefHome): RefSpan[] {
       return
     }
     if (v !== undefined) return
-    const base = near ?? (home?.chapter ? { book: homeBook!, chapter: home.chapter } : cur && cur.book === homeBook ? cur : null)
+    const glance = at.glance && !SENTENCE_END.test(text.slice(at.glance.end, start)) ? at.glance : null
+    const base = near ?? glance ?? at.home ?? (home?.chapter ? { book: homeBook!, chapter: home.chapter } : null)
     if (base) push(start, end, base.book, base.chapter, n, v2)
   }
   const re = new RegExp(PREFACE_RE)
@@ -329,8 +348,8 @@ export function scanPrefaceRefs(text: string, home?: RefHome): RefSpan[] {
       // "In 2 Corinthians 11", "See 1 Peter 3:22", "So 1 Corinthians 11": the word before a numbered book was read as a
       // book (or a book's abbreviation) with the number as its chapter; look again after it
       const numbered = m[2] !== undefined && m[5] === undefined && /^[1-3]$/.test(m[2]) && /^\s?([A-Z][a-z]+)/.exec(text.slice(end))
-      // "Chapter 9", "Verse 4" opening a sentence
-      if (!book && homeBook && m[2] !== undefined && /^(?:chapters?|verses?)$/i.test(m[1])) { relative(m[1], m.index, end, m[2], m[5], m[6]); continue }
+      // "Chapter 9" opening a sentence
+      if (!book && homeBook && m[2] !== undefined && /^chapters?$/i.test(m[1])) { relative(m[1], m.index, end, m[2], m[5], m[6]); continue }
       if (!book || (numbered && findBook(`${m[2]} ${numbered[1]}`)?.name.startsWith(m[2]))) { at.cur = null; re.lastIndex = m.index + /^\S+/.exec(m[1])![0].length; continue }
       if (chapter === undefined || chapter < 1 || chapter > book.chapters) { at.cur = null; continue }
       push(start, end, book, chapter, v1, m[6])
@@ -338,8 +357,8 @@ export function scanPrefaceRefs(text: string, home?: RefHome): RefSpan[] {
       relative(m[7], m.index, end, m[8], m[9], m[10])
     } else if (m[11] !== undefined) {
       const chapter = romanToInt(m[11])
-      if (!cur || chapter === undefined || chapter > cur.book.chapters || !gap(CHAPTER_GAP, m.index)) continue
-      push(m.index, end, cur.book, chapter, m[12], m[13])
+      if (cur && chapter !== undefined && chapter <= cur.book.chapters && gap(CHAPTER_GAP, m.index)) push(m.index, end, cur.book, chapter, m[12], m[13])
+      else if (m[11] === 'v') relative('v.', m.index, end, m[12], undefined, m[13])
     } else if (m[14] !== undefined) {
       const chapter = parseInt(m[14], 10)
       if (cur && chapter >= 1 && chapter <= cur.book.chapters && gap(CHAPTER_GAP, m.index)) { push(m.index, end, cur.book, chapter, m[15], m[16]); continue }

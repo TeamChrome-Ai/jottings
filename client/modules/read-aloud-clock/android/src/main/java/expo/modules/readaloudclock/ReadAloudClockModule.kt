@@ -38,6 +38,7 @@ class ReadAloudClockModule : Module() {
   private var modeWatch: AudioManager.OnModeChangedListener? = null
   private var lastScene: Map<String, Any?>? = null
   private var watchingTasks = false
+  private var readingTask: Int? = null
 
   private val context: Context? get() = appContext.reactContext
   private val audio: AudioManager? get() = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -55,18 +56,26 @@ class ReadAloudClockModule : Module() {
             watchingTasks = true
             tasks.addTaskEventListener(object : HeadlessJsTaskEventListener {
               override fun onHeadlessJsTaskStart(taskId: Int) { ReadingFrames.taskOpen = true }
-              override fun onHeadlessJsTaskFinish(taskId: Int) { ReadingFrames.taskOpen = tasks.hasActiveTasks() }
+              override fun onHeadlessJsTaskFinish(taskId: Int) {
+                ReadingFrames.taskOpen = tasks.hasActiveTasks()
+                if (taskId == readingTask) { readingTask = null; ReadingService.stop(context) }
+              }
             })
           }
           // before the task: React Native's timers hear of it first and ask for their frame then
           ReadingFrames.taskOpen = true
           // no timeout: the reading ends it; allowed in the foreground, where the reader presses Listen
-          tasks.startTask(HeadlessJsTaskConfig(taskKey, Arguments.createMap(), 0, true))
+          readingTask = tasks.startTask(HeadlessJsTaskConfig(taskKey, Arguments.createMap(), 0, true))
         } catch (e: Exception) {
           Log.w("ReadAloudClock", "could not open the read-aloud task", e)
         }
       }
       true
+    }
+
+    Function("voice") { title: String, label: String ->
+      val context = appContext.reactContext ?: return@Function
+      UiThreadUtil.runOnUiThread { if (readingTask != null) ReadingService.start(context, title, label) }
     }
 
     Function("snapshot") { snapshot() }

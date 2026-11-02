@@ -78,6 +78,7 @@ release can still only be used under the AGPL.
 | 1.3.3 | 23 October 2026 | 23 October 2027 |
 | 1.3.4 | 27 October 2026 | 27 October 2027 |
 | 1.3.5 | 28 October 2026 | 28 October 2027 |
+| 1.3.6 | 30 October 2026 | 30 October 2027 |
 
 ## 6. What these licenses do not cover
 

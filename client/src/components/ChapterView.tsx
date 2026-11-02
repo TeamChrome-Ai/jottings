@@ -18,7 +18,7 @@ import { ALIGN_SELF, READ_EM, usePrefPick, usePrefsStore, type Prefs } from '../
 import { POP_SPRING } from '../lib/motion'
 import FootnoteText from './FootnoteText'
 import Icon from './Icon'
-import type { WordTags } from './WordSheet'
+import type { WordTags, WordTarget } from './WordSheet'
 import { Reveal, phase, useColorTransition, useEntrance, useSetPresence } from './motion/reader'
 import { Tap } from './ui'
 import { tourRef, useTourNote } from '../store/tour'
@@ -52,7 +52,8 @@ interface Props {
   wordTags?: WordTags | null
   /** Dictionary word lookup: every word that could name an article opens the sheet on tap, an untagged one with code "". */
   tapWords?: boolean
-  onWord?: (code: string, word: string) => void
+  /** A word tapped: its Strong's number ("" untagged), the whole word, and where it stands. */
+  onWord?: (w: WordTarget) => void
   isRead: boolean
   /** The chapter itself is bookmarked: a small ribbon beside the numeral. */
   marked?: boolean
@@ -272,7 +273,7 @@ interface ParaProps {
   shownNotes: ReadonlySet<number>; leaving: ReadonlySet<number>; delays: ReadonlyMap<number, number>; onExited: (id: number) => void
   /** every lettered note is held open by the toolbar's † toggle: their cards show no close button, a tap on it would do nothing */
   pinned: boolean
-  wordTags: WordTags | null; tapWords: boolean; onWord?: (code: string, word: string) => void
+  wordTags: WordTags | null; tapWords: boolean; onWord?: (w: WordTarget) => void
   onSelect: (v: number) => void; onToggleNote: (id: number) => void; onNavigate?: (r: Ref) => void
   /** The note the guided tour has opened, when it is in this paragraph: its text and card are what the tour points at. */
   tourNote: number | null
@@ -351,7 +352,7 @@ const Paragraph = memo(function Paragraph({ index, register, onParaLayout, onVer
             onLayout={nativeMeasure ? (e: LayoutChangeEvent) => { runYs.current[ri] = e.nativeEvent.layout.y; reportRun(ri, r.verses) } : undefined}
             onTextLayout={nativeMeasure ? (e: NativeSyntheticEvent<TextLayoutEventData>) => { runLines.current[ri] = e.nativeEvent.lines; reportRun(ri, r.verses) } : undefined}>
             {r.verses.map(v => v.m ? null : (
-              <VerseSpan key={v.v} verse={v} fontSize={prefs.fontSize} font={prefs.font} wordSpacing={wordSpacing} plainSeps={plainSeps}
+              <VerseSpan key={v.v} verse={v} book={book} chapter={chapter} fontSize={prefs.fontSize} font={prefs.font} wordSpacing={wordSpacing} plainSeps={plainSeps}
                 selected={selected.has(v.v)} flashed={flash.has(v.v)} hl={highlights.get(verseId(book, chapter, v.v))} bookmarked={bookmarked.has(v.v)}
                 showNumbers={prefs.verseNumbers} showNotes={prefs.showNotes} tags={wordTags ? wordTags.get(v.v) ?? NO_TAGS : null} tapWords={tapWords} onWord={onWord}
                 reduce={prefs.reduceMotion} onSelect={onSelect} onToggleNote={onToggleNote} paraIndex={index} onVerseLayout={onVerseLayout} getParaNode={getParaNode} spokenOff={spokenAt(spoken, v.v)} />
@@ -413,7 +414,7 @@ const NoteCard = memo(function NoteCard({ note: n, tour, font, italicStyle, cont
 })
 
 interface VerseProps {
-  verse: Verse; fontSize: number; font: Prefs['font']; wordSpacing: number
+  verse: Verse; book: number; chapter: number; fontSize: number; font: Prefs['font']; wordSpacing: number
   /** No extra word spacing: separators render exactly like the words around them, so they share one string. */
   plainSeps: boolean
   selected: boolean; flashed: boolean; hl: string | undefined; bookmarked: boolean; showNumbers: boolean; showNotes: boolean; reduce: boolean
@@ -421,14 +422,14 @@ interface VerseProps {
   tags: [string, string][] | null
   /** Every word answers a tap (dictionary lookup), not only the tagged ones. */
   tapWords: boolean
-  onWord?: (code: string, word: string) => void
+  onWord?: (w: WordTarget) => void
   onSelect: (v: number) => void; onToggleNote: (id: number) => void
   paraIndex: number; onVerseLayout?: (v: number, paraIndex: number, y: number) => void; getParaNode: (i: number) => View | null
   /** Char offset of the word being read aloud in this verse; null = this verse but no word; undefined = not this verse. */
   spokenOff?: number | null
 }
 type RunClass = 'plain' | 'italic' | 'sep'
-const VerseSpan = memo(function VerseSpan({ verse: v, fontSize, font, wordSpacing, plainSeps, selected, flashed, hl, bookmarked, showNumbers, showNotes, tags, tapWords, onWord, reduce, onSelect, onToggleNote, paraIndex, onVerseLayout, getParaNode, spokenOff }: VerseProps) {
+const VerseSpan = memo(function VerseSpan({ verse: v, book, chapter, fontSize, font, wordSpacing, plainSeps, selected, flashed, hl, bookmarked, showNumbers, showNotes, tags, tapWords, onWord, reduce, onSelect, onToggleNote, paraIndex, onVerseLayout, getParaNode, spokenOff }: VerseProps) {
   const spokenWi = spokenOff === null || spokenOff === undefined ? -1 : wordIndexAt(v, spokenOff)
   const markRef = useRef<View>(null)
   // the marker's own layout is relative to the verse span (0 on web), so it is placed against the paragraph: once, at
@@ -457,6 +458,7 @@ const VerseSpan = memo(function VerseSpan({ verse: v, fontSize, font, wordSpacin
   // Dictionary lookup (`tapWords`) pays that cost on purpose, once per chapter: it is a mode the reader turns on.
   const body = useMemo(() => {
     const italicFace = face(font, { italic: true })
+    const tap = (code: string, i: number) => onWord!({ code, word: wholeWord(toks, i), at: { book, chapter, verse: v.v, wi: toks[i].wi } })
     // A note's `pos` is the word it precedes. Lettered notes explain the word BEFORE that point, so their letter sits
     // at the end of that word ("anewʰ he"); the divine-name symbols (·, †) mark the word after and stay in front.
     const markStyle = { fontSize: fontSize * 0.62, ...sansBold, ...inlineMark(fontSize * 0.62) }
@@ -492,7 +494,7 @@ const VerseSpan = memo(function VerseSpan({ verse: v, fontSize, font, wordSpacin
           if (lookup && !first && t.wi !== spokenWi && !preNotes.length && !postNotes.length) {
             // the common case in dictionary lookup: one span, no wrapper; the whole word ("Ænon") is joined at tap time
             flush(); runClass = null
-            out.push(<Text key={i} style={t.italic ? italicFace : undefined} onPress={() => onWord!('', wholeWord(toks, i))}>{t.tok}</Text>)
+            out.push(<Text key={i} style={t.italic ? italicFace : undefined} onPress={() => tap('', i)}>{t.tok}</Text>)
             return
           }
           const pre = preNotes.map(marker), post = postNotes.map(marker)
@@ -508,8 +510,8 @@ const VerseSpan = memo(function VerseSpan({ verse: v, fontSize, font, wordSpacin
               <Text key={i} onPress={note ? () => onToggleNote(note.id) : undefined} accessibilityRole={note ? 'button' : undefined} accessibilityLabel={note ? noteWordLabel(t.tok, note.marker) : undefined}>
                 {pre}{pre.length ? '\u2060' : null}
                 {lookup && first
-                  ? <InkText {...paint} style={wordStyle} onPress={() => onWord!(first, t.tok)} accessibilityRole="button" accessibilityLabel={strongsLabel(t.tok, first)}>{t.tok}</InkText>
-                  : lookup ? <InkText {...paint} style={wordStyle} onPress={() => onWord!('', wholeWord(toks, i))}>{t.tok}</InkText>
+                  ? <InkText {...paint} style={wordStyle} onPress={() => tap(first, i)} accessibilityRole="button" accessibilityLabel={strongsLabel(t.tok, first)}>{t.tok}</InkText>
+                  : lookup ? <InkText {...paint} style={wordStyle} onPress={() => tap('', i)}>{t.tok}</InkText>
                   : <InkText {...paint} style={wordStyle}>{t.tok}</InkText>}
                 {post.length ? '\u2060' : null}{post}
               </Text>,
@@ -525,7 +527,7 @@ const VerseSpan = memo(function VerseSpan({ verse: v, fontSize, font, wordSpacin
     }
     out.push(...before(wordCount))
     return out
-  }, [v, toks, wordCount, notesAt, tags, tapWords, spokenWi, plainSeps, wordSpacing, font, fontSize, onWord, onToggleNote])
+  }, [v, book, chapter, toks, wordCount, notesAt, tags, tapWords, spokenWi, plainSeps, wordSpacing, font, fontSize, onWord, onToggleNote])
   return (
     <Text onPress={press} style={{ backgroundColor: bg, textDecorationLine: selected ? 'underline' : 'none' }} accessibilityRole="text">
       {onVerseLayout && Platform.OS === 'web' ? <View ref={markRef} style={MARK} onLayout={reportMark} {...markData(v.v)} /> : null}

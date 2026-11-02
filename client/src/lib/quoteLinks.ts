@@ -1,4 +1,5 @@
 import type { Ref } from '@shared/ref'
+import type { Span } from './intro'
 
 /** Part of a paragraph's line that quotes a verse: characters [a, b) of the line as shown. */
 export interface QuoteLink { line: number; a: number; b: number; ref: Ref }
@@ -39,4 +40,31 @@ export function quoteLinks(lines: readonly string[], quotes: readonly { verse: n
     }
   }
   return out
+}
+
+// a bare "verse 8", "(v. 8)", "vv. 8, 9", naming no book or chapter (shared/ministryIndex.ts BARE), and what stands
+// between a quotation's last word and it: “…” (v. 8), “…,” verse 8
+const BARE = /^(?:vv?\.|[Vv]er(?:ses?|se|s)?\b\.?)/
+const CLOSE = /^[.,!?]?[”"’]?[.,;]?\s*\(?\s*$/
+
+/**
+ * A paragraph's lines with each bare "(verse 8)" that closes a quotation of a verse 8 (one of its `links`) taken to
+ * that verse: the writer quoted another book and gave only the number, and the verse index reads it so
+ * (shared/ministryIndex.ts quotedChapter).
+ */
+export function quotedRefs(lines: Span[][], links: readonly QuoteLink[]): Span[][] {
+  if (!links.length) return lines
+  return lines.map((spans, line) => {
+    const text = spans.map(s => s.text).join('')
+    let at = 0
+    return spans.map(s => {
+      const start = at
+      at += s.text.length
+      const r = s.ref
+      if (!r || r.v1 === undefined || !BARE.test(s.text)) return s
+      const v1 = r.v1, v2 = r.v2 ?? r.v1
+      const q = links.find(l => l.line === line && l.b <= start && CLOSE.test(text.slice(l.b, start)) && l.ref.v1! >= v1 && l.ref.v1! <= v2)
+      return q && (q.ref.book !== r.book || q.ref.chapter !== r.chapter) ? { ...s, ref: { ...r, book: q.ref.book, chapter: q.ref.chapter } } : s
+    })
+  })
 }

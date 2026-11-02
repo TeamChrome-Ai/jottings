@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { romanToInt, scanPrefaceRefs } from '../shared/ref'
+import { romanToInt, scanPrefaceRefs, type RefHome } from '../shared/ref'
 
 // "text=book.chapter:verse-verse" per link, as the About screen would draw it
 const flat = (s: string) => scanPrefaceRefs(s).map(r => `${s.slice(r.start, r.end)}=${r.ref.book}.${r.ref.chapter}${r.ref.v1 !== undefined ? ':' + r.ref.v1 : ''}${r.ref.v2 !== undefined ? '-' + r.ref.v2 : ''}`)
@@ -77,6 +77,24 @@ describe('scanPrefaceRefs', () => {
     expect(flat('In chapter 9 and verses 13–14')).toEqual([])
     expect(home('verse 4 here', { book: 6 })).toEqual([])
     expect(home('in chapter 99', { book: 6 })).toEqual([])
+  })
+  it('reads “v. 1” as a verse; another chapter of the home book holds to the end of its sentence, one the text walks through on', () => {
+    const home = (s: string, h: RefHome) => scanPrefaceRefs(s, h).map(r => `${s.slice(r.start, r.end)}=${r.ref.book}.${r.ref.chapter}${r.ref.v1 !== undefined ? ':' + r.ref.v1 : ''}${r.ref.v2 !== undefined ? '-' + r.ref.v2 : ''}`)
+    // Darby, Hints on the book of Genesis and on Numbers 22
+    expect(home('The word “created” (v. 1) is right; but we here find (v. 2) the earth so.', { book: 1, chapter: 1 })).toEqual(['v. 1=1.1:1', 'v. 2=1.1:2'])
+    expect(home('he would have killed the ass (v. 29); the knowledge of God’s thoughts (v. 3–5).', { book: 4, chapter: 22 })).toEqual(['v. 29=4.22:29', 'v. 3–5=4.22:3-5'])
+    // with no home, against the reference just before, and a list of verses after it
+    expect(flat('See John 17 and the three unities referred to in v. 11,21,22.')).toEqual(['John 17=43.17', 'v. 11=43.17:11', '21=43.17:21', '22=43.17:22'])
+    expect(flat('the three unities referred to in v. 11')).toEqual([])
+    // Coates on 1 Samuel 1: the book's chapter 12, named earlier in the sentence, not the section's chapter
+    expect(home('as we read in chapter 12 of this book, “Moreover, as for me, far be it from me that I should sin against Jehovah in ceasing to pray for you” (verse 23).', { book: 9, chapter: 1 }))
+      .toEqual(['chapter 12=9.12', 'verse 23=9.12:23'])
+    // Darby on Psalm 31: Psalm 116 is a glance; the next sentence is back in the psalm
+    expect(home('note the same words in Psa. 116:11, applicable clearly, in use, to Christ, and leading to the force of the words. Here its use is clear, compare verse 5.', { book: 19, chapter: 31 }))
+      .toEqual(['Psa. 116:11=19.116:11', 'verse 5=19.31:5'])
+    // walking through Psalms 35–40, the psalm named is the one in hand from there on
+    expect(home('In Psa. 36 the wickedness is such that there is no conscience in the adversary. Verse 5. The answer.', { book: 19, chapter: 35, walk: c => c >= 35 && c <= 40 }))
+      .toEqual(['Psa. 36=19.36', 'Verse 5=19.36:5'])
   })
   it('never links a word that is not a book, or a chapter the book does not have', () => {
     expect(flat('Stow Hill Bible and Tract Depot in 1939; Depot i. 3; the Greek l. 4')).toEqual([])

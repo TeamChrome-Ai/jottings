@@ -8,6 +8,10 @@
  "(you)": "(vous)",
  "[omitted]": "[omis]",
  "{A} opens to read, or Edit to change; this sample goes after.": "{A} s’ouvre pour la lire, ou Modifier pour la changer ; cet exemple disparaît ensuite.",
+ "{author} uses it in {n} paragraph.\u0000{author} uses it in {n} paragraphs.": {
+  "one": "{author} l’emploie dans {n} paragraphe.",
+  "other": "{author} l’emploie dans {n} paragraphes."
+ },
  "{authors}, searchable by passage or title.": "{authors}, consultables par passage ou par titre.",
  "{book} at {time}": "{book} à {time}",
  "{book} chapter {chapter}": "{book} chapitre {chapter}",
@@ -244,6 +248,10 @@
  "{n} or more papers\u0000{n} or more papers": {
   "one": "{n} écrits ou plus",
   "other": "{n} écrits ou plus"
+ },
+ "{n} other author uses it too.\u0000{n} other authors use it too.": {
+  "one": "{n} autre auteur l’emploie aussi.",
+  "other": "{n} autres auteurs l’emploient aussi."
  },
  "{n} page\u0000About {n} pages": {
   "one": "{n} page",
@@ -779,6 +787,7 @@
  "Edit event": "Modifier l’événement",
  "Edit group": "Modifier le groupe",
  "Eight more colours when you tap a verse": "Huit couleurs de plus quand vous touchez un verset",
+ "Elsewhere": "Ailleurs",
  "Email": "Adresse e-mail",
  "Email (optional)": "Adresse e-mail (facultatif)",
  "Email, if you would like a reply (optional)": "Adresse e-mail, si vous souhaitez une réponse (facultatif)",
@@ -813,6 +822,7 @@
  "Feedback": "Avis",
  "Fig": "Figue",
  "Find friends from my contacts": "Trouver des amis parmi mes contacts",
+ "Finding words in the ministry needs a connection to the server.": "Chercher des mots dans le ministère demande une connexion au serveur.",
  "Finish by": "Date de fin",
  "finish by {day}": "à terminer d’ici le {day}",
  "Finish by {day}": "Terminer d’ici le {day}",
@@ -933,6 +943,7 @@
  "In a month": "Dans un mois",
  "In parallel": "En parallèle",
  "In the beginning": "Au commencement",
+ "In the ministry": "Dans le ministère",
  "In the order it happened": "Dans l’ordre des événements",
  "In this order: {books}": "Dans cet ordre : {books}",
  "in use": "utilisée",
@@ -1223,6 +1234,7 @@
  "Nothing for “{query}”.": "Rien pour « {query} ».",
  "Nothing here yet. Add a passage, a note, a link or a heading below.": "Rien pour l’instant. Ajoutez ci-dessous un passage, une remarque, un lien ou un intertitre.",
  "Nothing here.": "Rien ici.",
+ "Nothing in the ministry has these words.": "Rien dans le ministère ne contient ces mots.",
  "Nothing in this file could be read.": "Rien dans ce fichier n’a pu être lu.",
  "Nothing new to add: everything in this file is already here.": "Rien de nouveau à ajouter : tout ce que contient ce fichier est déjà là.",
  "Nothing on this chapter yet.": "Rien sur ce chapitre pour l’instant.",
@@ -1254,6 +1266,7 @@
  "Old Testament tags are aligned by machine, so this list can miss places the word occurs.": "Les numéros Strong de l’Ancien Testament sont alignés automatiquement : cette liste peut donc omettre des endroits où le mot figure.",
  "Olive": "Olive",
  "Olive branch": "Rameau d’olivier",
+ "On {ref}": "Sur {ref}",
  "On this device": "Sur cet appareil",
  "On this phone": "Sur ce téléphone",
  "On this phone · {size}": "Sur ce téléphone · {size}",
@@ -1310,6 +1323,7 @@
  "paper size\u0004Letter": "Lettre US",
  "Paper tones for daylight": "Des tons de papier pour la lumière du jour",
  "Paragraphs": "Paragraphes",
+ "Paragraphs with “{words}”": "Paragraphes avec « {words} »",
  "Paragraphs, footnotes": "Paragraphes, notes",
  "Paragraphs, verse numbers": "Paragraphes, numéros de versets",
  "Paragraphs, verse numbers, footnotes": "Paragraphes, numéros de versets, notes",
@@ -1631,6 +1645,7 @@
  "Take the path off the group?": "Retirer le parcours du groupe ?",
  "Taken from a published digital copy of the text and checked verse by verse against a second copy; words split across lines are rejoined and four verse divisions follow the usual numbering.": "Tiré d’une copie numérique publiée du texte et vérifié verset par verset sur une seconde copie ; les mots coupés en fin de ligne sont réunis et quatre divisions de versets suivent la numérotation habituelle.",
  "Tap a theme and every screen changes at once. You are reading in {name}.": "Touchez un thème et tous les écrans changent aussitôt. Vous lisez avec le thème {name}.",
+ "Tap a word to find it in the ministry; tap another for a phrase": "Touchez un mot pour le chercher dans le ministère ; un autre pour une expression",
  "Tap a word: Darby’s usage, Strong’s concordance and Morrish": "Touchez un mot : emploi chez Darby, concordance de Strong et Morrish",
  "Tap a word: Strong’s concordance and Morrish": "Touchez un mot : concordance de Strong et Morrish",
  "Tap one to try it.": "Touchez-en un pour l’essayer.",

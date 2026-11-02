@@ -6,6 +6,7 @@ import { homeOf } from '@shared/companion'
 import { t, tc } from '@shared/i18n'
 import type { Library, MinistrySection, WorkContents } from '@shared/ministry'
 import type { Ref } from '@shared/ref'
+import { VERSE_COUNTS } from '@shared/verseCounts'
 import SwipePager, { type Page, type SwipePagerHandle } from './SwipePager'
 import LibraryPage, { type LibraryLayout, type LibraryPlace } from './LibraryPage'
 import ContentsPicker from './ContentsPicker'
@@ -14,6 +15,7 @@ import FontLoading from './FontLoading'
 import { refParams } from './FootnoteText'
 import { Button, ErrorText, Sheet, Spinner, SwitchRow, T } from './ui'
 import WordSheet, { type WordTarget } from './WordSheet'
+import MinistrySheet, { type MinistryOrigin, type MinistryScope } from './MinistrySheet'
 import { ToggleButton } from './motion/reader'
 import { isLookupWord, warmWordLookup } from '@shared/cbd'
 import { lookupGlossary } from '@shared/glossary'
@@ -49,7 +51,9 @@ const keyOf = (work: string, n: number) => `${work}/${n}`
  * its cue), across into the next work of the collection as Genesis 50 turns to Exodus 1. The title opens the
  * contents (ContentsPicker); the reader's font, size, line height, measure and theme apply; the place is kept per
  * work on the device. A deep link lands on a paragraph with one accent wash (`p`), and `from` (the verse it was
- * opened from) turns Back into a way back to that verse.
+ * opened from) turns Back into a way back to that verse. A reference in the text to a verse or a run of verses opens
+ * Ministry on them over the reading (MinistrySheet); an item there opens another reading on top of this one, so Back
+ * walks the way back one reading at a time.
  */
 const READER_PREFS = ['align', 'font', 'fontSize', 'lineHeight', 'reduceMotion', 'width'] as const
 
@@ -227,12 +231,13 @@ export default function LibraryReader({ author, work, link }: { author: string; 
     const c = peekContents(author, w)
     savePosition(author, w, { n: nn, p: at.p, dy: at.dy, title: c?.work.title, section: c?.sections[nn - 1]?.title })
   }, [author, target])
-  useEffect(() => {
+  // only the reading on screen notes its place: a reading opened from it may be of the same work, and the one under it
+  // would put the work's place back where it was left every few seconds
+  useFocusEffect(useCallback(() => {
     const t = setInterval(note, SAVE_MS)
     const sub = AppState.addEventListener('change', s => { if (s !== 'active') { note(); flushPositions() } })
     return () => { clearInterval(t); sub.remove(); note(); flushPositions() }
-  }, [note])
-  useFocusEffect(useCallback(() => () => { note(); flushPositions() }, [note]))
+  }, [note]))
 
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollY.current = e.nativeEvent.contentOffset.y
@@ -304,11 +309,23 @@ export default function LibraryReader({ author, work, link }: { author: string; 
     return () => window.removeEventListener('keydown', k)
   }, []))
 
-  // ---- following a reference, and back to the verse ----
-  const onRef = useCallback((r: Ref) => { note(); flushPositions(); router.push(refParams(r)) }, [note, router])
-  const refRef = useRef(onRef)
-  refRef.current = onRef
-  const pageRefLink = useCallback((r: Ref) => refRef.current(r), [])
+  // ---- following a reference: a verse or a run of them opens Ministry on them over this reading, from which an item
+  // opens another reading on top of this one and the verses can still be read in the Bible; a chapter, a run across
+  // chapters (the heading's passage) opens the Bible; and back to the verse ----
+  const toBible = useCallback((r: Ref) => { note(); flushPositions(); router.push(refParams(r)) }, [note, router])
+  const [verseSheet, setVerseSheet] = useState<{ open: boolean; scope: MinistryScope | null }>({ open: false, scope: null })
+  const onRef = useCallback((r: Ref) => {
+    const last = VERSE_COUNTS[r.book - 1]?.[r.chapter - 1] ?? 0
+    if (!r.v1 || r.v1 > last) { toBible(r); return }
+    const to = Math.min(Math.max(r.v2 ?? r.v1, r.v1), last)
+    setVerseSheet({ open: true, scope: { kind: 'verse', book: r.book, chapter: r.chapter, verses: Array.from({ length: to - r.v1 + 1 }, (_, i) => r.v1! + i) } })
+  }, [toBible])
+  const closeVerseSheet = useCallback(() => setVerseSheet(s => ({ ...s, open: false })), [])
+  const overReading = useMemo<MinistryOrigin>(() => ({ kind: 'ministry', read: toBible }), [toBible])
+  const refRef = useRef({ onRef, toBible })
+  refRef.current = { onRef, toBible }
+  const pageRefLink = useCallback((r: Ref) => refRef.current.onRef(r), [])
+  const pagePassage = useCallback((r: Ref) => refRef.current.toBible(r), [])
   const from = link.from
   const summaryOf = (w: string) => shelf?.collection.works.find(x => x.id === w)
   const back = () => {
@@ -381,7 +398,7 @@ export default function LibraryReader({ author, work, link }: { author: string; 
         section={current || neighbours.has(k) ? sectionOf(s) : undefined} home={homeFor(s, place)} unavailable={unavailableFor(author)}
         size={fs} lineHeight={prefs.lineHeight} maxWidth={maxWidth} alignSelf={ALIGN_SELF[prefs.align]}
         wash={wash && wash.key === k ? wash.p : -1} prevLabel={labelOf(around[0])} nextLabel={labelOf(around[1])} source={source}
-        layout={layoutOf(k)} padBottom={24} go={go} onRef={pageRefLink} scrollRef={pageRef(k)} onWord={lookup ? onWord : undefined}
+        layout={layoutOf(k)} padBottom={24} go={go} onRef={pageRefLink} onPassage={pagePassage} scrollRef={pageRef(k)} onWord={lookup ? onWord : undefined}
         onScroll={current ? onScroll : undefined} onViewport={current ? onViewport : undefined} offscreen={!current} />
     ) }
   }
@@ -437,6 +454,7 @@ export default function LibraryReader({ author, work, link }: { author: string; 
         </View>
       </Sheet>
       <WordSheet target={wordTarget} onClose={() => setWordTarget(null)} />
+      <MinistrySheet open={verseSheet.open} scope={verseSheet.scope} origin={overReading} onClose={closeVerseSheet} />
       <Sheet open={themes} onClose={() => setThemes(false)} title={t('Theme')}>
         <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 8 }}><ThemeGallery compact /></ScrollView>
       </Sheet>
