@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { chapterKey } from '@shared/paths'
 import { cachedGet } from '../lib/api'
 import { useDeviceReads } from '../lib/paths'
+import { onMarksSent } from '../lib/readMarks'
 import { useMarks } from './useMarks'
 import { useAuth } from '../store/auth'
 import { onBeat } from './useActivity'
@@ -27,17 +28,20 @@ export function useReadTicks(credited: Set<string>): Set<string> {
 
 const NONE: ReadonlySet<string> = new Set()
 /** Whether the account has `book` `chapter` credited, for a screen that keeps no read set of its own (paged mode):
- *  asked when the chapter opens, then kept current by the beats' answers. False signed out. */
+ *  asked when the chapter opens and when a mark or its undo reaches the server, then kept current by the beats'
+ *  answers. False signed out. */
 export function useCredited(book: number, chapter: number): boolean {
   const { user } = useAuth()
   const uid = user?.id
   const [set, setSet] = useState<ReadonlySet<string>>(NONE)
+  const [sent, setSent] = useState(0)
+  useEffect(() => onMarksSent(() => setSent(n => n + 1)), [])
   useEffect(() => {
     if (!uid) { setSet(NONE); return }
     let live = true
     cachedGet<Record<string, number[]>>('/stats/progress').then(p => { if (live) setSet(new Set(Object.entries(p).flatMap(([b, cs]) => cs.map(c => chapterKey(Number(b), c))))) }).catch(() => {})
     return () => { live = false }
-  }, [uid, book, chapter])
+  }, [uid, book, chapter, sent])
   useEffect(() => onBeat(r => { if (r.credited) { const k = chapterKey(r.credited.book, r.credited.chapter); setSet(s => (s.has(k) ? s : new Set(s).add(k))) } }), [])
   return !!uid && set.has(chapterKey(book, chapter))
 }

@@ -65,7 +65,11 @@ export default memo(function ChapterEndLine({ book, chapter, credited, toCredit,
   useEffect(() => { if (stale) void refreshPath() }, [stale, k])
 
   // the explanation goes to the top: at the foot it would sit on the line it is about
-  const mark = () => { void markRead(book, chapter); void firstMark().then(first => { if (first) toast.show(END_WORDS.explained, 9000, true) }) }
+  const mark = () => {
+    // a mark counts as the chapter read, so it can earn a badge: said as a beat's are
+    void markRead(book, chapter).then(badges => { for (const b of badges) toast.show(t('Badge earned: {name}', { name: b.name })) })
+    void firstMark().then(first => { if (first) toast.show(END_WORDS.explained, 9000, true) })
+  }
   const undo = () => { void unmarkRead(book, chapter) }
   const says = line.kind === 'read' ? END_WORDS.read : line.kind === 'marked' ? END_WORDS.marked : line.kind === 'before-path' ? END_WORDS.beforePath[line.by]
     : line.toRead ? END_WORDS.toRead(line.toRead) : null

@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react'
-import { View } from 'react-native'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { View, type ViewStyle } from 'react-native'
 import { useFocusEffect } from 'expo-router'
 import { BOOKS } from '@shared/books'
 import { chaptersRead, countsOf, laps, readProgress, readTotals, type ReadCounts } from '@shared/paths'
@@ -16,8 +16,12 @@ import { usePref } from '../../src/store/prefs'
 import { WeekStrip } from '../../src/components/StreakCard'
 import { useCountUp } from '../../src/components/motion/home'
 import { BadgeGrid, useFreshBadges } from '../../src/components/motion/badges'
-import { Card, Enter, ErrorText, H, H2, Row, SPACE, Screen, Spinner, T } from '../../src/components/ui'
+import { Card, Enter, ErrorText, H, H2, Row, SPACE, Screen, Spinner, T, Tap } from '../../src/components/ui'
 import SignInCard from '../../src/components/SignInCard'
+import MarkReadSheet, { toggleMark, type MarkToggle } from '../../src/components/MarkReadSheet'
+import { useMarks } from '../../src/hooks/useMarks'
+import { NO_READS, shownCounts, withCounts, withTap, type StatsReads } from '../../src/lib/statsMarks'
+import { useReadingWith } from '../../src/store/readingWith'
 import PathStrip from '../../src/components/PathStrip'
 import { biblePercentWords } from '../../src/lib/pathWords'
 import { localReadSet } from '../../src/lib/paths'
@@ -38,11 +42,17 @@ export default function StatsScreen() {
   const { user } = useAuth()
   const dailyGoal = usePref('dailyGoal')
   const [stats, setStats] = useState<Stats | null>(null)
-  const [counts, setCounts] = useState<ReadCounts | null>(null)
+  const [reads, setReads] = useState<StatsReads>(NO_READS)
   const [err, setErr] = useState('')
   const [reactions, setReactions] = useState<ReceivedReaction[] | null>(null)
   const uid = user?.id
   const fresh = useFreshBadges(uid, stats?.badges)
+  const marks = useMarks().at
+  const counts = useMemo(() => shownCounts(reads, marks), [reads, marks])
+  /** Marks tapped here, and the last of them the server has (they answer in the order tapped). */
+  const made = useRef(0), sent = useRef(0)
+  const who = useRef(uid)
+  who.current = uid
 
   useFocusEffect(useCallback(() => {
     if (!uid) return
@@ -54,10 +64,25 @@ export default function StatsScreen() {
       setStats(s)
       if (r) { setReactions(r.reactions); if (r.reactions.some(x => !x.seen)) markReactionsSeen().catch(() => {}) }
     }).catch(e => { if (!cancelled) setErr((e as Error).message) })
-    loadCounts().then(r => { if (!cancelled) setCounts(r) }).catch(() => { if (!cancelled) setCounts(r => r ?? {}) })
+    const upTo = sent.current
+    loadCounts().then(r => { if (!cancelled) setReads(s => withCounts(s, r, upTo)) }).catch(() => { if (!cancelled) setReads(s => (s.counts ? s : { ...s, counts: {} })) })
 
     return () => { cancelled = true }
   }, [uid]))
+
+  // a mark tapped on Progress by book moves its bar at once; the tiles and the counts follow once the server has it
+  const toggle = useCallback<MarkToggle>((book, chapter, tick) => {
+    const n = ++made.current, mine = who.current
+    setReads(s => withTap(s, { n, book, chapter, by: tick === 'ticked' ? -1 : 1 }))
+    return toggleMark(book, chapter, tick).then(badges => {
+      sent.current = n
+      if (who.current === mine) {
+        fetchStats().then(s => { if (who.current === mine) setStats(s) }).catch(() => {})
+        loadCounts().then(r => { if (who.current === mine) setReads(s => withCounts(s, r, n)) }).catch(() => {})
+      }
+      return badges
+    })
+  }, [])
 
   if (!user) return <Screen safeTop><H>{t('Stats')}</H><LocalStats /></Screen>
 
@@ -89,7 +114,7 @@ export default function StatsScreen() {
             <H2>{t('Progress by book')}</H2>
             <T small muted style={{ fontVariant: ['tabular-nums'] }}>{biblePercentWords(chaptersRead(counts))}</T>
           </Row>
-          <BookProgress counts={counts} />
+          <BookProgress counts={counts} onToggle={toggle} />
         </>
       )}
       <View style={{ height: 24 }} />
@@ -98,52 +123,62 @@ export default function StatsScreen() {
 }
 
 /**
- * Signed out: what this device knows on its own, the chapters credited here (lib/paths.ts, the local read set). Two
- * tiles, the whole Bible as the strip, and progress by book; a streak, time and badges are the account's and are not
- * made up here. With nothing read yet the strip stands empty over one line. The blocks rise in turn, as Paths' do.
+ * Signed out: what this device knows on its own, the chapters credited here (lib/paths.ts, the local read set) and the
+ * chapters marked on it (a mark counts as read). Two tiles, the whole Bible as the strip, and progress by book; a
+ * streak, time and badges are the account's and are not made up here. With nothing read yet the strip stands empty over
+ * one line, and the books are there to mark. The blocks rise in turn, as Paths' do; Progress by book keeps its place
+ * when the first mark fills the rest in, so its sheet stays open.
  */
 function LocalStats() {
-  const [readSet, setReadSet] = useState<Set<string> | null>(null)
+  const [device, setDevice] = useState<Set<string> | null>(null)
+  const marks = useMarks()
   useFocusEffect(useCallback(() => {
     let cancelled = false
-    localReadSet().then(s => { if (!cancelled) setReadSet(prev => prev && prev.size === s.size ? prev : s) })
+    localReadSet().then(s => { if (!cancelled) setDevice(prev => prev && prev.size === s.size ? prev : s) })
     return () => { cancelled = true }
   }, []))
+  const readSet = useMemo(() => {
+    if (!device || !marks.ready) return null
+    if (!marks.at.size) return device
+    const s = new Set(device)
+    for (const k of marks.at.keys()) s.add(k)
+    return s
+  }, [device, marks])
   const totals = useMemo(() => readSet ? readTotals(readSet) : null, [readSet])
   const counts = useMemo(() => readSet ? countsOf(readProgress(readSet)) : null, [readSet])
   if (!readSet || !totals) return null
   const any = totals.chapters > 0
   const signIn = <SignInCard ref={tourRef('stats-signin')} text={t('Sign in to keep a streak, badges and time, and to read with a group.')} />
   const strip = <PathStrip route={null} readSet={readSet} labels={false} delay={any ? 200 : 120} accessibilityLabel={t('The Bible: {n} of 1,189 chapters read on this device', { n: totals.chapters })} />
-  if (!any) return (
-    <>
-      <Enter>
-        <Card style={{ gap: 10 }}>
-          {strip}
-          <T small muted>{t('Nothing read on this device yet. The chapters you read fill in here.')}</T>
-        </Card>
-      </Enter>
-      <Enter delay={80}>{signIn}</Enter>
-    </>
-  )
   return (
     <>
-      <Enter style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        <Tile label={t('Chapters read here')} value={totals.chapters} />
-        <Tile label={t('Books finished here')} value={totals.books} />
-      </Enter>
-      <Enter delay={80}>
-        <Card style={{ gap: 10 }}>
-          <T small muted style={{ fontVariant: ['tabular-nums'] }}>{biblePercentWords(totals.chapters)}</T>
-          {strip}
-          <T small muted>{t('{n} of 1,189 chapters', { n: totals.chapters.toLocaleString() })}</T>
-        </Card>
-      </Enter>
+      {any ? (
+        <>
+          <Enter style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <Tile label={t('Chapters read here')} value={totals.chapters} />
+            <Tile label={t('Books finished here')} value={totals.books} />
+          </Enter>
+          <Enter delay={80}>
+            <Card style={{ gap: 10 }}>
+              <T small muted style={{ fontVariant: ['tabular-nums'] }}>{biblePercentWords(totals.chapters)}</T>
+              {strip}
+              <T small muted>{t('{n} of 1,189 chapters', { n: totals.chapters.toLocaleString() })}</T>
+            </Card>
+          </Enter>
+        </>
+      ) : (
+        <Enter>
+          <Card style={{ gap: 10 }}>
+            {strip}
+            <T small muted>{t('Nothing read on this device yet. The chapters you read fill in here.')}</T>
+          </Card>
+        </Enter>
+      )}
       {/* above the 66 rows: under them the one call to action sat a long scroll away */}
-      <Enter delay={160}>{signIn}</Enter>
-      <Enter delay={240} style={{ gap: SPACE.l }}>
+      <Enter delay={any ? 160 : 80}>{signIn}</Enter>
+      <Enter delay={any ? 240 : 160} style={{ gap: SPACE.l }}>
         <H2>{t('Progress by book')}</H2>
-        <BookProgress counts={counts} />
+        <BookProgress counts={counts} onToggle={toggleMark} />
       </Enter>
       <View style={{ height: 24 }} />
     </>
@@ -176,25 +211,38 @@ function lapWords(book: string, chapters: number, lap: number, done: number): st
 /**
  * 66 bars, drawn still. The card sits below the badge grid, well under the fold on every screen, so an entrance here
  * only ever played to nobody while costing an Animated node per row. Each time through a book lies over the one before
- * it from the left, in its own ink (`lapInk`), so a book read again fills again.
+ * it from the left, in its own ink (`lapInk`), so a book read again fills again. A tap on a book opens its chapters to
+ * mark as read (MarkReadSheet), except while reading with a group: what is read then is the group's, as at a
+ * chapter's end.
  */
-function BookProgress({ counts }: { counts: ReadCounts | null }) {
+function BookProgress({ counts, onToggle }: { counts: ReadCounts | null; onToggle: MarkToggle }) {
   const c = useInks(), colors = useColors()
+  const withGroup = !!useReadingWith()
+  const [open, setOpen] = useState<number | null>(null)
   return (
     <Card style={{ gap: 6 }}>
+      {withGroup ? null : <T small muted>{t('Tap a book to mark the chapters you have read.')}</T>}
       {BOOKS.map(b => {
         const { fills, lap, done } = laps(counts?.[String(b.n)] ?? [], b.chapters)
-        return (
-          <View key={b.n} accessible accessibilityLabel={lapWords(b.name, b.chapters, lap, done)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        const says = lapWords(b.name, b.chapters, lap, done)
+        const row = (
+          <>
             <T small style={{ width: 64 }} numberOfLines={1}>{b.abbr}</T>
             <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: c.border, overflow: 'hidden' }}>
               {/* a time as wide as the one over it is hidden by it: Psalm 23 read daily would stack a View a day */}
               {fills.map((f, k) => f === fills[k + 1] ? null : <View key={k} style={{ position: 'absolute', left: 0, width: `${f * 100}%`, height: 6, backgroundColor: k ? lapInk(colors, k + 1) : f === 1 ? c.accent : c.muted }} />)}
             </View>
             <T small muted numberOfLines={1} style={{ width: 76, textAlign: 'right', fontVariant: ['tabular-nums'] }}>{lap > 1 ? t('×{lap} {done}/{chapters}', { lap, done, chapters: b.chapters }) : `${done}/${b.chapters}`}</T>
-          </View>
+          </>
         )
+        return withGroup
+          ? <View key={b.n} accessible accessibilityLabel={says} style={ROW}>{row}</View>
+          : <Tap key={b.n} onPress={() => setOpen(b.n)} scaleTo={0.985} hitSlop={ROW_SLOP} accessibilityRole="button" accessibilityLabel={says} accessibilityHint={t('Opens its chapters, to mark the ones you have read')} style={ROW}>{row}</Tap>
       })}
+      <MarkReadSheet book={withGroup ? null : open} counts={counts} onToggle={onToggle} onClose={() => setOpen(null)} />
     </Card>
   )
 }
+const ROW: ViewStyle = { flexDirection: 'row', alignItems: 'center', gap: 8 }
+/** The rows are 6 apart: each takes half the gap on either side. */
+const ROW_SLOP = { top: 3, bottom: 3 }

@@ -2,8 +2,9 @@
 // page's timers are held from 0.8 s before a verse ends, so the stop at that verse comes late. Nothing may be heard
 // twice (a seek back over audio already played, or an ended recording started again), and no stop may cut into the
 // next verse, with a pause between verses and without. Romans 16 is a reader's report (1.2.2), held where silence in
-// the recording parts two verses and where none does; Psalm 117 is held past its end. Needs a server with tts/alec/45-16.* and 19-117.*; BASE=https://example.org has them, and
-// DIST=client/dist serves this build's files in place of the site's own.
+// the recording parts two verses and where none does; Psalm 117 is held past its end. Needs a server with
+// tts/alec/45-16.* and 19-117.*; BASE=<the brand's site> (shared/brand.json `site`) has them, and DIST=client/dist
+// serves this build's files in place of the site's own.
 import { chromium } from 'playwright'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { extname, join } from 'node:path'

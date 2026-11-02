@@ -212,6 +212,10 @@ export async function applyBackup(p: ParsedBackup, user: { id: number } | null, 
     }
   }
 
+  // the signed history first, and waited for: it brings back each mark's credit, which the marks sent after it then
+  // find in place (rs/src/marks.rs)
+  if (p.history) res.history = uid === null ? t(HISTORY_NEEDS_ACCOUNT) : await restoreHistory(p.history)
+
   // the reader's own marks: kept on the device and, signed in, sent to the account (readMarks.ts), adding only
   if (marks.length) res.marks = await addMarks(marks)
 
@@ -225,8 +229,6 @@ export async function applyBackup(p: ParsedBackup, user: { id: number } | null, 
     res.settings = Object.entries(settings).some(([k, v]) => now[k] !== v)
     if (res.settings) prefs.set(settings)
   }
-
-  if (p.history) res.history = uid === null ? t(HISTORY_NEEDS_ACCOUNT) : await restoreHistory(p.history)
   return res
 }
 

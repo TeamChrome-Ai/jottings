@@ -132,4 +132,26 @@ describe('restore, signed in', () => {
     vi.mocked(A.post).mockRejectedValueOnce(new Error('offline'))
     expect((await B.applyBackup(parsed, { id: 6 }, prefsStore())).history).toMatch(/could not be restored just now/)
   })
+
+  it('restores the signed history before the marks, and waits for it: the history brings each mark’s credit back', async () => {
+    store.clear(); vi.resetModules()
+    session.token = 't'
+    const A = await import('../client/src/lib/api')
+    const M = await import('../client/src/lib/readMarks')
+    const B = await import('../client/src/lib/backup')
+    vi.mocked(A.cachedGet).mockResolvedValue({ marks: [] })
+    await M.loadMarks(6)
+    const file = JSON.stringify({ format: 'jottings-backup', version: 1, exported_at: 'x', user: { id: 6 }, outlines: [], activity_days: [{ date: '2026-10-12', active_seconds: 0, pages: 1, chapters: 1 }], activity_signature: 'ab'.repeat(32) })
+    let answer = () => {}
+    vi.mocked(A.post).mockImplementation(path => path === '/me/restore-activity'
+      ? new Promise(r => { answer = () => r({ restored: { days: 1, credits: 1, chapters: 1, badges: 0 } }) })
+      : Promise.resolve({ ok: true, added: 1, new_badges: [] }))
+    const restoring = B.applyBackup(parseBackup(file), { id: 6 }, prefsStore(), undefined, [[45, 5, '2026-10-12T08:00:00.000Z']])
+    for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0))
+    expect(vi.mocked(A.post).mock.calls.map(c => c[0])).toEqual(['/me/restore-activity'])
+    answer()
+    expect(await restoring).toMatchObject({ marks: 1, history: 'Your streak and reading history are restored.' })
+    for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0))
+    expect(vi.mocked(A.post).mock.calls.map(c => c[0])).toEqual(['/me/restore-activity', '/me/marks'])
+  })
 })

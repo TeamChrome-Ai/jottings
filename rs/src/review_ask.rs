@@ -15,10 +15,11 @@ use serde_json::{json, Value};
 /// What a committed reader is when the owner names nothing else: chapters credited on 14 days, 30 chapters in all.
 pub const DAYS: i64 = 14;
 pub const CHAPTERS: i64 = 30;
-/// A reader who has read enough (`u` is the users row); :days and :chapters are the ask's.
+/// A reader who has read enough in the app (`u` is the users row); :days and :chapters are the ask's. Chapters ticked
+/// by hand (marks.rs) are read elsewhere and say nothing of the app.
 const COMMITTED: &str = "u.disabled = 0 AND u.is_admin = 0
-  AND (SELECT count(*) FROM activity_days d WHERE d.user_id = u.id AND d.pages > 0) >= :days
-  AND (SELECT count(*) FROM page_credits p WHERE p.user_id = u.id) >= :chapters";
+  AND (SELECT count(DISTINCT p.date) FROM page_credits p WHERE p.user_id = u.id AND p.ticked = 0) >= :days
+  AND (SELECT count(*) FROM page_credits p WHERE p.user_id = u.id AND p.ticked = 0) >= :chapters";
 
 struct Ask { id: i64, days: i64, chapters: i64, only: Option<i64> }
 fn running(conn: &Connection) -> rusqlite::Result<Option<Ask>> {

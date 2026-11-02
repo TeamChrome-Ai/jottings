@@ -121,8 +121,9 @@ CREATE TABLE IF NOT EXISTS chapters_read (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, book INTEGER NOT NULL, chapter INTEGER NOT NULL,
   first_read_at TEXT NOT NULL, times INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (user_id, book, chapter)
 );
--- rs/src/marks.rs: chapters a reader ticked by hand. Their own view only (the read tick, their own path's place):
--- nothing that is earned or shown to another reader is counted from here
+-- rs/src/marks.rs: chapters a reader ticked by hand, read outside the app. The mark is the toggle; what it earns is its
+-- chapter's tick credit in page_credits (`ticked=1`, one per chapter: `page_credits_tick`), written and taken back by
+-- activity.rs credit_day / uncredit_tick. Nothing counts a chapter from here but the reader's own path
 CREATE TABLE IF NOT EXISTS chapter_marks (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, book INTEGER NOT NULL, chapter INTEGER NOT NULL,
   marked_at TEXT NOT NULL, PRIMARY KEY (user_id, book, chapter)
@@ -425,7 +426,9 @@ pub fn open_pool(path: &str, key: Option<String>) -> Result<DbPool> {
         // the read-aloud log a sender chose to add (feedback.rs, 1.2.0)
         ("feedback", "diagnostics", "TEXT"),
         // the admin took this account's name away (feedback.rs admin_rename): the app asks for a new name and handle
-        ("users", "must_rename", "INTEGER NOT NULL DEFAULT 0")] {
+        ("users", "must_rename", "INTEGER NOT NULL DEFAULT 0"),
+        // a credit the reader's own mark wrote (marks.rs, the owner 2026-10-31): no time behind it, one per chapter
+        ("page_credits", "ticked", "INTEGER NOT NULL DEFAULT 0")] {
         let has: i64 = conn.query_row(&format!("SELECT count(*) FROM pragma_table_info('{table}') WHERE name='{col}'"), [], |r| r.get(0))?;
         if has == 0 { conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {ddl}"))?; }
     }
@@ -441,6 +444,7 @@ pub fn open_pool(path: &str, key: Option<String>) -> Result<DbPool> {
             DROP TABLE bookmarks_old; COMMIT;"))?;
     }
     conn.execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS bookmarks_target ON bookmarks(user_id, book, ifnull(chapter, 0), ifnull(verse, 0))")?;
+    conn.execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS page_credits_tick ON page_credits(user_id, book, chapter) WHERE ticked=1")?;
     // a table from before reading with a group is keyed without the context: rebuild it once from SCHEMA, every row
     // as the reader's own reading
     let has_context: i64 = conn.query_row("SELECT count(*) FROM pragma_table_info('read_throughs') WHERE name='with_group'", [], |r| r.get(0))?;

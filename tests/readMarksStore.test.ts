@@ -5,10 +5,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const h = vi.hoisted(() => {
   const store = new Map<string, string>()
-  /** The server: an account's marks and path, whether it knows marks at all, and every request it was sent. */
+  /** The server: an account's marks and path, whether it knows marks at all, and every request it was sent; the badges
+   *  the next mark earns, and an answer it is holding back. */
   const server = {
     token: null as string | null, online: true, hasMarks: true, clock: '2026-10-13T12:00:00.000Z',
     marks: new Map<string, string>(), account: { path: null, history: [], read: [] } as Record<string, unknown>, calls: [] as string[], bodies: [] as unknown[],
+    badges: [] as { code: string; name: string }[], hold: null as Promise<void> | null,
   }
   return { store, server }
 })
@@ -23,6 +25,7 @@ vi.mock('../client/src/lib/api', () => {
   const call = async (method: string, path: string, body?: unknown): Promise<unknown> => {
     const s = h.server
     s.calls.push(`${method} ${path}`); s.bodies.push(body)
+    if (s.hold) await s.hold
     if (!s.online) throw new Error('Network request failed')
     if (!s.token) throw new ApiError(401, 'sign in')
     if (path === '/me/path' && method === 'GET') return JSON.parse(JSON.stringify(s.account))
@@ -30,10 +33,10 @@ vi.mock('../client/src/lib/api', () => {
     if (!m || !s.hasMarks) throw new ApiError(404, 'no such API')
     const k = `${m[1]}.${m[2]}`
     if (method === 'GET') return { marks: [...s.marks].map(([key, at]) => [...key.split('.').map(Number), at]) }
-    if (method === 'PUT') { s.marks.set(k, s.clock); return { ok: true, marked_at: s.clock } }
+    if (method === 'PUT') { s.marks.set(k, s.clock); return { ok: true, marked_at: s.clock, new_badges: s.badges.splice(0) } }
     if (method === 'DELETE') { s.marks.delete(k); return { ok: true } }
     for (const [b, c, at] of (body as { marks: [number, number, string][] }).marks) s.marks.set(`${b}.${c}`, at)
-    return { ok: true }
+    return { ok: true, new_badges: s.badges.splice(0) }
   }
   return {
     ApiError, getToken: () => h.server.token,
@@ -58,7 +61,7 @@ const stored = () => JSON.parse(store.get('berean_read_marks') ?? '{}') as { uid
 
 beforeEach(() => {
   store.clear()
-  Object.assign(server, { token: null, online: true, hasMarks: true, clock: '2026-10-13T12:00:00.000Z', account: { path: null, history: [], read: [] } })
+  Object.assign(server, { token: null, online: true, hasMarks: true, clock: '2026-10-13T12:00:00.000Z', account: { path: null, history: [], read: [] }, badges: [], hold: null })
   server.marks.clear(); server.calls.length = 0; server.bodies.length = 0
 })
 
@@ -82,6 +85,18 @@ describe('signed out', () => {
     const { M } = await launch()
     expect([await M.firstMark(), await M.firstMark()]).toEqual([true, false])
     expect(await (await launch()).M.firstMark()).toBe(false)
+  })
+  it('a device told the sentence from before (a mark earned nothing) hears the new one once', async () => {
+    store.set('berean_mark_explained', '1')
+    const { M } = await launch()
+    expect([await M.firstMark(), await M.firstMark()]).toEqual([true, false])
+  })
+  it('nothing is said to have reached an account, and no badge comes back', async () => {
+    const { M } = await launch()
+    await M.loadMarks(undefined)
+    let sent = 0
+    M.onMarksSent(() => sent++)
+    expect([await M.markRead(45, 5), await M.unmarkRead(45, 5), sent]).toEqual([[], [], 0])
   })
 })
 
@@ -109,14 +124,52 @@ describe('signing in', () => {
     await M.loadMarks(7)
     server.calls.length = 0
     server.clock = '2026-10-13T12:00:05.000Z'
-    await M.markRead(43, 3)
-    expect(shown(M)).toEqual(['43.3'])   // shown before the server has answered
+    let answer = () => {}
+    server.hold = new Promise<void>(r => { answer = r })
+    const sent = M.markRead(43, 3)
     await settle()
+    expect([shown(M), server.marks.size]).toEqual([['43.3'], 0])   // shown before the server has answered
+    server.hold = null
+    answer()
+    expect(await sent).toEqual([])
     expect([calls(), M.peekMarks().at.get('43.3'), stored().local]).toEqual([['PUT /me/marks/43/3'], '2026-10-13T12:00:05.000Z', []])
     await M.unmarkRead(43, 3)
     expect(shown(M)).toEqual([])
     await settle()
     expect([calls(), server.marks.size, stored().cleared]).toEqual([['PUT /me/marks/43/3', 'DELETE /me/marks/43/3'], 0, []])
+  })
+  it('a mark counts as the chapter read: the badges it earns come back to the tap that made it, once', async () => {
+    server.token = 't'
+    const { M } = await launch()
+    await M.loadMarks(7)
+    server.badges = [{ code: 'book_57', name: 'Philemon' }]
+    expect(await M.markRead(57, 1)).toEqual([{ code: 'book_57', name: 'Philemon' }])
+    expect(await M.markRead(45, 1)).toEqual([])
+    // offline taps wait; the one that finds the connection back carries them all up in one bulk, with its badges
+    server.online = false
+    await M.markRead(45, 2)
+    server.online = true
+    server.badges = [{ code: 'chapters_3', name: 'Three chapters' }]
+    expect(await M.markRead(45, 3)).toEqual([{ code: 'chapters_3', name: 'Three chapters' }])
+    expect(calls().slice(-1)).toEqual(['GET /me/marks'])
+    expect(calls().filter(c => c === 'POST /me/marks')).toHaveLength(1)
+  })
+  it('says when marks and undos reach the account, so a screen holding its credits asks again', async () => {
+    server.token = 't'
+    const { M } = await launch()
+    await M.loadMarks(7)
+    let sent = 0
+    const off = M.onMarksSent(() => sent++)
+    await M.markRead(45, 5)
+    await M.unmarkRead(45, 5)
+    await M.refreshMarks()   // nothing went up
+    server.online = false
+    await M.markRead(45, 6)   // nothing reached the server
+    expect(sent).toBe(2)
+    off()
+    server.online = true
+    await M.refreshMarks()
+    expect(sent).toBe(2)
   })
   it('a mark made on another device shows after a refresh', async () => {
     server.token = 't'

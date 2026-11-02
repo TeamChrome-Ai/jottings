@@ -9,14 +9,14 @@ import Icon from './Icon'
 import { FILL_SPRING, waveStep } from '../lib/springs'
 import { FadeSwap, PopIn, useReduceMotion } from './motion/nav'
 import { mix } from '../theme'
-import { Button, SPACE, Sheet, TYPE, Tap, useSheetArrivalDelay } from './ui'
+import { Button, Grow, SPACE, Sheet, TYPE, Tap, useSheetArrivalDelay } from './ui'
 
 /** How long a tapped cell shows its selected fill before the picker moves on. */
 export const CONFIRM_MS = 110
 const NUM_W = 46
 const GAP = 6
 const PAD = 12
-/** The bookmark ribbon's glyph box on a bookmarked cell. */
+/** The glyph box in a cell's corner: a bookmarked cell's ribbon, a marked chapter's check. */
 const NOTCH = 12
 /** How far the New Testament's chips lean toward the accent. */
 const NT_TINT = 0.08
@@ -116,11 +116,11 @@ export function Grid({ children }: { children: (wait: number) => ReactNode }) {
 
 /**
  * A book chip or chapter number. The selected one carries an accent layer that springs in over the plain cell; a
- * bookmarked one (`marked`) a small ribbon hanging from its top right corner; one with an `order` (its place in the
- * order a reader is tapping books in, from 1) that number on a badge over the same corner. `name` is what a screen
- * reader says.
+ * bookmarked one (`marked`) a small ribbon hanging from its top right corner; a `checked` one (marked read on Stats) a
+ * check in that corner, popping in as it is tapped; one with an `order` (its place in the order a reader is tapping
+ * books in, from 1) that number on a badge over the same corner. `name` is what a screen reader says.
  */
-export function Choice({ label, name = label, selected, fillDelay, onPress, onLongPress, marked = false, order, style, fontSize, bg, border }: { label: string; name?: string; selected: boolean; fillDelay: number; onPress: () => void; onLongPress?: () => void; marked?: boolean; order?: number; style: StyleProp<ViewStyle>; fontSize: number; bg: string; border?: string }) {
+export function Choice({ label, name = label, selected, fillDelay, onPress, onLongPress, marked = false, checked = false, order, style, fontSize, bg, border }: { label: string; name?: string; selected: boolean; fillDelay: number; onPress: () => void; onLongPress?: () => void; marked?: boolean; checked?: boolean; order?: number; style: StyleProp<ViewStyle>; fontSize: number; bg: string; border?: string }) {
   const c = useInks()
   return (
     <Tap onPress={onPress} onLongPress={onLongPress} scaleTo={0.9} accessibilityRole="button" aria-label={marked ? t('{name}, bookmarked', { name }) : name} aria-selected={selected}
@@ -128,6 +128,7 @@ export function Choice({ label, name = label, selected, fillDelay, onPress, onLo
       <Text style={{ color: c.text, fontSize }}>{label}</Text>
       {selected ? <Fill label={label} delay={fillDelay} fontSize={fontSize} /> : null}
       {marked ? <View pointerEvents="none" style={pickerStyles.notch}><Icon name="bookmark" fill size={NOTCH} color={selected ? c.accentText : c.accent} /></View> : null}
+      {checked ? <Grow from={0.4} style={pickerStyles.check}><Icon name="check" size={NOTCH} color={c.accent} /></Grow> : null}
       {order ? <View pointerEvents="none" aria-hidden style={[pickerStyles.order, { backgroundColor: c.text, borderColor: c.card }]}><Text style={[pickerStyles.orderText, { color: c.bg }]}>{order}</Text></View> : null}
     </Tap>
   )
@@ -159,6 +160,7 @@ export const pickerStyles = StyleSheet.create({
   back: { alignSelf: 'flex-start' },
   // the glyph's ribbon starts 1/8 of its box down: lifted by that, it hangs from the cell's top edge
   notch: { position: 'absolute', top: -NOTCH / 8, right: 2 },
+  check: { position: 'absolute', top: 1, right: 1, pointerEvents: 'none' },
   // half over the corner, into the grid's gap: the chip's label stays whole
   order: { position: 'absolute', top: -GAP, right: -GAP, minWidth: 18, height: 18, borderRadius: 9, borderWidth: 1, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' },
   orderText: { fontSize: 11, lineHeight: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },

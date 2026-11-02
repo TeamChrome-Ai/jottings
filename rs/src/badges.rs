@@ -37,8 +37,9 @@ static DEFS: Lazy<Vec<Def>> = Lazy::new(|| vec![
     Def { code: "bible", name: "Whole Bible", description: "Every chapter, Genesis to Revelation", icon: "🏅", test: |c, u, _| all_between(c, u, 1, 66) },
     Def { code: "outline_1", name: "First outline", description: "Created an outline", icon: "✏️", test: |c, u, _| count(c, "SELECT count(*) FROM outlines WHERE user_id=?1", u) >= 1 },
     Def { code: "outline_shared", name: "Shared", description: "Shared an outline with others", icon: "🔗", test: |c, u, _| count(c, "SELECT count(*) FROM outlines WHERE user_id=?1 AND visibility<>'private'", u) >= 1 },
-    Def { code: "early_bird", name: "Early bird", description: "Read before 6 am", icon: "🌅", test: |c, u, _| count(c, "SELECT count(*) FROM page_credits WHERE user_id=?1 AND cast(strftime('%H', credited_at, printf('%+d minutes', tz_offset_min)) AS INTEGER) < 6", u) >= 1 },
-    Def { code: "night_owl", name: "Night owl", description: "Read after 11 pm", icon: "🦉", test: |c, u, _| count(c, "SELECT count(*) FROM page_credits WHERE user_id=?1 AND cast(strftime('%H', credited_at, printf('%+d minutes', tz_offset_min)) AS INTEGER) >= 23", u) >= 1 },
+    // the hour of a reading in the app: a tick's time is the tap, not the reading (marks.rs)
+    Def { code: "early_bird", name: "Early bird", description: "Read before 6 am", icon: "🌅", test: |c, u, _| count(c, "SELECT count(*) FROM page_credits WHERE user_id=?1 AND ticked=0 AND cast(strftime('%H', credited_at, printf('%+d minutes', tz_offset_min)) AS INTEGER) < 6", u) >= 1 },
+    Def { code: "night_owl", name: "Night owl", description: "Read after 11 pm", icon: "🦉", test: |c, u, _| count(c, "SELECT count(*) FROM page_credits WHERE user_id=?1 AND ticked=0 AND cast(strftime('%H', credited_at, printf('%+d minutes', tz_offset_min)) AS INTEGER) >= 23", u) >= 1 },
     Def { code: "group_joined", name: "Fellowship", description: "Joined a reading group", icon: "🤝", test: |c, u, _| count(c, "SELECT count(*) FROM group_members WHERE user_id=?1", u) >= 1 },
     // a friend streak: consecutive days on which both friends met their goal (friends.rs); both must share their streak
     Def { code: "friend_streak_7", name: "Kept together", description: "A 7-day friend streak", icon: "🤝", test: |c, u, t| crate::friends::best_pair_streak(c, u, t) >= 7 },

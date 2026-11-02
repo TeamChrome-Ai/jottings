@@ -144,7 +144,6 @@ pub fn beat_at(conn: &mut Conn, user_id: i64, b: &Beat, now: time::OffsetDateTim
     let earned = earned_ms / 1000;
     let mut credited = None;
     let mut credited_with = None;
-    let mut chapter_new = 0i64;
     let mut reading = None;
     if let (Some(book), Some(chapter), Some(t)) = (b.book, b.chapter, through) {
         tx.execute("INSERT INTO chapter_dwell (session_id, book, chapter, active_seconds, max_progress, signal_events, reached_end) VALUES (?1,?2,?3,?4,?5,?6,?7)
@@ -153,8 +152,7 @@ pub fn beat_at(conn: &mut Conn, user_id: i64, b: &Beat, now: time::OffsetDateTim
         let standing = t.beat(&tx, earned_ms, b.seen.as_ref(), b.heard.as_ref(), b.signals.unwrap_or(0), &now_s)?;
         if standing.judgement.read && !standing.credited_today {
             if t.with_group == 0 {
-                let (c, new) = credit(&tx, user_id, &b.session_id, book, chapter, &date, standing.through.active_ms / 1000, &now_s, offset)?;
-                credited = c; chapter_new = new;
+                credited = credit(&tx, user_id, &b.session_id, book, chapter, &date, standing.through.active_ms / 1000, &now_s, offset)?;
             } else {
                 credited_with = credit_together(&tx, t.with_group, user_id, book, chapter, &date, &now_s)?;
             }
@@ -177,13 +175,11 @@ pub fn beat_at(conn: &mut Conn, user_id: i64, b: &Beat, now: time::OffsetDateTim
         // a chapter the text does not have is never credited (it was taken as 1000 words)
         let exists: bool = tx.query_row("SELECT 1 FROM chapters WHERE book=?1 AND chapter=?2", params![book, chapter], |_| Ok(true)).optional()?.unwrap_or(false);
         if cred == 0 && end && exists && dwell >= chapter_required_seconds(&tx, book, chapter) {
-            (credited, chapter_new) = credit(&tx, user_id, &b.session_id, book, chapter, &date, dwell, &now_s, offset)?;
+            credited = credit(&tx, user_id, &b.session_id, book, chapter, &date, dwell, &now_s, offset)?;
         }
     }
-    if earned > 0 || credited.is_some() {
-        tx.execute("INSERT INTO activity_days (user_id, date, active_seconds, pages, chapters) VALUES (?1,?2,?3,?4,?5)
-            ON CONFLICT(user_id, date) DO UPDATE SET active_seconds=active_seconds+excluded.active_seconds, pages=pages+excluded.pages, chapters=chapters+excluded.chapters",
-            params![user_id, date, earned, credited.is_some() as i64, chapter_new])?;
+    if earned > 0 {
+        tx.execute("INSERT INTO activity_days (user_id, date, active_seconds) VALUES (?1,?2,?3) ON CONFLICT(user_id, date) DO UPDATE SET active_seconds=active_seconds+excluded.active_seconds", params![user_id, date, earned])?;
     }
     tx.commit()?;
     let (ta, tp): (i64, i64) = conn.query_row("SELECT active_seconds, pages FROM activity_days WHERE user_id=?1 AND date=?2", params![user_id, date], |r| Ok((r.get(0)?, r.get(1)?))).optional()?.unwrap_or((0, 0));
@@ -196,16 +192,73 @@ pub fn beat_at(conn: &mut Conn, user_id: i64, b: &Beat, now: time::OffsetDateTim
     Ok(BeatResult { active_seconds_today: ta, pages_today: tp, credited, credited_with, streak: streak_info(conn, user_id, &date)?, new_badges, date, unseen_reactions, incoming_invites, reading })
 }
 
-/// Credits a chapter on `date`: the session's dwell row, the day's credit (once a day), the chapter's read count.
-/// Returns the credit when it is new today, and 1 when the chapter was never read before.
+/// A reading that credits a chapter: the session's dwell row, then the day's credit. The credit when it is the
+/// reading's (new today, or a tick of the day made the reading's), none when the day already had it.
 #[allow(clippy::too_many_arguments)]
-fn credit(tx: &rusqlite::Transaction, user_id: i64, session: &str, book: i64, chapter: i64, date: &str, dwell: i64, now_s: &str, offset: i64) -> rusqlite::Result<(Option<Credited>, i64)> {
+fn credit(tx: &rusqlite::Transaction, user_id: i64, session: &str, book: i64, chapter: i64, date: &str, dwell: i64, now_s: &str, offset: i64) -> rusqlite::Result<Option<Credited>> {
     tx.execute("UPDATE chapter_dwell SET credited=1 WHERE session_id=?1 AND book=?2 AND chapter=?3", params![session, book, chapter])?;
-    let n = tx.execute("INSERT OR IGNORE INTO page_credits (user_id, book, chapter, date, dwell_seconds, credited_at, tz_offset_min) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![user_id, book, chapter, date, dwell, now_s, offset])?;
-    if n == 0 { return Ok((None, 0)) }
-    let before: Option<i64> = tx.query_row("SELECT 1 FROM chapters_read WHERE user_id=?1 AND book=?2 AND chapter=?3", params![user_id, book, chapter], |r| r.get(0)).optional()?;
-    tx.execute("INSERT INTO chapters_read (user_id, book, chapter, first_read_at, last_read_at) VALUES (?1,?2,?3,?4,?4) ON CONFLICT(user_id, book, chapter) DO UPDATE SET times=times+1, last_read_at=excluded.last_read_at", params![user_id, book, chapter, now_s])?;
-    Ok((Some(Credited { book, chapter }), before.is_none() as i64))
+    Ok((credit_day(tx, user_id, book, chapter, date, dwell, now_s, offset, false)? != Credit::Already).then_some(Credited { book, chapter }))
+}
+
+/// What `credit_day` did with a credit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Credit { New, Adopted, Already }
+
+/// The one writer of what a credit counts for. `page_credits` is the record of chapters read, in the app or ticked by
+/// hand (`ticked`, docs/READING.md); `chapters_read` and the day's `pages` and `chapters` are its sums, and only this
+/// and `uncredit_tick` move them: a chapter's `times` are its credits, `first_read_at` and `last_read_at` its first and
+/// last (a back-dated tick never moves them the wrong way), a day's `pages` its credits and its `chapters` the
+/// chapters whose first credit it holds (a credit landing before the first moves that count to its day).
+/// A chapter credits once a day. A reading on the day of the chapter's tick takes the tick's row as its own
+/// (`Adopted`: real dwell, time and offset, no second page, and an undo of the mark then leaves it). A tick when the
+/// chapter has its tick already (a restore brought it back), or on a day the app credited it, is `Already`: the mark
+/// owns nothing.
+#[allow(clippy::too_many_arguments)]
+pub fn credit_day(c: &rusqlite::Connection, user_id: i64, book: i64, chapter: i64, date: &str, dwell: i64, at: &str, offset: i64, ticked: bool) -> rusqlite::Result<Credit> {
+    if ticked {
+        if c.query_row("SELECT 1 FROM page_credits WHERE user_id=?1 AND book=?2 AND chapter=?3 AND ticked=1", params![user_id, book, chapter], |_| Ok(())).optional()?.is_some() { return Ok(Credit::Already) }
+    } else if c.execute("UPDATE page_credits SET ticked=0, dwell_seconds=?5, credited_at=?6, tz_offset_min=?7 WHERE user_id=?1 AND book=?2 AND chapter=?3 AND date=?4 AND ticked=1", params![user_id, book, chapter, date, dwell, at, offset])? == 1 {
+        c.execute("UPDATE chapters_read SET last_read_at=max(coalesce(last_read_at, first_read_at), ?4) WHERE user_id=?1 AND book=?2 AND chapter=?3", params![user_id, book, chapter, at])?;
+        return Ok(Credit::Adopted)
+    }
+    let first: Option<String> = c.query_row("SELECT min(date) FROM page_credits WHERE user_id=?1 AND book=?2 AND chapter=?3", params![user_id, book, chapter], |r| r.get(0))?;
+    // a chapter read with no credit behind it (a restore merges the larger `times`) is not new on this day
+    let known = first.is_some() || c.query_row("SELECT 1 FROM chapters_read WHERE user_id=?1 AND book=?2 AND chapter=?3", params![user_id, book, chapter], |_| Ok(())).optional()?.is_some();
+    if c.execute("INSERT OR IGNORE INTO page_credits (user_id, book, chapter, date, dwell_seconds, credited_at, tz_offset_min, ticked) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)", params![user_id, book, chapter, date, dwell, at, offset, ticked])? == 0 { return Ok(Credit::Already) }
+    c.execute("INSERT INTO chapters_read (user_id, book, chapter, first_read_at, last_read_at) VALUES (?1,?2,?3,?4,?4)
+        ON CONFLICT(user_id, book, chapter) DO UPDATE SET times=times+1, first_read_at=min(first_read_at, excluded.first_read_at), last_read_at=max(coalesce(last_read_at, first_read_at), excluded.last_read_at)", params![user_id, book, chapter, at])?;
+    let first_now = first.as_deref().map_or(!known, |f| date < f);
+    if let (true, Some(f)) = (first_now, &first) { c.execute("UPDATE activity_days SET chapters=max(chapters-1, 0) WHERE user_id=?1 AND date=?2", params![user_id, f])?; }
+    c.execute("INSERT INTO activity_days (user_id, date, pages, chapters) VALUES (?1,?2,1,?3) ON CONFLICT(user_id, date) DO UPDATE SET pages=pages+1, chapters=chapters+excluded.chapters", params![user_id, date, first_now as i64])?;
+    Ok(Credit::New)
+}
+
+/// The exact inverse of a tick's `credit_day`: the chapter's tick credit goes, and every sum it moved goes back. The
+/// chapter keeps its row from the credits left (one fewer, first and last from what remains) or loses it; its first
+/// day moves to the next credit's day when the tick held it; a day left with nothing on it is dropped. False when the
+/// chapter has no tick credit (never ticked, or a reading of the day took it).
+pub fn uncredit_tick(c: &rusqlite::Connection, user_id: i64, book: i64, chapter: i64) -> rusqlite::Result<bool> {
+    let Some((date, at)): Option<(String, String)> = c.query_row("SELECT date, credited_at FROM page_credits WHERE user_id=?1 AND book=?2 AND chapter=?3 AND ticked=1", params![user_id, book, chapter], |r| Ok((r.get(0)?, r.get(1)?))).optional()? else { return Ok(false) };
+    c.execute("DELETE FROM page_credits WHERE user_id=?1 AND book=?2 AND chapter=?3 AND ticked=1", params![user_id, book, chapter])?;
+    let left: (Option<String>, Option<String>, Option<String>) = c.query_row("SELECT min(date), min(credited_at), max(credited_at) FROM page_credits WHERE user_id=?1 AND book=?2 AND chapter=?3", params![user_id, book, chapter], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    match left {
+        (Some(first), Some(from), Some(to)) => {
+            // first and last go back only where the tick was them: a reading with no credit behind it keeps its own
+            c.execute("UPDATE chapters_read SET times=max(times-1, 1), first_read_at=CASE WHEN first_read_at=?4 THEN ?5 ELSE first_read_at END, last_read_at=CASE WHEN last_read_at=?4 THEN ?6 ELSE last_read_at END WHERE user_id=?1 AND book=?2 AND chapter=?3", params![user_id, book, chapter, at, from, to])?;
+            if date < first {
+                c.execute("UPDATE activity_days SET chapters=max(chapters-1, 0) WHERE user_id=?1 AND date=?2", params![user_id, date])?;
+                c.execute("INSERT INTO activity_days (user_id, date, chapters) VALUES (?1,?2,1) ON CONFLICT(user_id, date) DO UPDATE SET chapters=chapters+1", params![user_id, first])?;
+            }
+        }
+        // the tick was the only credit: the chapter goes with it, unless it was read with no credit behind it
+        _ => if c.execute("UPDATE chapters_read SET times=times-1, last_read_at=CASE WHEN last_read_at=?4 THEN first_read_at ELSE last_read_at END WHERE user_id=?1 AND book=?2 AND chapter=?3 AND times > 1", params![user_id, book, chapter, at])? == 0 {
+            c.execute("DELETE FROM chapters_read WHERE user_id=?1 AND book=?2 AND chapter=?3", params![user_id, book, chapter])?;
+            c.execute("UPDATE activity_days SET chapters=max(chapters-1, 0) WHERE user_id=?1 AND date=?2", params![user_id, date])?;
+        }
+    }
+    c.execute("UPDATE activity_days SET pages=max(pages-1, 0) WHERE user_id=?1 AND date=?2", params![user_id, date])?;
+    c.execute("DELETE FROM activity_days WHERE user_id=?1 AND date=?2 AND active_seconds=0 AND pages=0 AND chapters=0", params![user_id, date])?;
+    Ok(true)
 }
 
 /// Credits a chapter to the group's shared log on `date`: once a day for the group, whoever of them read it. Returns the
@@ -381,6 +434,53 @@ mod tests {
         beat_at(c, 1, &local_beat(sid, now, offset), now).unwrap()
     }
     fn small_goal(c: &Conn) { c.execute("UPDATE users SET settings='{\"daily_goal_minutes\":0.25}' WHERE id=1", []).unwrap(); }
+
+    #[test]
+    fn a_tick_and_its_undo_move_the_ledgers_sums_exactly_and_a_reading_on_its_day_adopts_it() {
+        let c = fresh();
+        let tick = |date: &str| credit_day(&c, 1, 43, 3, date, 0, &format!("{date}T09:00:00.000Z"), 0, true).unwrap();
+        let read = |date: &str| credit_day(&c, 1, 43, 3, date, 120, &format!("{date}T21:00:00.000Z"), 0, false).unwrap();
+        // `(date, dwell, ticked)` of each credit, `(date, seconds, pages, chapters)` of each day, the chapter's first, last and times
+        #[allow(clippy::type_complexity)]
+        let ledger = || -> (Vec<(String, i64, i64)>, Vec<(String, i64, i64, i64)>, Option<(String, String, i64)>) {
+            let credits = c.prepare("SELECT date, dwell_seconds, ticked FROM page_credits WHERE user_id=1 ORDER BY date").unwrap().query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().collect::<Result<_, _>>().unwrap();
+            let days = c.prepare("SELECT date, active_seconds, pages, chapters FROM activity_days WHERE user_id=1 ORDER BY date").unwrap().query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap().collect::<Result<_, _>>().unwrap();
+            let read = c.query_row("SELECT first_read_at, last_read_at, times FROM chapters_read WHERE user_id=1 AND book=43 AND chapter=3", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().unwrap();
+            (credits, days, read)
+        };
+        let credit = |date: &str, dwell: i64, ticked: i64| (date.to_string(), dwell, ticked);
+        let day = |date: &str, secs: i64, pages: i64, chapters: i64| (date.to_string(), secs, pages, chapters);
+        let span = |from: &str, to: &str, times: i64| Some((from.to_string(), to.to_string(), times));
+        // read on the 10th, then ticked on the 1st: the tick is the chapter's first, so the first day moves to it
+        assert_eq!(read("2026-03-10"), Credit::New);
+        assert_eq!(tick("2026-03-10"), Credit::Already, "a tick on a day the app credited it owns nothing");
+        assert_eq!(tick("2026-03-01"), Credit::New);
+        assert_eq!(tick("2026-03-05"), Credit::Already, "one tick per chapter");
+        assert_eq!(ledger(), (vec![credit("2026-03-01", 0, 1), credit("2026-03-10", 120, 0)], vec![day("2026-03-01", 0, 1, 1), day("2026-03-10", 0, 1, 0)], span("2026-03-01T09:00:00.000Z", "2026-03-10T21:00:00.000Z", 2)));
+        // undone: the first day is the reading's again, the day with nothing left on it goes
+        assert!(uncredit_tick(&c, 1, 43, 3).unwrap());
+        assert_eq!(ledger(), (vec![credit("2026-03-10", 120, 0)], vec![day("2026-03-10", 0, 1, 1)], span("2026-03-10T21:00:00.000Z", "2026-03-10T21:00:00.000Z", 1)));
+        assert!(!uncredit_tick(&c, 1, 43, 3).unwrap(), "nothing to undo twice");
+        // ticked on the 1st and read in the app the same day: the reading takes the row, nothing doubles, no undo takes it
+        assert_eq!(tick("2026-03-01"), Credit::New);
+        assert_eq!(read("2026-03-01"), Credit::Adopted);
+        assert_eq!(read("2026-03-01"), Credit::Already, "once a day");
+        assert_eq!(ledger(), (vec![credit("2026-03-01", 120, 0), credit("2026-03-10", 120, 0)], vec![day("2026-03-01", 0, 1, 1), day("2026-03-10", 0, 1, 0)], span("2026-03-01T09:00:00.000Z", "2026-03-10T21:00:00.000Z", 2)));
+        assert!(!uncredit_tick(&c, 1, 43, 3).unwrap(), "the reading's now");
+        // a tick that is the chapter's only credit takes the chapter with it when undone
+        assert_eq!(credit_day(&c, 1, 43, 4, "2026-04-01", 0, "2026-04-01T09:00:00.000Z", 0, true).unwrap(), Credit::New);
+        assert!(uncredit_tick(&c, 1, 43, 4).unwrap());
+        let gone: (i64, i64) = c.query_row("SELECT (SELECT count(*) FROM chapters_read WHERE user_id=1 AND chapter=4), (SELECT count(*) FROM activity_days WHERE user_id=1 AND date='2026-04-01')", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!(gone, (0, 0));
+        // read with no credit behind it (a restore merged the larger `times`): a tick is not its first, and its undo leaves the reading
+        c.execute("INSERT INTO chapters_read (user_id, book, chapter, first_read_at, last_read_at, times) VALUES (1, 43, 5, '2026-02-01T08:00:00.000Z', '2026-02-01T08:00:00.000Z', 2)", []).unwrap();
+        assert_eq!(credit_day(&c, 1, 43, 5, "2026-04-02", 0, "2026-04-02T09:00:00.000Z", 0, true).unwrap(), Credit::New);
+        let new_that_day: i64 = c.query_row("SELECT chapters FROM activity_days WHERE user_id=1 AND date='2026-04-02'", [], |r| r.get(0)).unwrap();
+        assert_eq!(new_that_day, 0);
+        assert!(uncredit_tick(&c, 1, 43, 5).unwrap());
+        let kept: (String, String, i64) = c.query_row("SELECT first_read_at, last_read_at, times FROM chapters_read WHERE user_id=1 AND book=43 AND chapter=5", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+        assert_eq!(kept, ("2026-02-01T08:00:00.000Z".into(), "2026-02-01T08:00:00.000Z".into(), 2));
+    }
     #[test]
     fn week_starts_on_the_lords_day() {
         let d = |y, m, day| time::Date::from_calendar_date(y, time::Month::try_from(m).unwrap(), day).unwrap();

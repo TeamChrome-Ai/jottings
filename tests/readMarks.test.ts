@@ -144,16 +144,19 @@ describe('the line at a chapter’s end', () => {
   const facts = (f: Partial<EndFacts>): EndFacts => ({ credited: false, marked: false, path: OFF, ...f })
   it('credited: "Read", with nothing to tap', () => {
     expect(endLine(facts({ credited: true }))).toEqual({ kind: 'read' })
-    expect(endLine(facts({ credited: true, marked: true }))).toEqual({ kind: 'read' })
   })
   it('no clock at the end: the mark alone, or the verses still to read beside it', () => {
     expect(endLine(facts({}))).toEqual({ kind: 'open', toRead: null, firstGap: null })
     expect(endLine(facts({ gaps: [[9, 14]] }))).toEqual({ kind: 'open', toRead: 'Verses 9–14', firstGap: 9 })
     expect(Object.values(END_WORDS).join(' ')).not.toMatch(/\d:\d\d|Counts as read in/)
   })
-  it('marked: it says so and offers the undo; a credit later simply takes over', () => {
+  it('marked: it says so and offers the undo, credited as a mark now is', () => {
     expect(endLine(facts({ marked: true }))).toEqual({ kind: 'marked' })
-    expect(endLine(facts({ marked: true, credited: true }))).toEqual({ kind: 'read' })
+    // the mark's own credit, or a reading in the app as well: the mark is still there to undo
+    expect(endLine(facts({ marked: true, credited: true }))).toEqual({ kind: 'marked' })
+    // undone, the credit it took back is gone; a reading in the app is still "Read"
+    expect(endLine(facts({ marked: false, credited: false }))).toEqual({ kind: 'open', toRead: null, firstGap: null })
+    expect(endLine(facts({ marked: false, credited: true }))).toEqual({ kind: 'read' })
   })
   it('on a path the path’s own count decides, so a chapter read before the path began can still be marked', () => {
     const on = (byCredit: boolean, byMark: boolean) => ({ onPath: true, byCredit, byMark })
@@ -164,13 +167,19 @@ describe('the line at a chapter’s end', () => {
     expect(endLine(facts({ marked: true, path: on(false, false) }))).toEqual({ kind: 'before-path', by: 'mark' })
     // marked now, it is the mark the path counts, and it can be undone
     expect(endLine(facts({ credited: true, marked: true, path: on(false, true) }))).toEqual({ kind: 'marked' })
+    // marked since the start, the path counts the mark's credit as well: the undo still shows
+    expect(endLine(facts({ credited: true, marked: true, path: on(true, true) }))).toEqual({ kind: 'marked' })
+    // marked before the start (and so credited before it): said as a mark
+    expect(endLine(facts({ credited: true, marked: true, path: on(false, false) }))).toEqual({ kind: 'before-path', by: 'mark' })
     expect(endLine(facts({ path: on(false, false) }))).toEqual({ kind: 'open', toRead: null, firstGap: null })
   })
   it('the words are plain and short', () => {
     expect([END_WORDS.read, END_WORDS.mark, END_WORDS.marked, END_WORDS.undo]).toEqual(['Read', 'Mark as read', 'Marked as read', 'Undo'])
     expect(END_WORDS.beforePath).toEqual({ credit: 'Read before this path began', mark: 'Marked before this path began' })
     for (const w of [END_WORDS.explained, END_WORDS.beforePath.credit]) expect(w).not.toMatch(/!/)
-    expect(END_WORDS.explained).toMatch(/your own mark.*path.*streaks, reading time and badges/)
+    // a mark counts as read now; only what is measured in time still needs the time
+    expect(END_WORDS.explained).toBe('A chapter you mark counts as read; streaks and reading time still come from time spent reading.')
+    expect(END_WORDS.explained).not.toMatch(/badges|earns nothing|your own mark/)
   })
 })
 

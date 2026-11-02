@@ -6,7 +6,10 @@
 # cached or froze the app or the reading stopped moving on.
 #   scripts/read-aloud-device-voice-check.sh [apk]   an emulator (Android 14 or later, which freezes cached apps) on adb
 set -u
-PKG=org.example.reader
+# the app's package and link scheme are the brand's (shared/brand.json)
+BRAND=$(dirname "$0")/../shared/brand.json
+PKG=$(sed -n 's/.*"androidPackage": *"\([^"]*\)".*/\1/p' "$BRAND" | head -1)
+SCHEME=$(sed -n 's/.*"scheme": *"\([^"]*\)".*/\1/p' "$BRAND" | head -1)
 ui() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb shell cat /sdcard/ui.xml | sed 's/>/>\n/g'; }
 tap() {
   local b
@@ -15,7 +18,7 @@ tap() {
   [ -n "${4:-}" ] && adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
 launch() { adb shell monkey -p $PKG -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1; }
-john3() { adb shell am start -W -a android.intent.action.VIEW -d reader://read/43/3 $PKG >/dev/null; sleep 10; }
+john3() { adb shell am start -W -a android.intent.action.VIEW -d $SCHEME://read/43/3 $PKG >/dev/null; sleep 10; }
 verse() { ui | grep -o 'text="John 3:[0-9]*"' | head -1 | sed 's/.*://; s/"//'; }
 shown() { for _ in $(seq 1 10); do ui | grep -q "$1" && return 0; sleep 2; done; return 1; }
 voiceOn() { ui | grep 'content-desc="Use the device voice"' | grep Switch | grep -q 'checked="true"'; }

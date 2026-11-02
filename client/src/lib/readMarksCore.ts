@@ -1,7 +1,8 @@
 /**
  * Chapters a reader marked as read by hand (docs/PATHS.md rule 1; the server's side is rs/src/marks.rs), as one device
- * keeps them. A mark is the reader's own: it ticks the chapter in their reader and moves their own path on. It is not
- * a credit and earns nothing. Pure; `readMarks.ts` does the storage and the network.
+ * keeps them: read in a printed Bible, say. A mark counts as the chapter read: the server credits it once, on the day
+ * it is made, wherever a chapter read counts, and its undo takes that credit back. It carries no time, so the streak
+ * and reading time never move for it. Pure; `readMarks.ts` does the storage and the network.
  *
  * Signed out the marks live on the device (`local`). Signed in the account's are the truth (`known`, as last fetched)
  * and the device holds only what the server has not taken yet: marks made here (`local`) and marks undone here
@@ -31,7 +32,7 @@ export const isChapter = (book: unknown, chapter: unknown): boolean =>
 /**
  * Marks as a file, storage or the server gives them (`[book, chapter, at]` or `{ book, chapter, marked_at }`): only
  * chapters the Bible has, one per chapter with its latest time, the Bible's count at most. A time that cannot be read
- * becomes `now`. Nothing read here is trusted further than that: a mark earns nothing.
+ * becomes `now`. Nothing read here is trusted further than that: what a mark earns, the server decides.
  */
 export function readMarkList(v: unknown, now: string): Mark[] {
   const out = new Map<string, Mark>()

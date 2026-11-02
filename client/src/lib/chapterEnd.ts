@@ -18,7 +18,8 @@ export interface EndFacts {
 export type EndLine =
   /** Credited: the tick's word, nothing to do. */
   | { kind: 'read' }
-  /** The reader's own mark stands (and, on a path, is what the path counts): it can be undone. */
+  /** The reader's own mark stands (and, on a path, is what the path counts): it can be undone. A mark is credited too,
+   *  so it is asked for before the credit, or its Undo would never show. */
   | { kind: 'marked' }
   /** On the path, read or marked before it began: the path does not count it, and a mark now would. */
   | { kind: 'before-path'; by: 'credit' | 'mark' }
@@ -27,12 +28,12 @@ export type EndLine =
 
 export function endLine(f: EndFacts): EndLine {
   if (f.path.onPath) {
-    if (f.path.byCredit) return { kind: 'read' }
     if (f.path.byMark) return { kind: 'marked' }
-    if (f.credited || f.marked) return { kind: 'before-path', by: f.credited ? 'credit' : 'mark' }
+    if (f.path.byCredit) return { kind: 'read' }
+    if (f.credited || f.marked) return { kind: 'before-path', by: f.marked ? 'mark' : 'credit' }
   } else {
-    if (f.credited) return { kind: 'read' }
     if (f.marked) return { kind: 'marked' }
+    if (f.credited) return { kind: 'read' }
   }
   if (f.gaps?.length) return { kind: 'open', toRead: verseList(f.gaps), firstGap: f.gaps[0][0] }
   return { kind: 'open', toRead: null, firstGap: null }
@@ -55,6 +56,6 @@ export const END_WORDS = {
   beforePath: { get credit() { return t('Read before this path began') }, get mark() { return t('Marked before this path began') } },
   /** Parts that went by too quickly to count (or never came on screen): tapping goes to the first. */
   toRead: (verses: string) => t('{verses} still to read', { verses }),
-  /** Said once, the first time a reader marks a chapter. */
-  get explained() { return t('This is your own mark: it moves your path on, and streaks, reading time and badges still come from time spent reading.') },
+  /** Said once, the first time a reader marks a chapter, and over the chapters on Stats (MarkReadSheet). */
+  get explained() { return t('A chapter you mark counts as read; streaks and reading time still come from time spent reading.') },
 }

@@ -60,6 +60,7 @@ import { offerTourControls, tourRef } from '../../../../src/store/tour'
 import { TOOLBAR_WIDE } from '../../../../src/lib/tour'
 import { usePathHere } from '../../../../src/lib/paths'
 import { useReadTicks } from '../../../../src/hooks/useReadTicks'
+import { onMarksSent } from '../../../../src/lib/readMarks'
 import ReadingWithPill, { ReadWithSheet } from '../../../../src/components/ReadingWithPill'
 import { keepReadingWithAmong, readingWith } from '../../../../src/store/readingWith'
 import { t, tn } from '@shared/i18n'
@@ -84,6 +85,8 @@ const NO_KEYS: ReadonlySet<string> = new Set()
 const NO_TINTS: ReadonlyMap<number, string> = new Map()
 /** Pages either side are laid out this long after the current one lands, so they never compete with its first paint. */
 const NEIGHBOURS_AFTER_MS = 150
+/** The account's credited chapters, by `chapterKey`. */
+const fetchCredited = () => get<Record<string, number[]>>('/stats/progress').then(p => new Set(Object.entries(p).flatMap(([b, cs]) => cs.map(c => `${b}.${c}`))))
 
 /** Another edition (docs/EDITION.md) remounts the screen on the same chapter, read again in that edition. */
 export default function ReadScreen() {
@@ -269,13 +272,13 @@ function ReadScreenPage() {
     landRef.current()
     fetchChapter(bookN, chapterN).then(ch => { if (!cancelled) setData(ch) }).catch(e => { if (!cancelled) setErr((e as Error).message) })
     warmAround(bookN, chapterN)
-    if (user) {
-      get<Record<string, number[]>>('/stats/progress').then(p => { if (!cancelled) setReadSet(new Set(Object.entries(p).flatMap(([b, cs]) => cs.map(c => `${b}.${c}`)))) }).catch(() => {})
-    }
+    if (user) fetchCredited().then(s => { if (!cancelled) setReadSet(s) }).catch(() => {})
     return () => { cancelled = true }
     // params.v is consumed once per chapter, on purpose
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookN, chapterN, valid, user])
+  // a mark is credited and its undo takes the credit back: once the server has either, the credits are asked for again
+  useEffect(() => (user ? onMarksSent(() => { fetchCredited().then(setReadSet).catch(() => {}) }) : undefined), [user])
 
   // a verse asked for on the chapter already open (Back to the verse from the library, a link to this chapter): land on
   // it and flash it as a new chapter would

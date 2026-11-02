@@ -53,6 +53,8 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("seeded {db_path} from {seed} (encrypted: {})", db_key.is_some());
     } else if let Some(k) = &db_key { db::ensure_encrypted(&db_path, k)?; }
     let pool = db::open_pool(&db_path, db_key)?;
+    let credited = { let mut conn = pool.get()?; marks::backfill(&mut conn)? };
+    if credited > 0 { tracing::info!("{credited} chapter(s) marked read before ticks counted are now credited"); }
     // `berean reseed-scripture`: the scripture tables were copied in on first boot only; after a data rebuild this
     // replaces them from the seed file in place (user tables untouched) and exits. Run with the server stopped.
     if argv.get(1).map(|s| s.as_str()) == Some("reseed-scripture") {
@@ -103,7 +105,7 @@ async fn main() -> anyhow::Result<()> {
         let conn = pool.get()?; println!("{} hour(s) written", live::import_hours(&conn, &text)?); return Ok(());
     }
     // `berean reading <handle> [days]`: a reader's recent days (minutes, chapters, goal met) and the chapters that
-    // credited them, to answer "why did my streak count today"
+    // credited them, read in the app or ticked by hand, to answer "why did my streak count today"
     if argv.get(1).map(|s| s.as_str()) == Some("reading") {
         let Some(handle) = argv.get(2) else { anyhow::bail!("reading <handle> [days]") };
         let days: i64 = argv.get(3).and_then(|d| d.parse().ok()).unwrap_or(7);
@@ -115,10 +117,11 @@ async fn main() -> anyhow::Result<()> {
         for row in st.query_map(rusqlite::params![uid, days], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)))? {
             let (date, secs, pages) = row?;
             println!("{date}  {:>3} min {:>2} s  chapters {pages}  {}", secs / 60, secs % 60, if activity::day_met(secs, goal) { "goal met" } else { "not met" });
-            let mut cs = conn.prepare("SELECT book, chapter, dwell_seconds, credited_at FROM page_credits WHERE user_id=?1 AND date=?2 ORDER BY credited_at")?;
-            for c in cs.query_map(rusqlite::params![uid, date], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, String>(3)?)))? {
-                let (b, ch, dwell, at) = c?;
-                println!("      {b}:{ch}  {dwell} s on it (needs {} s)  at {at}", bible::chapter_required_seconds(&conn, b, ch));
+            let mut cs = conn.prepare("SELECT book, chapter, dwell_seconds, credited_at, ticked FROM page_credits WHERE user_id=?1 AND date=?2 ORDER BY credited_at")?;
+            for c in cs.query_map(rusqlite::params![uid, date], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, String>(3)?, r.get::<_, bool>(4)?)))? {
+                let (b, ch, dwell, at, ticked) = c?;
+                if ticked { println!("      {b}:{ch}  ticked by hand, no time on it  at {at}"); }
+                else { println!("      {b}:{ch}  {dwell} s on it (needs {} s)  at {at}", bible::chapter_required_seconds(&conn, b, ch)); }
             }
         }
         return Ok(());

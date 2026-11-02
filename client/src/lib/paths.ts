@@ -4,7 +4,8 @@
  * comes from a local read set (`berean_path_reads`) the reader appends to when a visit is credited (useActivity: the
  * server's credit signed in, the same rule judged on the device signed out). On sign-in a local path moves to the
  * account when the account has none (its start kept); the read sets are unioned for progress either way. The reader's
- * own path also counts the chapters they marked read by hand since its start (readMarks.ts); nothing shared does. One
+ * own path also counts the chapters they marked read by hand since its start (readMarks.ts), at once; the server credits
+ * a mark too, so what is shared counts it from that credit. One
  * store outside React (useSyncExternalStore), so the reader, Home, read aloud and the Paths screen see one answer. Web-safe.
  */
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'

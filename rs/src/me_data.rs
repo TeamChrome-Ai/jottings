@@ -34,7 +34,8 @@ fn rows(conn: &Connection, sql: &str, uid: i64) -> rusqlite::Result<Vec<Value>> 
 // the values, never from the JSON text (the app parses the file and writes it again).
 
 #[derive(Serialize, Deserialize)] struct DayRow { date: String, active_seconds: i64, pages: i64, chapters: i64 }
-#[derive(Serialize, Deserialize)] struct CreditRow { book: i64, chapter: i64, date: String, dwell_seconds: i64, credited_at: String, tz_offset_min: i64 }
+/// `ticked` (a chapter ticked by hand, marks.rs) rides only when true, so a file from before it reads and signs the same.
+#[derive(Serialize, Deserialize)] struct CreditRow { book: i64, chapter: i64, date: String, dwell_seconds: i64, credited_at: String, tz_offset_min: i64, #[serde(default, skip_serializing_if = "std::ops::Not::not")] ticked: bool }
 #[derive(Serialize, Deserialize)] struct ReadRow { book: i64, chapter: i64, first_read_at: String, #[serde(default)] last_read_at: Option<String>, times: i64 }
 #[derive(Serialize, Deserialize)] struct BadgeRow { code: String, earned_at: String }
 #[derive(Default)] struct History { days: Vec<DayRow>, credits: Vec<CreditRow>, read: Vec<ReadRow>, badges: Vec<BadgeRow> }
@@ -43,7 +44,7 @@ fn history(conn: &Connection, uid: i64) -> rusqlite::Result<History> {
     fn q<T>(conn: &Connection, sql: &str, uid: i64, f: impl FnMut(&rusqlite::Row) -> rusqlite::Result<T>) -> rusqlite::Result<Vec<T>> { let mut st = conn.prepare(sql)?; let v = st.query_map(params![uid], f)?.collect(); v }
     Ok(History {
         days: q(conn, "SELECT date, active_seconds, pages, chapters FROM activity_days WHERE user_id=?1 ORDER BY date", uid, |r| Ok(DayRow { date: r.get(0)?, active_seconds: r.get(1)?, pages: r.get(2)?, chapters: r.get(3)? }))?,
-        credits: q(conn, "SELECT book, chapter, date, dwell_seconds, credited_at, tz_offset_min FROM page_credits WHERE user_id=?1 ORDER BY credited_at, id", uid, |r| Ok(CreditRow { book: r.get(0)?, chapter: r.get(1)?, date: r.get(2)?, dwell_seconds: r.get(3)?, credited_at: r.get(4)?, tz_offset_min: r.get(5)? }))?,
+        credits: q(conn, "SELECT book, chapter, date, dwell_seconds, credited_at, tz_offset_min, ticked FROM page_credits WHERE user_id=?1 ORDER BY credited_at, id", uid, |r| Ok(CreditRow { book: r.get(0)?, chapter: r.get(1)?, date: r.get(2)?, dwell_seconds: r.get(3)?, credited_at: r.get(4)?, tz_offset_min: r.get(5)?, ticked: r.get(6)? }))?,
         read: q(conn, "SELECT book, chapter, first_read_at, last_read_at, times FROM chapters_read WHERE user_id=?1 ORDER BY first_read_at, book, chapter", uid, |r| Ok(ReadRow { book: r.get(0)?, chapter: r.get(1)?, first_read_at: r.get(2)?, last_read_at: r.get(3)?, times: r.get(4)? }))?,
         badges: q(conn, "SELECT code, earned_at FROM badges WHERE user_id=?1 ORDER BY earned_at, code", uid, |r| Ok(BadgeRow { code: r.get(0)?, earned_at: r.get(1)? }))?,
     })
@@ -69,7 +70,8 @@ fn canonical(uid: i64, exported_at: &str, h: &History) -> String {
     c.row("user").n(uid).end();
     c.row("exported").s(exported_at).end();
     for d in &h.days { c.row("day").s(&d.date).n(d.active_seconds).n(d.pages).n(d.chapters).end(); }
-    for p in &h.credits { c.row("credit").n(p.book).n(p.chapter).s(&p.date).n(p.dwell_seconds).s(&p.credited_at).n(p.tz_offset_min).end(); }
+    // a tick's line gains a field; one from a reading is as every export before wrote it, so those still verify
+    for p in &h.credits { c.row("credit").n(p.book).n(p.chapter).s(&p.date).n(p.dwell_seconds).s(&p.credited_at).n(p.tz_offset_min); if p.ticked { c.n(1); } c.end(); }
     for r in &h.read { c.row("read").n(r.book).n(r.chapter).s(&r.first_read_at).s(r.last_read_at.as_deref().unwrap_or("")).n(r.times).end(); }
     for b in &h.badges { c.row("badge").s(&b.code).s(&b.earned_at).end(); }
     c.0
@@ -125,7 +127,6 @@ pub async fn export(State(s): State<AppState>, AuthUser(u): AuthUser) -> ApiResu
         "activity_signature": signature,
         // the reading path (docs/PATHS.md): the active one and, inside history, the ones left for it
         "path": rows(&conn, "SELECT path_id, started_at, target_date, pace_per_week, with_ministry, custom_json, history_json FROM user_paths WHERE user_id=?1", u.id)?.pop(),
-        // chapters marked read by hand (marks.rs): the reader's own, outside the signature because they earn nothing
         // chapters part-read (readthrough.rs), kept two days: which verses went past, the time spent so far; `with_group`
         // 0 is their own reading, else the group it is read with
         "read_throughs": rows(&conn, "SELECT book, chapter, with_group, state, credited_date, updated_at, signals, covered_ms FROM read_throughs WHERE user_id=?1 ORDER BY updated_at", u.id)?,
@@ -133,6 +134,8 @@ pub async fn export(State(s): State<AppState>, AuthUser(u): AuthUser) -> ApiResu
         "together": rows(&conn, "SELECT g.name, g.slug, r.book, r.chapter, r.date FROM group_reads r JOIN groups g ON g.id=r.group_id WHERE r.user_id=?1 ORDER BY r.credited_at, r.rowid", u.id)?,
         // the reader's own pace (readthrough.rs), words a minute from the last chapters they read themselves
         "reading_pace": rows(&conn, "SELECT samples FROM reading_pace WHERE user_id=?1", u.id)?.pop(),
+        // chapters marked read by hand (marks.rs): the toggle record, outside the signature; what a mark earns is its
+        // tick credit among the signed page_credits (`ticked`). The app restores the history first, then these
         "chapter_marks": rows(&conn, "SELECT book, chapter, marked_at FROM chapter_marks WHERE user_id=?1 ORDER BY marked_at, book, chapter", u.id)?,
         "bookmarks": rows(&conn, "SELECT book, chapter, verse, label, color, created_at FROM bookmarks WHERE user_id=?1 ORDER BY created_at, id", u.id)?,
         "highlights": rows(&conn, "SELECT verse_id, color, created_at FROM highlights WHERE user_id=?1 ORDER BY created_at", u.id)?,
@@ -276,8 +279,9 @@ fn restore(conn: &mut crate::db::Conn, caller: i64, body: &[u8], key: &[u8; 32],
             ON CONFLICT(user_id, date) DO UPDATE SET active_seconds=max(active_seconds, excluded.active_seconds), pages=max(pages, excluded.pages), chapters=max(chapters, excluded.chapters)
             WHERE excluded.active_seconds > active_seconds OR excluded.pages > pages OR excluded.chapters > chapters")?;
         for d in &h.days { days += st.execute(params![caller, d.date, d.active_seconds, d.pages, d.chapters])?; }
-        let mut st = tx.prepare_cached("INSERT OR IGNORE INTO page_credits (user_id, book, chapter, date, dwell_seconds, credited_at, tz_offset_min) VALUES (?1,?2,?3,?4,?5,?6,?7)")?;
-        for p in &h.credits { credits += st.execute(params![caller, p.book, p.chapter, p.date, p.dwell_seconds, p.credited_at, p.tz_offset_min])?; }
+        // a tick credit the chapter has already, on whatever day, is a duplicate too (page_credits_tick)
+        let mut st = tx.prepare_cached("INSERT OR IGNORE INTO page_credits (user_id, book, chapter, date, dwell_seconds, credited_at, tz_offset_min, ticked) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)")?;
+        for p in &h.credits { credits += st.execute(params![caller, p.book, p.chapter, p.date, p.dwell_seconds, p.credited_at, p.tz_offset_min, p.ticked])?; }
         // a row from before last_read_at has none: its first reading is its last, as db::open_pool fills it
         let mut st = tx.prepare_cached("INSERT INTO chapters_read (user_id, book, chapter, first_read_at, last_read_at, times) VALUES (?1,?2,?3,?4,?5,?6)
             ON CONFLICT(user_id, book, chapter) DO UPDATE SET first_read_at=min(first_read_at, excluded.first_read_at), last_read_at=max(coalesce(last_read_at, first_read_at), excluded.last_read_at), times=max(times, excluded.times)
@@ -375,6 +379,16 @@ mod tests {
         assert_eq!(hex(&k), hex(&Sha256::digest(b"jottings-backup-signature-v1:00ff")));
         assert_eq!(signing_key_from(Some("00ff"), false), Some(k));
         assert!(k != DEV_KEY && signing_key_from(Some("00fe"), true) != Some(k));
+    }
+
+    #[test]
+    fn a_credit_signs_as_every_export_before_ticks_did_unless_it_is_a_tick() {
+        let line = |ticked: bool| canonical(7, "t", &History { credits: vec![CreditRow { book: 43, chapter: 3, date: "2026-01-01".into(), dwell_seconds: 200, credited_at: "2026-01-01T07:10:00.000Z".into(), tz_offset_min: -300, ticked }], ..Default::default() });
+        assert!(line(false).ends_with("credit|43|3|2026-01-01|200|2026-01-01T07:10:00.000Z|-300\n"), "{}", line(false));
+        assert!(line(true).ends_with("credit|43|3|2026-01-01|200|2026-01-01T07:10:00.000Z|-300|1\n"), "{}", line(true));
+        // a file from before the flag reads as a reading's credit, and writes back without it
+        let old: CreditRow = serde_json::from_value(json!({ "book": 43, "chapter": 3, "date": "2026-01-01", "dwell_seconds": 200, "credited_at": "2026-01-01T07:10:00.000Z", "tz_offset_min": -300 })).unwrap();
+        assert!(!old.ticked && serde_json::to_value(&old).unwrap().get("ticked").is_none());
     }
 
     #[test]
@@ -488,7 +502,7 @@ mod tests {
         let (id, anna) = user(&pool, "anna");
         let tomorrow = crate::activity::day_key(time::OffsetDateTime::now_utc().date() + time::Duration::days(1));
         let later = crate::activity::day_key(time::OffsetDateTime::now_utc().date() + time::Duration::days(2));
-        let credit = |book, chapter, date: &str, dwell, at: &str, tz| CreditRow { book, chapter, date: date.into(), dwell_seconds: dwell, credited_at: at.into(), tz_offset_min: tz };
+        let credit = |book, chapter, date: &str, dwell, at: &str, tz| CreditRow { book, chapter, date: date.into(), dwell_seconds: dwell, credited_at: at.into(), tz_offset_min: tz, ticked: false };
         let read = |book, chapter, at: &str, last: Option<&str>, times| ReadRow { book, chapter, first_read_at: at.into(), last_read_at: last.map(Into::into), times };
         let badge = |code: &str, at: &str| BadgeRow { code: code.into(), earned_at: at.into() };
         const AT: &str = "2026-01-01T07:10:00.000Z";
@@ -534,7 +548,7 @@ mod tests {
     async fn a_long_history_is_more_than_the_usual_body_and_still_fits() {
         let (app, pool) = app();
         let (id, anna) = user(&pool, "anna");
-        let h = History { credits: (1..=20_000).map(|i| CreditRow { book: 19, chapter: i, date: "2026-01-01".into(), dwell_seconds: 200, credited_at: "2026-01-01T07:10:00.000Z".into(), tz_offset_min: -300 }).collect(), ..Default::default() };
+        let h = History { credits: (1..=20_000).map(|i| CreditRow { book: 19, chapter: i, date: "2026-01-01".into(), dwell_seconds: 200, credited_at: "2026-01-01T07:10:00.000Z".into(), tz_offset_min: -300, ticked: false }).collect(), ..Default::default() };
         let body = signed(id, &h);
         assert!(body.to_string().len() > 2 << 20);
         let (st, v) = call(&app, "POST", "/me/restore-activity", Some(&anna), body.clone()).await;

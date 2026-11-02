@@ -7,7 +7,10 @@
 # when an app leaves it; with no GPU the emulator also needs three-button navigation and no lock screen.
 #   scripts/read-aloud-service-check.sh [apk]   an emulator (system image 36.1 or later) on adb; the apk installed first
 set -u
-PKG=org.example.reader
+# the app's package and link scheme are the brand's (shared/brand.json)
+BRAND=$(dirname "$0")/../shared/brand.json
+PKG=$(sed -n 's/.*"androidPackage": *"\([^"]*\)".*/\1/p' "$BRAND" | head -1)
+SCHEME=$(sed -n 's/.*"scheme": *"\([^"]*\)".*/\1/p' "$BRAND" | head -1)
 tap() {
   local b
   adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
@@ -29,7 +32,7 @@ adb logcat -c
 adb shell monkey -p $PKG -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 sleep 15
 tap "Skip the welcome" && sleep 2
-adb shell am start -W -a android.intent.action.VIEW -d reader://read/19/117 $PKG >/dev/null
+adb shell am start -W -a android.intent.action.VIEW -d $SCHEME://read/19/117 $PKG >/dev/null
 sleep 12
 tap "Read aloud" || { echo "FAIL: no Read aloud on Psalm 117"; exit 1; }
 

@@ -11,11 +11,13 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { chapterKey } from '@shared/paths'
+import type { Badge } from '@shared/types'
 import { ApiError, cachedGet, del, getToken, post, put } from './api'
 import { MAX_MARKS, NO_MARKS, afterCleared, afterFetched, afterSent, forReader, isChapter, marksOf, readMarkList, readMarkState, withMark, withMarks, withoutMark, type Mark, type MarkState } from './readMarksCore'
 
 export const MARKS_KEY = 'berean_read_marks'
-const EXPLAINED_KEY = 'berean_mark_explained'
+/** The second sentence's: readers told the first (a mark earned nothing) hear that a mark now counts as read. */
+const EXPLAINED_KEY = 'berean_mark_explained_2'
 
 export interface MarksView {
   /** False until this device's marks have been read. */
@@ -54,46 +56,67 @@ const tapped = new Set<string>()
 /** The server answered 404: it has no marks yet. Asked again at the next launch or sign-in. */
 let unsupported = false
 let chain: Promise<void> = Promise.resolve()
-/** One run at a time: what waits here goes up (marks, then undos), then, when asked, the account's marks come down. */
-function sync(fetch: boolean): Promise<void> {
-  chain = chain.then(() => run(fetch)).catch(() => {})
-  return chain
+/**
+ * One run at a time: what waits here goes up (marks, then undos), then, when asked, the account's marks come down.
+ * Answers once its run is over, with the badges the server gave for what went up in it.
+ */
+function sync(fetch: boolean): Promise<Badge[]> {
+  const ran = chain.then(() => run(fetch)).catch((): Badge[] => [])
+  chain = ran.then(() => {})
+  return ran
 }
-async function run(fetch: boolean): Promise<void> {
+/** What the server answers a mark with: a mark is a chapter read (rs/src/marks.rs), so it can earn a badge. */
+type Sent = { new_badges?: Badge[] }
+async function run(fetch: boolean): Promise<Badge[]> {
   const uid = state.uid, token = getToken()
-  if (uid === null || !token || unsupported) return
+  if (uid === null || !token || unsupported) return []
   const mine = () => state.uid === uid && getToken() === token
   const up = state.local.slice(0, MAX_MARKS)
+  let won: Badge[] = []
+  let went = false
   try {
     if (up.length === 1 && tapped.has(chapterKey(up[0][0], up[0][1]))) {
       const [b, c] = up[0]
-      const r = await put<{ marked_at?: string }>(`/me/marks/${b}/${c}`)
-      if (!mine()) return
+      const r = await put<Sent & { marked_at?: string }>(`/me/marks/${b}/${c}`)
+      if (!mine()) return []
+      won = r?.new_badges ?? []
       commit(afterSent(state, up, [[b, c, typeof r?.marked_at === 'string' ? r.marked_at : up[0][2]]]))
     } else if (up.length) {
-      await post('/me/marks', { marks: up })
-      if (!mine()) return
+      const r = await post<Sent>('/me/marks', { marks: up })
+      if (!mine()) return []
+      won = r?.new_badges ?? []
       commit(afterSent(state, up))
     }
+    went = up.length > 0
   } catch (e) {
-    if (!(e instanceof ApiError)) return
+    if (!(e instanceof ApiError)) return []
     if (e.status === 404) unsupported = true
     // refused as they stand (not a chapter): they would be refused every time, so they do not wait
     else if (e.status === 400 && mine()) commit({ ...state, local: state.local.filter(m => !up.includes(m)) })
-    return
+    return []
   }
   try {
     for (const k of [...state.cleared]) {
       await del(`/me/marks/${k.replace('.', '/')}`)
-      if (!mine()) return
+      if (!mine()) return won
       commit(afterCleared(state, k))
+      went = true
     }
-    if (!fetch && !(up.length > 1)) return
-    // through the request cache: Home asks on every return, and any write (a beat, a mark) empties the cache first
-    const r = await cachedGet<{ marks?: unknown }>('/me/marks')
-    if (mine()) commit(afterFetched(state, readMarkList(r?.marks, now())))
+    if (fetch || up.length > 1) {
+      // through the request cache: Home asks on every return, and any write (a beat, a mark) empties the cache first
+      const r = await cachedGet<{ marks?: unknown }>('/me/marks')
+      if (mine()) commit(afterFetched(state, readMarkList(r?.marks, now())))
+    }
   } catch (e) { if (e instanceof ApiError && e.status === 404) unsupported = true }
+  if (went && mine()) sentListeners.forEach(l => l())
+  return won
 }
+const sentListeners = new Set<() => void>()
+/**
+ * Called each time marks or undos reach the account. A mark is credited and its undo takes the credit back, so a
+ * screen holding the account's credits asks for them again. Returns the unsubscribe.
+ */
+export const onMarksSent = (l: () => void): (() => void) => { sentListeners.add(l); return () => { sentListeners.delete(l) } }
 
 let loadedFor: number | null | undefined
 /** The marks for `uid` (undefined: nobody signed in): this device's, then the account's, with what waits here sent to it. Once per reader per launch. */
@@ -104,19 +127,23 @@ export function loadMarks(uid: number | undefined): Promise<void> {
     loadedFor = who
     unsupported = false
     commit(forReader(state, who))
-    return sync(true)
+    return sync(true).then(() => {})
   })
 }
 /** Sends what waits and re-reads the account's marks (Home on focus: a mark made on another device shows). */
-export const refreshMarks = (): Promise<void> => (loadedFor == null ? Promise.resolve() : sync(true))
+export const refreshMarks = (): Promise<void> => (loadedFor == null ? Promise.resolve() : sync(true).then(() => {}))
 
-/** Marks the chapter as read: shown at once, sent after. */
-export function markRead(book: number, chapter: number): Promise<void> {
-  if (!isChapter(book, chapter)) return Promise.resolve()
-  return fromDevice().then(() => { tapped.add(chapterKey(book, chapter)); commit(withMark(state, book, chapter, now())); void sync(false) })
+/**
+ * Marks the chapter as read: shown at once, then sent. Answers once the server has it (or it waits here), with the
+ * badges the server gave; none signed out.
+ */
+export function markRead(book: number, chapter: number): Promise<Badge[]> {
+  if (!isChapter(book, chapter)) return Promise.resolve([])
+  return fromDevice().then(() => { tapped.add(chapterKey(book, chapter)); commit(withMark(state, book, chapter, now())); return sync(false) })
 }
-export function unmarkRead(book: number, chapter: number): Promise<void> {
-  return fromDevice().then(() => { commit(withoutMark(state, book, chapter)); void sync(false) })
+/** Takes the mark back, as `markRead` sets it: shown at once, answering once the server has the undo. */
+export function unmarkRead(book: number, chapter: number): Promise<Badge[]> {
+  return fromDevice().then(() => { commit(withoutMark(state, book, chapter)); return sync(false) })
 }
 /** Marks from a backup, adding only; how many were new. */
 export function addMarks(marks: readonly Mark[]): Promise<number> {

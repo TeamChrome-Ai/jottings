@@ -1,13 +1,15 @@
-//! A reader's own "read" marks (docs/PATHS.md rule 1): a chapter ticked by hand. A mark is not a credit and earns
-//! nothing: it feeds the reader's own view (the read tick, their own path's place) and nothing that is earned or that
-//! another reader sees. `chapter_marks` is read here, by the reader's own `GET /me/path` and by their export; the
-//! streak, reading time, `page_credits`, `chapters_read`, badges, group events and paths and friends' views never
-//! look at it (the tests below hold every one of them still while chapters are marked).
+//! A reader's own "read" marks (docs/PATHS.md rule 1, docs/READING.md "Chapters read elsewhere"): a chapter ticked by
+//! hand, read outside the app. A tick counts as a chapter read (the owner, 2026-10-31): the mark writes the same
+//! credit a reading does, on the reader's day, flagged `ticked` (`activity::credit_day`), so it counts wherever a
+//! chapter read counts and nowhere a minute is counted. It costs no time: the streak, the daily goal, reading time and
+//! the badges and boards made of minutes hold still (the tests below hold each of them). One tick per chapter; an undo
+//! takes its credit back exactly (`uncredit_tick`), a badge once given aside. `chapter_marks` itself is the toggle:
+//! read here, by the reader's own `GET /me/path` and by their export.
 use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
 use crate::AppState;
 use axum::{extract::{Path, State}, Json};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -20,11 +22,17 @@ const BULK_LIMITS: &[(i64, i64)] = &[(6, 600), (30, 86_400)];
 /// A chapter the Bible has, by the book table (the same in both editions; the texts database is not asked).
 fn is_chapter(book: i64, chapter: i64) -> bool { crate::books::book(book).is_some_and(|b| (1..=i64::from(b.chapters)).contains(&chapter)) }
 
-/// The time of a mark in the shape a device writes (`toISOString`), so marks from both compare as text. A time a
-/// device gives is kept when it can be read and is not ahead of the clock; otherwise the mark is made now.
-fn mark_time(at: Option<&str>, now: time::OffsetDateTime) -> String {
-    let t = at.and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()).filter(|t| *t <= now).unwrap_or(now);
-    t.to_offset(time::UtcOffset::UTC).format(time::macros::format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z")).unwrap_or_default()
+/// When a mark was made: a time a device gives is kept when it can be read and is not ahead of the clock; otherwise
+/// the mark is made now.
+fn mark_at(at: Option<&str>, now: time::OffsetDateTime) -> time::OffsetDateTime {
+    at.and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()).filter(|t| *t <= now).unwrap_or(now)
+}
+/// A time in the shape a device writes (`toISOString`) and `credited_at` keeps, so marks from both compare as text.
+fn iso(t: time::OffsetDateTime) -> String { t.to_offset(time::UtcOffset::UTC).format(time::macros::format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z")).unwrap_or_default() }
+/// The reader's day a mark made at `t` is credited on, by their latest offset.
+fn day_of(conn: &Connection, uid: i64, t: time::OffsetDateTime) -> (String, i64) {
+    let offset = crate::activity::user_offset(conn, uid);
+    (crate::activity::day_key(crate::activity::local_date(t, offset)), offset)
 }
 
 /// The chapters a reader has marked at or after `since`, by book and chapter: their own path's place and no one else's.
@@ -40,20 +48,34 @@ pub async fn list(State(s): State<AppState>, AuthUser(u): AuthUser) -> ApiResult
     let marks: Vec<(i64, i64, String)> = st.query_map(params![u.id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
     Ok(Json(json!({ "marks": marks })))
 }
-/// Marks the chapter now. A chapter marked already is marked afresh: its time moves, so a path begun since counts it.
+/// Marks the chapter now and credits it on the reader's today, in one transaction; the badges that gives come back as
+/// a beat's do. A chapter marked already is marked afresh: its time moves, so a path begun since counts it; its one
+/// tick credit stays where it was.
 pub async fn set(State(s): State<AppState>, AuthUser(u): AuthUser, Path((book, chapter)): Path<(i64, i64)>) -> ApiResult<Json<Value>> {
     if !is_chapter(book, chapter) { return Err(ApiError::bad("no such chapter")); }
-    let conn = s.pool.get()?;
-    crate::friends::limit(&conn, u.id, "mark", MARK_LIMITS)?;
-    let at = mark_time(None, time::OffsetDateTime::now_utc());
-    conn.execute("INSERT INTO chapter_marks (user_id, book, chapter, marked_at) VALUES (?1,?2,?3,?4) ON CONFLICT(user_id, book, chapter) DO UPDATE SET marked_at=excluded.marked_at", params![u.id, book, chapter, at])?;
-    Ok(Json(json!({ "ok": true, "marked_at": at })))
+    let (at, new_badges) = s.db(move |conn| {
+        crate::friends::limit(conn, u.id, "mark", MARK_LIMITS)?;
+        let now = time::OffsetDateTime::now_utc();
+        let (at, (today, offset)) = (iso(now), day_of(conn, u.id, now));
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        tx.execute("INSERT INTO chapter_marks (user_id, book, chapter, marked_at) VALUES (?1,?2,?3,?4) ON CONFLICT(user_id, book, chapter) DO UPDATE SET marked_at=excluded.marked_at", params![u.id, book, chapter, at])?;
+        crate::activity::credit_day(&tx, u.id, book, chapter, &today, 0, &at, offset, true)?;
+        tx.commit()?;
+        Ok((at, crate::badges::check_badges_on(conn, u.id, &today)?))
+    }).await?;
+    Ok(Json(json!({ "ok": true, "marked_at": at, "new_badges": new_badges })))
 }
+/// Undoes the mark and takes its credit back; a chapter the app credited on the tick's day keeps that reading.
 pub async fn clear(State(s): State<AppState>, AuthUser(u): AuthUser, Path((book, chapter)): Path<(i64, i64)>) -> ApiResult<Json<Value>> {
     if !is_chapter(book, chapter) { return Err(ApiError::bad("no such chapter")); }
-    let conn = s.pool.get()?;
-    crate::friends::limit(&conn, u.id, "mark", MARK_LIMITS)?;
-    conn.execute("DELETE FROM chapter_marks WHERE user_id=?1 AND book=?2 AND chapter=?3", params![u.id, book, chapter])?;
+    s.db(move |conn| {
+        crate::friends::limit(conn, u.id, "mark", MARK_LIMITS)?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        tx.execute("DELETE FROM chapter_marks WHERE user_id=?1 AND book=?2 AND chapter=?3", params![u.id, book, chapter])?;
+        crate::activity::uncredit_tick(&tx, u.id, book, chapter)?;
+        tx.commit()?;
+        Ok(())
+    }).await?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -61,30 +83,56 @@ pub async fn clear(State(s): State<AppState>, AuthUser(u): AuthUser, Path((book,
 #[derive(Deserialize)] #[serde(untagged)] enum MarkIn { At(i64, i64, String), Plain(i64, i64) }
 #[derive(Deserialize)] pub struct BulkIn { marks: Vec<MarkIn> }
 /// Many at once: a backup restored, or a device's marks carried into the account at sign-in. Only ever adds: a
-/// chapter marked already stays marked and keeps the later of its two times. One chapter the Bible has not refuses
-/// the whole list.
+/// chapter marked already stays marked and keeps the later of its two times, and credits nothing. Each mark added is
+/// credited on its own day (a mark made signed out keeps its day, so signing in during an event does not pour them
+/// into it), the badges checked once after. One chapter the Bible has not refuses the whole list.
 pub async fn bulk(State(s): State<AppState>, AuthUser(u): AuthUser, Json(b): Json<BulkIn>) -> ApiResult<Json<Value>> {
     if b.marks.len() > MAX_BULK { return Err(ApiError::bad("marks: at most 1,189, the chapters of the Bible")); }
     let now = time::OffsetDateTime::now_utc();
-    let rows: Vec<(i64, i64, String)> = b.marks.iter().map(|m| match m { MarkIn::At(b, c, at) => (*b, *c, mark_time(Some(at), now)), MarkIn::Plain(b, c) => (*b, *c, mark_time(None, now)) }).collect();
+    let rows: Vec<(i64, i64, time::OffsetDateTime)> = b.marks.iter().map(|m| match m { MarkIn::At(b, c, at) => (*b, *c, mark_at(Some(at), now)), MarkIn::Plain(b, c) => (*b, *c, now) }).collect();
     if rows.iter().any(|(b, c, _)| !is_chapter(*b, *c)) { return Err(ApiError::bad("marks: no such chapter")); }
-    let added = s.db(move |conn| {
+    let (added, new_badges) = s.db(move |conn| {
         crate::friends::limit(conn, u.id, "mark_bulk", BULK_LIMITS)?;
-        let tx = conn.transaction()?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let mut added = 0;
         {
             let mut new = tx.prepare_cached("INSERT OR IGNORE INTO chapter_marks (user_id, book, chapter, marked_at) VALUES (?1,?2,?3,?4)")?;
             let mut later = tx.prepare_cached("UPDATE chapter_marks SET marked_at=?4 WHERE user_id=?1 AND book=?2 AND chapter=?3 AND marked_at < ?4")?;
-            for (book, chapter, at) in &rows {
-                let n = new.execute(params![u.id, book, chapter, at])?;
-                if n == 0 { later.execute(params![u.id, book, chapter, at])?; }
-                added += n;
+            for (book, chapter, t) in &rows {
+                let at = iso(*t);
+                if new.execute(params![u.id, book, chapter, at])? == 0 { later.execute(params![u.id, book, chapter, at])?; continue }
+                added += 1;
+                let (date, offset) = day_of(&tx, u.id, *t);
+                crate::activity::credit_day(&tx, u.id, *book, *chapter, &date, 0, &at, offset, true)?;
             }
         }
         tx.commit()?;
-        Ok(added)
+        Ok((added, crate::badges::check_badges(conn, u.id)?))
     }).await?;
-    Ok(Json(json!({ "ok": true, "added": added })))
+    Ok(Json(json!({ "ok": true, "added": added, "new_badges": new_badges })))
+}
+
+/// Once, on the first start after ticks began to count (the owner, 2026-10-31): every mark made before becomes its
+/// chapter's tick credit on the reader's day by their latest offset, and the badges that gives are given. Remembered
+/// in `meta` as db.rs remembers `outlines_public_reset`; it lives here because db.rs is also the data build's, which
+/// has no ledger. The number of credits written.
+pub fn backfill(conn: &mut Connection) -> anyhow::Result<usize> {
+    if conn.query_row("SELECT 1 FROM meta WHERE key='ticks_credited'", [], |_| Ok(())).optional()?.is_some() { return Ok(0) }
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let marks: Vec<(i64, i64, i64, String)> = {
+        let mut st = tx.prepare("SELECT user_id, book, chapter, marked_at FROM chapter_marks ORDER BY user_id, marked_at")?;
+        let v = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<Result<_, _>>()?; v
+    };
+    let (mut n, mut readers) = (0, std::collections::BTreeSet::new());
+    for (uid, book, chapter, at) in marks {
+        let Ok(t) = time::OffsetDateTime::parse(&at, &time::format_description::well_known::Rfc3339) else { continue };
+        let (date, offset) = day_of(&tx, uid, t);
+        if crate::activity::credit_day(&tx, uid, book, chapter, &date, 0, &at, offset, true)? == crate::activity::Credit::New { n += 1; readers.insert(uid); }
+    }
+    for uid in readers { crate::badges::check_badges(&tx, uid)?; }
+    tx.execute("INSERT INTO meta (key, value) VALUES ('ticks_credited', ?1)", [n.to_string()])?;
+    tx.commit()?;
+    Ok(n)
 }
 
 #[cfg(test)]
@@ -103,6 +151,7 @@ mod tests {
     #[test]
     fn a_devices_time_is_kept_unless_it_cannot_be_read_or_is_ahead_of_the_clock() {
         let now = time::macros::datetime!(2026-10-13 12:00:00 UTC);
+        let mark_time = |at: Option<&str>, now| iso(mark_at(at, now));
         assert_eq!(mark_time(None, now), "2026-10-13T12:00:00.000Z");
         assert_eq!(mark_time(Some("2026-10-01T08:30:00.250Z"), now), "2026-10-01T08:30:00.250Z");
         assert_eq!(mark_time(Some("2026-10-01T10:30:00+02:00"), now), "2026-10-01T08:30:00.000Z");
@@ -194,7 +243,7 @@ mod tests {
         assert_eq!(marks(&app, &anna).await, [(19, 3)]);
     }
 
-    // ---------------- a mark earns nothing ----------------
+    // ---------------- a tick counts as a chapter read, and costs no time ----------------
 
     /// Everything that is earned or that another reader sees of `anna`, as the API and the tables give it: her stats,
     /// streak, calendar, progress and badges, her public profile, what her friend ben sees, the group's path places and
@@ -228,7 +277,7 @@ mod tests {
             "groups list as ben sees it": get("/groups".into(), Some(ben.into())).await,
             "signed history": [&export["activity_days"], &export["page_credits"], &export["chapters_read"], &export["badges"]],
             "rows": {
-                "page_credits": table("SELECT book, chapter, date, dwell_seconds, credited_at FROM page_credits WHERE user_id=?1 ORDER BY id"),
+                "page_credits": table("SELECT book, chapter, date, dwell_seconds, credited_at, ticked FROM page_credits WHERE user_id=?1 ORDER BY id"),
                 "activity_days": table("SELECT date, active_seconds, pages, chapters FROM activity_days WHERE user_id=?1 ORDER BY date"),
                 "chapters_read": table("SELECT book, chapter, first_read_at, last_read_at, times FROM chapters_read WHERE user_id=?1 ORDER BY book, chapter"),
                 "badges": table("SELECT code, earned_at FROM badges WHERE user_id=?1 ORDER BY code"),
@@ -284,8 +333,32 @@ mod tests {
         ((anna_id, anna), (ben_id, ben), slug)
     }
 
+    /// The parts of `earned` that are measured in time, which no tick may move: the minutes, the streak and the goal,
+    /// each day's seconds, the sessions, the minute and streak boards, the group's streak, what a friend and a
+    /// stranger see of the streak.
+    fn in_time(v: &Value) -> Value {
+        let secs: Vec<Value> = v["calendar"].as_array().unwrap().iter().map(|d| json!([d["date"], d["active_seconds"]])).collect();
+        let friend = v["friends as ben sees them"]["friends"].as_array().unwrap().iter().find(|f| f["handle"] == "anna").cloned().unwrap();
+        let s = &v["stats"];
+        // a board's rows carry every figure; what the minute and streak boards rank by is `value`
+        let board = |i: usize| v["event boards as ben sees them"][i].as_array().unwrap().iter().map(|r| json!([r["user_id"], r["value"], r["active_seconds"], r["rank"]])).collect::<Vec<_>>();
+        json!([s["total_active_seconds"], s["streak"]["current"], s["streak"]["longest"], s["streak"]["today_active_seconds"], s["streak"]["today_goal_seconds"],
+            v["streak"]["current"], v["streak"]["longest"], secs, v["rows"]["activity_sessions"],
+            board(0), board(4), v["group as ben sees it"][3],
+            friend["streak"], friend["friend_streak"], v["profile as a stranger sees it"]["stats"]["total_active_seconds"], v["profile as a stranger sees it"]["stats"]["streak"]["current"]])
+    }
+    fn codes(v: &Value) -> Vec<String> { v["rows"]["badges"].as_array().unwrap().iter().map(|b| b.as_str().unwrap().split('|').next().unwrap().to_string()).collect() }
+    /// `(pages, chapters, seconds)` summed over the reader's days.
+    fn days(v: &Value) -> (i64, i64, i64) {
+        v["rows"]["activity_days"].as_array().unwrap().iter().fold((0, 0, 0), |acc, d| { let f: Vec<i64> = d.as_str().unwrap().split('|').skip(1).map(|n| n.parse().unwrap()).collect(); (acc.0 + f[1], acc.1 + f[2], acc.2 + f[0]) })
+    }
+    /// The chapters whose reading a tick gives, as the group's chapter boards score them (pages, chapters, score).
+    fn boards(v: &Value, anna_id: i64) -> Vec<f64> {
+        [1, 2, 3].iter().map(|i| v["event boards as ben sees them"][*i].as_array().unwrap().iter().find(|r| r["user_id"] == anna_id).unwrap()["value"].as_f64().unwrap()).collect()
+    }
+
     #[tokio::test]
-    async fn a_mark_earns_nothing_and_shows_nothing_to_anyone_else() {
+    async fn a_tick_counts_as_a_chapter_read_everywhere_costs_no_time_and_an_undo_takes_it_back() {
         let (app, pool) = app();
         let ((anna_id, anna), (_, ben), slug) = world(&app, &pool).await;
         call(&app, "PUT", "/me/path", Some(&anna), json!({ "id": "gospels", "started_at": "2026-01-01T00:00:00.000Z" })).await;
@@ -294,42 +367,169 @@ mod tests {
         assert_eq!((before["stats"]["chapters_read"].as_i64(), before["stats"]["total_pages"].as_i64(), before["progress"]["40"].clone()), (Some(1), Some(1), json!([1])));
         assert_eq!((before["reads"]["40"][0].as_i64(), before["reads"]["40"].as_array().map(Vec::len), before["reads"].as_object().map(|o| o.len())), (Some(1), Some(28), Some(1)));
         assert!(before["stats"]["total_active_seconds"].as_i64().unwrap() >= 45);
-        let codes = |v: &Value| v["rows"]["badges"].as_array().unwrap().iter().map(|b| b.as_str().unwrap().split('|').next().unwrap().to_string()).collect::<Vec<_>>();
         assert!(codes(&before).contains(&"first_page".to_string()), "{:?}", codes(&before));
-        for whole in ["bible", "nt", "ot", "gospels", "book_1"] { assert!(!codes(&before).contains(&whole.to_string()), "{whole} before any mark: {:?}", codes(&before)); }
+        for whole in ["bible", "nt", "ot", "gospels", "book_1", "pages_50"] { assert!(!codes(&before).contains(&whole.to_string()), "{whole} before any tick: {:?}", codes(&before)); }
         let place = |v: &Value| v["group as ben sees it"][0]["members"].as_array().unwrap().iter().find(|m| m["user_id"] == anna_id).cloned().unwrap();
         assert_eq!(place(&before), json!({ "user_id": anna_id, "done": 1, "position": 2 }));
+        let friend = |v: &Value| v["friends as ben sees them"]["friends"].as_array().unwrap().iter().find(|f| f["handle"] == "anna").cloned().unwrap();
+        assert_eq!((friend(&before)["chapters_week"].as_i64(), days(&before), boards(&before, anna_id)[..2].to_vec()), (Some(1), (1, 1, before["stats"]["total_active_seconds"].as_i64().unwrap()), vec![1.0, 1.0]));
 
-        // one by hand, the one she has credited marked too, an undo, and then every chapter of the Bible at once
-        for path in ["/me/marks/40/2", "/me/marks/40/1", "/me/marks/43/3"] { assert_eq!(call(&app, "PUT", path, Some(&anna), NULL).await.0, 200); }
-        assert_eq!(call(&app, "DELETE", "/me/marks/43/3", Some(&anna), NULL).await.0, 200);
-        assert_eq!(earned(&app, &pool, (anna_id, &anna), &ben, &slug).await, before, "after three marks and an undo");
+        // Matthew 2 ticked: one chapter more wherever a chapter read counts, and nothing where a minute is counted
+        let (st, v) = call(&app, "PUT", "/me/marks/40/2", Some(&anna), NULL).await;
+        assert_eq!((st, v["ok"].as_bool(), v["new_badges"].as_array().map(Vec::len)), (200, Some(true), Some(0)), "{v}");
+        let ticked = earned(&app, &pool, (anna_id, &anna), &ben, &slug).await;
+        assert_eq!(in_time(&ticked), in_time(&before), "a tick costs no time");
+        assert_eq!((ticked["stats"]["chapters_read"].as_i64(), ticked["stats"]["total_pages"].as_i64(), ticked["stats"]["verses_read"].as_i64()), (Some(2), Some(2), Some(before["stats"]["verses_read"].as_i64().unwrap() + 10)));
+        assert_eq!((ticked["progress"]["40"].clone(), ticked["reads"]["40"][1].as_i64(), ticked["profile as a stranger sees it"]["stats"]["total_pages"].as_i64(), ticked["profile as ben sees it"]["stats"]["chapters_read"].as_i64()), (json!([1, 2]), Some(1), Some(2), Some(2)));
+        assert_eq!((friend(&ticked)["chapters_week"].as_i64(), place(&ticked), days(&ticked).0, days(&ticked).1), (Some(2), json!({ "user_id": anna_id, "done": 2, "position": 3 }), 2, 2));
+        let (b0, b1) = (boards(&before, anna_id), boards(&ticked, anna_id));
+        assert_eq!((b1[0], b1[1], ((b1[2] - b0[2]) * 10.0).round() / 10.0), (2.0, 2.0, 4.0), "pages, chapters and the page part of score: {b0:?} -> {b1:?}");
+        assert_eq!(ticked["rows"]["page_credits"].as_array().unwrap().len(), 2);
+        assert!(ticked["rows"]["page_credits"][1].as_str().unwrap().starts_with("40|2|") && ticked["rows"]["page_credits"][1].as_str().unwrap().ends_with("|1"), "a tick credit, flagged: {}", ticked["rows"]["page_credits"][1]);
+        assert_eq!(ticked["signed history"][1][1]["ticked"], json!(true), "{}", ticked["signed history"][1]);
+        assert_eq!(codes(&ticked), codes(&before));
+
+        // Matthew 1 ticked, which the app credited today: the mark owns nothing, and its undo leaves the reading
+        assert_eq!(call(&app, "PUT", "/me/marks/40/1", Some(&anna), NULL).await.0, 200);
+        assert_eq!(earned(&app, &pool, (anna_id, &anna), &ben, &slug).await, ticked, "a tick on a chapter read today");
+        assert_eq!(call(&app, "DELETE", "/me/marks/40/1", Some(&anna), NULL).await.0, 200);
+        assert_eq!(earned(&app, &pool, (anna_id, &anna), &ben, &slug).await, ticked, "its undo");
+        // the undo of Matthew 2 puts every count back
+        assert_eq!(call(&app, "DELETE", "/me/marks/40/2", Some(&anna), NULL).await.0, 200);
+        assert_eq!(earned(&app, &pool, (anna_id, &anna), &ben, &slug).await, before, "after a tick and its undo");
+
+        // every chapter of the Bible at once: a Bible read, by her word, and the badges for it; the hour badges are not
+        // among them (a tick's time is the tap), and nothing in time moves
         let all: Vec<Value> = crate::paths::chapters_of("bible").unwrap().iter().map(|(b, c)| json!([b, c])).collect();
         let (st, v) = call(&app, "POST", "/me/marks", Some(&anna), json!({ "marks": all })).await;
-        assert_eq!((st, v["added"].as_i64()), (200, Some(1187)), "{v}");
-        // no badge is waiting to be given for them either (a whole Bible marked is not a Bible read)
-        let (st, v) = call(&app, "POST", "/stats/recheck", Some(&anna), NULL).await;
-        assert_eq!(st, 200, "{v}");
-        let after = earned(&app, &pool, (anna_id, &anna), &ben, &slug).await;
-        for (k, was) in before.as_object().unwrap() { assert_eq!(&after[k], was, "{k} moved when chapters were marked"); }
-        assert_eq!(after, before);
+        assert_eq!((st, v["added"].as_i64()), (200, Some(1189)), "{v}");
+        let mut given: Vec<&str> = v["new_badges"].as_array().unwrap().iter().map(|b| b["code"].as_str().unwrap()).collect();
+        given.sort();
+        assert_eq!(given, ["bible", "book_1", "gospels", "nt", "ot", "pages_100", "pages_50", "pages_500", "pentateuch", "psalms"], "{v}");
+        assert_eq!(call(&app, "POST", "/stats/recheck", Some(&anna), NULL).await.1, json!([]), "nothing left to give");
+        let whole = earned(&app, &pool, (anna_id, &anna), &ben, &slug).await;
+        assert_eq!(in_time(&whole), in_time(&before), "a Bible ticked costs no time");
+        assert_eq!((whole["stats"]["chapters_read"].as_i64(), whole["stats"]["total_pages"].as_i64(), whole["stats"]["books_completed"].as_i64(), whole["progress"].as_object().map(|o| o.len())), (Some(1189), Some(1189), Some(66), Some(66)));
+        assert_eq!((boards(&whole, anna_id)[0], boards(&whole, anna_id)[1], place(&whole)["done"].as_i64(), friend(&whole)["chapters_week"].as_i64()), (1189.0, 1189.0, Some(89), Some(1189)));
+        let mut rest = codes(&whole); rest.retain(|c| !given.contains(&c.as_str()));
+        assert_eq!(rest, codes(&before), "the hour and streak badges are as they were");
 
-        // a beat after the marks earns exactly what it would have: time, and no credit for a chapter only marked
+        // a reading in the app of a chapter ticked today takes the tick's credit as its own: no second page, and the
+        // mark's undo then leaves the reading
         {
             let mut c = pool.get().unwrap();
             let t = time::OffsetDateTime::now_utc();
             let beat = || crate::activity::Beat { session_id: "s-anna-mark".into(), book: Some(40), chapter: Some(2), progress: Some(1.0), signals: Some(1), active: true, visible: true, device: None, local_date: None, tz_offset_min: None, reached_end: Some(true), seen: None, heard: None, listening: None, with_group: None };
-            crate::activity::beat_at(&mut c, anna_id, &beat(), t).unwrap();
-            let r = crate::activity::beat_at(&mut c, anna_id, &beat(), t + time::Duration::seconds(15)).unwrap();
-            assert!(r.credited.is_none() && r.new_badges.is_empty(), "a marked chapter still needs its time");
-            assert_eq!(c.query_row("SELECT count(*) FROM chapters_read WHERE user_id=?1", [anna_id], |r| r.get::<_, i64>(0)).unwrap(), 1);
+            let mut credited = false;
+            for i in 0..4 { credited |= crate::activity::beat_at(&mut c, anna_id, &beat(), t + time::Duration::seconds(20 * i)).unwrap().credited.is_some(); }
+            assert!(credited, "the reading is credited, the tick's row made its own");
         }
-
-        // what the marks do move: her own path, and only for her
+        let read = earned(&app, &pool, (anna_id, &anna), &ben, &slug).await;
+        assert_eq!((read["stats"]["total_pages"].as_i64(), read["stats"]["chapters_read"].as_i64(), read["reads"]["40"][1].as_i64()), (Some(1189), Some(1189), Some(1)), "no second page");
+        let row = read["rows"]["page_credits"].as_array().unwrap().iter().find(|r| r.as_str().unwrap().starts_with("40|2|")).unwrap().as_str().unwrap().to_string();
+        assert!(row.ends_with("|0") && row.split('|').nth(3).unwrap().parse::<i64>().unwrap() >= 45, "the reading's dwell and flag: {row}");
+        assert_eq!(call(&app, "DELETE", "/me/marks/40/2", Some(&anna), NULL).await.0, 200);
+        assert_eq!(earned(&app, &pool, (anna_id, &anna), &ben, &slug).await, read, "the undo of a mark the app has read leaves the reading");
         let (_, mine) = call(&app, "GET", "/me/path", Some(&anna), NULL).await;
-        assert_eq!((mine["read"].clone(), mine["marked"].as_array().map(Vec::len)), (json!([[40, 1]]), Some(1189)));
-        let (_, group) = call(&app, "GET", &format!("/groups/{slug}"), Some(&ben), NULL).await;
-        assert_eq!(group["path"]["members"].as_array().unwrap().iter().find(|m| m["user_id"] == anna_id).unwrap(), &json!({ "user_id": anna_id, "done": 1, "position": 2 }), "a group places its members by credits alone");
+        assert_eq!((mine["read"].as_array().map(Vec::len), mine["marked"].as_array().map(Vec::len)), (Some(1189), Some(1188)));
+    }
+
+    /// The ledger as a tick moves it: `(book, chapter, date, ticked)` of every credit, `(date, seconds, pages,
+    /// chapters)` of every day, `(book, chapter, times)` of every chapter read.
+    #[allow(clippy::type_complexity)]
+    fn ledger(pool: &crate::db::DbPool, uid: i64) -> (Vec<(i64, i64, String, i64)>, Vec<(String, i64, i64, i64)>, Vec<(i64, i64, i64)>) {
+        let c = pool.get().unwrap();
+        let credits = c.prepare("SELECT book, chapter, date, ticked FROM page_credits WHERE user_id=?1 ORDER BY book, chapter, date").unwrap().query_map([uid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap().collect::<Result<_, _>>().unwrap();
+        let days = c.prepare("SELECT date, active_seconds, pages, chapters FROM activity_days WHERE user_id=?1 ORDER BY date").unwrap().query_map([uid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap().collect::<Result<_, _>>().unwrap();
+        let read = c.prepare("SELECT book, chapter, times FROM chapters_read WHERE user_id=?1 ORDER BY book, chapter").unwrap().query_map([uid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().collect::<Result<_, _>>().unwrap();
+        (credits, days, read)
+    }
+
+    #[tokio::test]
+    async fn a_bulk_credits_each_mark_it_adds_on_its_own_day_by_the_readers_clock_and_nothing_twice() {
+        let (app, pool) = app();
+        let (id, anna) = user(&pool, "anna");
+        pool.get().unwrap().execute("UPDATE users SET tz_offset_min=-300 WHERE id=?1", [id]).unwrap();
+        let today = crate::activity::user_today(&pool.get().unwrap(), id);
+        // 03:30 UTC on the 2nd is the evening of the 1st five hours west; a mark without a time is made now
+        let (st, v) = call(&app, "POST", "/me/marks", Some(&anna), json!({ "marks": [[40, 1, "2026-03-02T03:30:00.000Z"], [19, 23, "2026-03-02T03:30:00.000Z"], [40, 2]] })).await;
+        assert_eq!((st, v["added"].as_i64(), v["new_badges"][0]["code"].as_str()), (200, Some(3), Some("first_page")), "{v}");
+        let (credits, days, read) = ledger(&pool, id);
+        assert_eq!(credits, [(19, 23, "2026-03-01".into(), 1), (40, 1, "2026-03-01".into(), 1), (40, 2, today.clone(), 1)]);
+        assert_eq!(days, [("2026-03-01".into(), 0, 2, 2), (today.clone(), 0, 1, 1)]);
+        assert_eq!(read, [(19, 23, 1), (40, 1, 1), (40, 2, 1)]);
+        let at: String = pool.get().unwrap().query_row("SELECT credited_at || ' ' || tz_offset_min || ' ' || dwell_seconds FROM page_credits WHERE user_id=?1 AND book=40 AND chapter=1", [id], |r| r.get(0)).unwrap();
+        assert_eq!(at, "2026-03-02T03:30:00.000Z -300 0");
+        // the same list again, and a later time for a chapter marked already: nothing added, nothing credited
+        let (_, v) = call(&app, "POST", "/me/marks", Some(&anna), json!({ "marks": [[40, 1], [19, 23, "2026-03-09T03:30:00.000Z"], [40, 2]] })).await;
+        assert_eq!((v["added"].as_i64(), v["new_badges"].as_array().map(Vec::len)), (Some(0), Some(0)), "{v}");
+        assert_eq!(ledger(&pool, id), (credits, days, read));
+        // an undo takes the back-dated day's credit from it, and the day itself once nothing is left
+        call(&app, "DELETE", "/me/marks/40/1", Some(&anna), NULL).await;
+        assert_eq!(ledger(&pool, id).1, [("2026-03-01".into(), 0, 1, 1), (today.clone(), 0, 1, 1)]);
+        call(&app, "DELETE", "/me/marks/19/23", Some(&anna), NULL).await;
+        assert_eq!(ledger(&pool, id), (vec![(40, 2, today.clone(), 1)], vec![(today, 0, 1, 1)], vec![(40, 2, 1)]));
+    }
+
+    #[tokio::test]
+    async fn an_export_with_tick_credits_restored_beside_its_marks_does_not_double() {
+        let (app, pool) = app();
+        let (id, anna) = user(&pool, "anna");
+        call(&app, "PUT", "/me/marks/40/1", Some(&anna), NULL).await;
+        call(&app, "POST", "/me/marks", Some(&anna), json!({ "marks": [[40, 2, "2026-03-02T10:00:00.000Z"], [43, 3, "2026-03-05T10:00:00.000Z"]] })).await;
+        let (_, doc) = call(&app, "GET", "/me/export", Some(&anna), NULL).await;
+        assert!(doc["page_credits"].as_array().unwrap().iter().all(|p| p["ticked"] == json!(true)), "{}", doc["page_credits"]);
+        let before = ledger(&pool, id);
+        assert_eq!((before.0.len(), before.1.len(), before.2.len()), (3, 3, 3));
+        let marks: Vec<Value> = doc["chapter_marks"].as_array().unwrap().iter().map(|m| json!([m["book"], m["chapter"], m["marked_at"]])).collect();
+        let wipe = || async { assert_eq!(call(&app, "DELETE", "/me/data", Some(&anna), json!({ "categories": ["activity"] })).await.0, 200); assert_eq!(ledger(&pool, id), (vec![], vec![], vec![])); };
+        // the signed history first (its tick credits come back as they were), then the marks: each finds its credit there
+        wipe().await;
+        let (st, v) = call(&app, "POST", "/me/restore-activity", Some(&anna), doc.clone()).await;
+        assert_eq!((st, v["restored"]["credits"].as_i64()), (200, Some(3)), "{v}");
+        assert_eq!(ledger(&pool, id), before);
+        let (st, v) = call(&app, "POST", "/me/marks", Some(&anna), json!({ "marks": marks })).await;
+        assert_eq!((st, v["added"].as_i64()), (200, Some(3)), "{v}");
+        assert_eq!(ledger(&pool, id), before, "a mark whose chapter has its tick credit adds none");
+        let (_, v) = call(&app, "POST", "/me/restore-activity", Some(&anna), doc.clone()).await;
+        assert_eq!((v["restored"]["credits"].as_i64(), ledger(&pool, id)), (Some(0), before.clone()), "the file again");
+        // the other way round, the marks before the history: the index refuses a second tick of a chapter
+        wipe().await;
+        let (_, v) = call(&app, "POST", "/me/marks", Some(&anna), json!({ "marks": marks })).await;
+        assert_eq!((v["added"].as_i64(), ledger(&pool, id)), (Some(3), before.clone()));
+        let (st, v) = call(&app, "POST", "/me/restore-activity", Some(&anna), doc).await;
+        assert_eq!((st, v["restored"]["credits"].as_i64(), ledger(&pool, id)), (200, Some(0), before), "{v}");
+        // and a restored tick is still the mark's to undo
+        call(&app, "DELETE", "/me/marks/43/3", Some(&anna), NULL).await;
+        assert_eq!(ledger(&pool, id).0.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn marks_from_before_ticks_counted_are_credited_once_on_the_first_start() {
+        let (app, pool) = app();
+        let (anna_id, anna) = user(&pool, "anna");
+        let (ben_id, _) = user(&pool, "ben");
+        {
+            let c = pool.get().unwrap();
+            c.execute("UPDATE users SET tz_offset_min=-300 WHERE id=?1", [anna_id]).unwrap();
+            for (uid, b, ch, at) in [(anna_id, 40, 1, "2026-03-02T03:30:00.000Z"), (anna_id, 40, 2, "2026-03-05T12:00:00.000Z"), (ben_id, 1, 1, "2026-02-01T00:00:00.000Z"), (ben_id, 1, 2, "not a time")] {
+                c.execute("INSERT INTO chapter_marks (user_id, book, chapter, marked_at) VALUES (?1,?2,?3,?4)", params![uid, b, ch, at]).unwrap();
+            }
+            // anna read Matthew 2 in the app on the day she marked it: that day keeps its reading
+            c.execute("INSERT INTO page_credits (user_id, book, chapter, date, dwell_seconds, credited_at) VALUES (?1, 40, 2, '2026-03-05', 200, '2026-03-05T20:00:00.000Z')", [anna_id]).unwrap();
+            c.execute("INSERT INTO chapters_read (user_id, book, chapter, first_read_at, last_read_at) VALUES (?1, 40, 2, '2026-03-05T20:00:00.000Z', '2026-03-05T20:00:00.000Z')", [anna_id]).unwrap();
+            c.execute("INSERT INTO activity_days (user_id, date, active_seconds, pages, chapters) VALUES (?1, '2026-03-05', 200, 1, 1)", [anna_id]).unwrap();
+        }
+        fn fill(pool: &crate::db::DbPool) -> usize { let mut c = pool.get().unwrap(); backfill(&mut c).unwrap() }
+        assert_eq!(fill(&pool), 2);
+        assert_eq!(ledger(&pool, anna_id), (vec![(40, 1, "2026-03-01".into(), 1), (40, 2, "2026-03-05".into(), 0)], vec![("2026-03-01".into(), 0, 1, 1), ("2026-03-05".into(), 200, 1, 1)], vec![(40, 1, 1), (40, 2, 1)]));
+        assert_eq!(ledger(&pool, ben_id), (vec![(1, 1, "2026-02-01".into(), 1)], vec![("2026-02-01".into(), 0, 1, 1)], vec![(1, 1, 1)]));
+        let badge = |uid: i64| pool.get().unwrap().query_row("SELECT count(*) FROM badges WHERE user_id=?1 AND code='first_page'", [uid], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!((badge(anna_id), badge(ben_id)), (1, 1));
+        // once: a later start finds the record and leaves everything; a mark made since was credited by its own tap
+        assert_eq!(fill(&pool), 0);
+        call(&app, "PUT", "/me/marks/40/3", Some(&anna), NULL).await;
+        assert_eq!((fill(&pool), ledger(&pool, anna_id).0.len()), (0, 3));
     }
 
     #[tokio::test]
@@ -340,16 +540,18 @@ mod tests {
         pool.get().unwrap().execute("INSERT INTO chapter_marks (user_id, book, chapter, marked_at) VALUES (?1, 40, 1, '2026-01-01T00:00:00.000Z')", [id]).unwrap();
         let (st, v) = call(&app, "PUT", "/me/path", Some(&anna), json!({ "id": "gospels", "started_at": "2026-02-01T00:00:00.000Z" })).await;
         assert_eq!((st, v["read"].clone(), v["marked"].clone()), (200, json!([]), json!([])), "{v}");
-        // marked again (now, after the start) it counts, and so does one made on a device after the start
+        // marked again (now, after the start) it counts, and so does one made on a device after the start; each tick
+        // is a credit on its own day, so an app from before marks sees them in `read` too
         call(&app, "PUT", "/me/marks/40/1", Some(&anna), NULL).await;
         call(&app, "POST", "/me/marks", Some(&anna), json!({ "marks": [[40, 2, "2026-02-03T00:00:00.000Z"], [19, 23, "2026-01-15T00:00:00.000Z"]] })).await;
         let (_, v) = call(&app, "GET", "/me/path", Some(&anna), NULL).await;
-        assert_eq!((v["read"].clone(), v["marked"].clone()), (json!([]), json!([[40, 1], [40, 2]])), "the credits' list is the credits' alone, for an app from before marks");
+        assert_eq!((v["read"].clone(), v["marked"].clone()), (json!([[40, 1], [40, 2]]), json!([[40, 1], [40, 2]])), "{v}");
         let both: Vec<crate::paths::Ch> = v["marked"].as_array().unwrap().iter().map(|c| (c[0].as_i64().unwrap(), c[1].as_i64().unwrap())).collect();
         assert_eq!(crate::paths::place(&crate::paths::chapters_of("gospels").unwrap(), &both), (2, 3));
         // undone: the path goes back
         call(&app, "DELETE", "/me/marks/40/1", Some(&anna), NULL).await;
-        assert_eq!(call(&app, "GET", "/me/path", Some(&anna), NULL).await.1["marked"], json!([[40, 2]]));
+        let (_, v) = call(&app, "GET", "/me/path", Some(&anna), NULL).await;
+        assert_eq!((v["read"].clone(), v["marked"].clone()), (json!([[40, 2]]), json!([[40, 2]])));
         // without a path there is nothing to count
         call(&app, "DELETE", "/me/path", Some(&anna), NULL).await;
         assert_eq!(call(&app, "GET", "/me/path", Some(&anna), NULL).await.1, json!({ "path": null, "history": [], "read": [], "marked": [] }));
