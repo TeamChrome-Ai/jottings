@@ -108,6 +108,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [barHeight, setBarHeight] = useState(0)
   const player = useRef<AudioPlayer | null>(null)
   const numbers = useRef<AudioPlayer | null>(null)
+  /** The player holds the lock screen's session, from the reading's first chapter until Stop. */
+  const onLockScreen = useRef(false)
   const run = useRef(0)                       // bumps on every start/stop/jump so stale loops exit
   const loading = useRef<string | null>(null) // "book-chapter" while start() fetches, to swallow repeated taps
   const endedCb = useRef<((b: number, c: number) => void) | null>(null)
@@ -424,7 +426,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           if (!player.current) player.current = createAudioPlayer(null, { updateInterval: POLL_MS })
           await loadAudio(chapterAudioUrl(voice, book, chapter))
           if (run.current !== token) return
-          if (Platform.OS !== 'web') player.current.setActiveForLockScreen(true, { title: formatRef({ book, chapter }), artist: `${BRAND.name} · Darby`, artworkUrl: await mediaArt() })
+          // Android 16 keeps the media service in the foreground only while the session its notification names
+          // is in use. setActiveForLockScreen builds a new session each time and drops the old one, and with it
+          // the foreground: off screen, Android then froze or closed the app mid-chapter (reports #34 and #35).
+          // So the next chapter's title goes to the session the reading already has.
+          if (Platform.OS !== 'web') {
+            const shown = { title: formatRef({ book, chapter }), artist: `${BRAND.name} · Darby`, artworkUrl: await mediaArt() }
+            if (onLockScreen.current) player.current.updateLockScreenMetadata(shown)
+            else { player.current.setActiveForLockScreen(true, shown); onLockScreen.current = true }
+          }
         } catch (e) { marks = null; note('load', `the device voice: ${(e as Error).message}`) }   // not recorded (yet) or offline: the device voice reads instead
       }
       if (run.current !== token) return
@@ -446,6 +456,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     cued.current = false
     player.current?.pause(); numbers.current?.pause(); Speech.stop()
     if (Platform.OS !== 'web') player.current?.clearLockScreenControls()
+    onLockScreen.current = false
     setState(s => ({ ...s, status: 'idle', spoken: null }))
   }, [])
 
