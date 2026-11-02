@@ -24,6 +24,9 @@ pub struct Beat {
     #[serde(default)] pub heard: Option<crate::readthrough::Ranges>,
     /// The voice is reading this chapter: a beat with the screen off still brings the time the verses it finished take.
     #[serde(default)] pub listening: Option<bool>,
+    /// The group the reader is reading with (docs/READING.md, Reading with a group): the chapter is credited to the
+    /// group's shared log and not to them; their time counts as ever. A group they are not in is their own reading.
+    #[serde(default)] pub with_group: Option<i64>,
 }
 
 /// A beat without `reached_end` counts as the end when its scroll progress is this far.
@@ -31,8 +34,12 @@ const LEGACY_END_PROGRESS: f64 = 0.98;
 
 #[derive(Serialize)]
 pub struct Credited { pub book: i64, pub chapter: i64 }
+/// A chapter credited to a group's shared log, new for the group today.
 #[derive(Serialize)]
-pub struct BeatResult { pub date: String, pub active_seconds_today: i64, pub pages_today: i64, #[serde(skip_serializing_if = "Option::is_none")] pub credited: Option<Credited>, pub streak: StreakInfo, pub new_badges: Vec<crate::badges::Badge>,
+pub struct CreditedWith { pub group_id: i64, pub book: i64, pub chapter: i64 }
+#[derive(Serialize)]
+pub struct BeatResult { pub date: String, pub active_seconds_today: i64, pub pages_today: i64, #[serde(skip_serializing_if = "Option::is_none")] pub credited: Option<Credited>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub credited_with: Option<CreditedWith>, pub streak: StreakInfo, pub new_badges: Vec<crate::badges::Badge>,
     /// Reactions from friends not yet seen on the Stats tab (friends.rs); the client may raise a quiet local notice.
     pub unseen_reactions: i64,
     /// Friend invites waiting (friends.rs, none while invites are off); a larger number than last time sends the app to
@@ -102,7 +109,10 @@ pub fn beat_at(conn: &mut Conn, user_id: i64, b: &Beat, now: time::OffsetDateTim
     // the read-through rule's view of the chapter, read before the time is counted: a beat while the voice reads can
     // bring the time the verses it finished take, so the time depends on them
     let through = match (b.book, b.chapter) {
-        (Some(book), Some(chapter)) if b.seen.is_some() || b.heard.is_some() => Some(Through::open(&tx, user_id, book, chapter, &date, now)?),
+        (Some(book), Some(chapter)) if b.seen.is_some() || b.heard.is_some() => {
+            let with_group = match b.with_group { Some(g) if member_of(&tx, user_id, g)? => g, _ => 0 };
+            Some(Through::open(&tx, user_id, with_group, book, chapter, &date, now)?)
+        }
         _ => None,
     };
     // the reader's own clock: the last beat that counted time, from any of their sessions. A beat counts the time since
@@ -133,6 +143,7 @@ pub fn beat_at(conn: &mut Conn, user_id: i64, b: &Beat, now: time::OffsetDateTim
     if earned_ms > 0 { tx.execute("UPDATE users SET last_beat_at=?1 WHERE id=?2", params![now_s, user_id])?; }
     let earned = earned_ms / 1000;
     let mut credited = None;
+    let mut credited_with = None;
     let mut chapter_new = 0i64;
     let mut reading = None;
     if let (Some(book), Some(chapter), Some(t)) = (b.book, b.chapter, through) {
@@ -141,8 +152,12 @@ pub fn beat_at(conn: &mut Conn, user_id: i64, b: &Beat, now: time::OffsetDateTim
             params![b.session_id, book, chapter, earned, b.progress.unwrap_or(0.0).clamp(0.0, 1.0), b.signals.unwrap_or(0).clamp(0, 50), b.reached_end.unwrap_or(false) as i64])?;
         let standing = t.beat(&tx, earned_ms, b.seen.as_ref(), b.heard.as_ref(), b.signals.unwrap_or(0), &now_s)?;
         if standing.judgement.read && !standing.credited_today {
-            let (c, new) = credit(&tx, user_id, &b.session_id, book, chapter, &date, standing.through.active_ms / 1000, &now_s, offset)?;
-            credited = c; chapter_new = new;
+            if t.with_group == 0 {
+                let (c, new) = credit(&tx, user_id, &b.session_id, book, chapter, &date, standing.through.active_ms / 1000, &now_s, offset)?;
+                credited = c; chapter_new = new;
+            } else {
+                credited_with = credit_together(&tx, t.with_group, user_id, book, chapter, &date, &now_s)?;
+            }
             t.close(&tx, &standing.through, &date, &now_s)?;
         }
         crate::readthrough::forget_old(&tx, user_id, now)?;
@@ -178,7 +193,7 @@ pub fn beat_at(conn: &mut Conn, user_id: i64, b: &Beat, now: time::OffsetDateTim
     if day_met(ta, goal) && !day_met(ta - earned, goal) { crate::friends::on_day_met(conn, user_id)?; crate::groups::on_day_met(conn, user_id)?; }
     let unseen_reactions = crate::friends::unseen_reactions(conn, user_id)?;
     let incoming_invites = crate::friends::incoming_count(conn, user_id)?;
-    Ok(BeatResult { active_seconds_today: ta, pages_today: tp, credited, streak: streak_info(conn, user_id, &date)?, new_badges, date, unseen_reactions, incoming_invites, reading })
+    Ok(BeatResult { active_seconds_today: ta, pages_today: tp, credited, credited_with, streak: streak_info(conn, user_id, &date)?, new_badges, date, unseen_reactions, incoming_invites, reading })
 }
 
 /// Credits a chapter on `date`: the session's dwell row, the day's credit (once a day), the chapter's read count.
@@ -193,47 +208,61 @@ fn credit(tx: &rusqlite::Transaction, user_id: i64, session: &str, book: i64, ch
     Ok((Some(Credited { book, chapter }), before.is_none() as i64))
 }
 
+/// Credits a chapter to the group's shared log on `date`: once a day for the group, whoever of them read it. Returns the
+/// credit when it is new today. Nothing of the reader's own moves: no page credit, no chapters_read, no pages or
+/// chapters on their day (the time it took is theirs, counted as ever).
+fn credit_together(tx: &rusqlite::Transaction, group_id: i64, user_id: i64, book: i64, chapter: i64, date: &str, now_s: &str) -> rusqlite::Result<Option<CreditedWith>> {
+    let n = tx.execute("INSERT OR IGNORE INTO group_reads (group_id, book, chapter, date, user_id, credited_at) VALUES (?1,?2,?3,?4,?5,?6)", params![group_id, book, chapter, date, user_id, now_s])?;
+    Ok((n == 1).then_some(CreditedWith { group_id, book, chapter }))
+}
+
+fn member_of(conn: &rusqlite::Connection, user_id: i64, group_id: i64) -> rusqlite::Result<bool> {
+    Ok(conn.query_row("SELECT 1 FROM group_members WHERE group_id=?1 AND user_id=?2", params![group_id, user_id], |_| Ok(())).optional()?.is_some())
+}
+
 /// A beat's chapter under the read-through rule: its shape, and the reader's state on it as stored (None: credited
-/// today already, nothing more counts until tomorrow; or a chapter the text does not have).
-struct Through { user_id: i64, book: i64, chapter: i64, shape: std::sync::Arc<crate::readthrough::Shape>, state: Option<crate::readthrough::ReadThrough>, credited_today: bool }
+/// today already, nothing more counts until tomorrow; or a chapter the text does not have). `with_group` is the context
+/// the state is kept in: 0 the reader's own reading, else the group they are reading it with.
+struct Through { user_id: i64, with_group: i64, book: i64, chapter: i64, shape: std::sync::Arc<crate::readthrough::Shape>, state: Option<crate::readthrough::ReadThrough>, credited_today: bool }
 
 impl Through {
-    fn open(conn: &rusqlite::Connection, user_id: i64, book: i64, chapter: i64, date: &str, now: time::OffsetDateTime) -> anyhow::Result<Through> {
+    fn open(conn: &rusqlite::Connection, user_id: i64, with_group: i64, book: i64, chapter: i64, date: &str, now: time::OffsetDateTime) -> anyhow::Result<Through> {
         use crate::readthrough as rt;
         let mut shape = rt::shape(conn, book, chapter)?;
         // the reader's own pace, once learned, sets the time a verse read asks
         if let Some(p) = rt::pace_ms_per_word(conn, user_id)? { shape = std::sync::Arc::new(rt::Shape { ms_per_word: Some(p), ..(*shape).clone() }); }
-        let stored = rt::load(conn, user_id, book, chapter)?;
+        let stored = rt::load(conn, user_id, with_group, book, chapter)?;
         let credited_today = stored.as_ref().and_then(|s| s.credited_date.as_deref()) == Some(date);
         // kept while read within the last two days and not credited since (a credit on an earlier day starts it again)
         let keep = |s: &rt::Stored| s.credited_date.is_none() && parse_iso(&s.updated_at).is_some_and(|t| now - t < time::Duration::hours(rt::KEEP_HOURS));
         let stale = stored.as_ref().is_some_and(|s| !credited_today && !keep(s));
         // a chapter starting again starts with no touches and no timing either
-        if stale { rt::drop_row(conn, user_id, book, chapter)?; }
+        if stale { rt::drop_row(conn, user_id, with_group, book, chapter)?; }
         let state = (!shape.words.is_empty() && !credited_today).then(|| rt::fit(stored.filter(keep).and_then(|s| s.through), &shape));
-        Ok(Through { user_id, book, chapter, shape, state, credited_today })
+        Ok(Through { user_id, with_group, book, chapter, shape, state, credited_today })
     }
     /// Adds the beat to the chapter and stores it.
     fn beat(&self, tx: &rusqlite::Transaction, ms: i64, seen: Option<&crate::readthrough::Ranges>, heard: Option<&crate::readthrough::Ranges>, signals: i64, now_s: &str) -> rusqlite::Result<crate::readthrough::Standing> {
         use crate::readthrough as rt;
         let through = match &self.state {
             // stored only when it changed, so the two days run from the last reading, not the last look
-            Some(st) => { let t = rt::apply(st, &self.shape, ms, seen, heard); if t != *st { rt::save(tx, self.user_id, self.book, self.chapter, &t, None, now_s)?; } t }
+            Some(st) => { let t = rt::apply(st, &self.shape, ms, seen, heard); if t != *st { rt::save(tx, self.user_id, self.with_group, self.book, self.chapter, &t, None, now_s)?; } t }
             None => rt::fresh(&self.shape),
         };
         let mut judgement = rt::judge(&through, &self.shape);
         // nothing to credit in a chapter the text does not have, nor twice in a day
-        if self.state.is_none() { judgement.read = false; } else { rt::note_reading(tx, self.user_id, self.book, self.chapter, signals, judgement.covered, through.active_ms)?; }
+        if self.state.is_none() { judgement.read = false; } else { rt::note_reading(tx, self.user_id, self.with_group, self.book, self.chapter, signals, judgement.covered, through.active_ms)?; }
         // the recordings' timings go with a chapter being listened to, so the device counts down as the server will
         let audio_ms = if through.heard.iter().any(|h| *h != 0) { self.shape.audio_ms.clone() } else { None };
         Ok(rt::Standing { book: self.book, chapter: self.chapter, through, judgement, credited_today: self.credited_today, audio_ms, ms_per_word: self.shape.ms_per_word })
     }
     /// Holds the chapter as credited on `date`: nothing more counts toward it until the next day starts it again. A chapter
-    /// read through by the reader's own touches and scrolls teaches the server their pace.
+    /// read through by the reader's own touches and scrolls teaches the server their pace; one read with a group does
+    /// not (reading aloud to a child is slower).
     fn close(&self, tx: &rusqlite::Transaction, t: &crate::readthrough::ReadThrough, date: &str, now_s: &str) -> rusqlite::Result<()> {
         use crate::readthrough as rt;
-        rt::learn_pace(tx, self.user_id, self.book, self.chapter, self.shape.words.iter().sum(), t.heard.iter().any(|h| *h != 0))?;
-        rt::save(tx, self.user_id, self.book, self.chapter, t, Some(date), now_s)
+        if self.with_group == 0 { rt::learn_pace(tx, self.user_id, self.book, self.chapter, self.shape.words.iter().sum(), t.heard.iter().any(|h| *h != 0))?; }
+        rt::save(tx, self.user_id, self.with_group, self.book, self.chapter, t, Some(date), now_s)
     }
 }
 
@@ -298,6 +327,25 @@ pub fn progress_map(conn: &rusqlite::Connection, user_id: i64) -> rusqlite::Resu
     Ok(out)
 }
 
+/// Book → how many days each of its chapters was credited on (`times`), chapter 1 first and 0 for one never read; only
+/// the books with a chapter read. A row the book table has no place for is left out.
+pub fn read_counts(conn: &rusqlite::Connection, user_id: i64) -> rusqlite::Result<std::collections::BTreeMap<i64, Vec<i64>>> {
+    let mut st = conn.prepare_cached("SELECT book, chapter, times FROM chapters_read WHERE user_id=?1")?;
+    let rows: Vec<(i64, i64, i64)> = st.query_map(params![user_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
+    Ok(dense_counts(rows))
+}
+
+/// `(book, chapter, times)` rows laid out as `read_counts` answers: a book's every chapter in order, 0 where none. A
+/// group's chapters read together (groups.rs) take the same shape.
+pub fn dense_counts(rows: impl IntoIterator<Item = (i64, i64, i64)>) -> std::collections::BTreeMap<i64, Vec<i64>> {
+    let mut out = std::collections::BTreeMap::new();
+    for (b, c, times) in rows {
+        let Some(len) = crate::books::book(b).map(|bk| i64::from(bk.chapters)).filter(|n| (1..=*n).contains(&c)) else { continue };
+        out.entry(b).or_insert_with(|| vec![0; len as usize])[(c - 1) as usize] = times;
+    }
+    out
+}
+
 #[derive(Serialize)]
 pub struct CalDay { pub date: String, pub active_seconds: i64, pub pages: i64, pub chapters: i64 }
 pub fn calendar(conn: &rusqlite::Connection, user_id: i64, from: &str, to: &str) -> rusqlite::Result<Vec<CalDay>> {
@@ -320,7 +368,7 @@ mod tests {
         c.execute("UPDATE activity_sessions SET last_beat_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-60 seconds') WHERE id=?1", params![sid]).unwrap();
         c.execute("UPDATE users SET last_beat_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-60 seconds')", []).unwrap();
     }
-    fn b(sid: &str, active: bool, progress: f64, signals: i64) -> Beat { Beat { session_id: sid.into(), book: Some(65), chapter: Some(1), progress: Some(progress), signals: Some(signals), active, visible: true, device: None, local_date: None, tz_offset_min: None, reached_end: Some(progress >= 1.0), seen: None, heard: None, listening: None } }
+    fn b(sid: &str, active: bool, progress: f64, signals: i64) -> Beat { Beat { session_id: sid.into(), book: Some(65), chapter: Some(1), progress: Some(progress), signals: Some(signals), active, visible: true, device: None, local_date: None, tz_offset_min: None, reached_end: Some(progress >= 1.0), seen: None, heard: None, listening: None, with_group: None } }
     fn at(s: &str) -> time::OffsetDateTime { time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).unwrap() }
     fn date(s: &str) -> time::Date { parse_day(s).unwrap() }
     /// A reading beat from a device at `offset`: the local date is what that device's clock shows at `now`.
@@ -592,11 +640,13 @@ mod tests {
     fn on(secs: i64, a: i64, b: i64) -> Step { Step { secs, seen: vec![[a, b]], heard: vec![], screen: true, listening: false } }
     fn aloud(secs: i64, a: i64, b: i64) -> Step { Step { secs, seen: vec![], heard: vec![[a, b]], screen: false, listening: true } }
     /// Beats on chapter `ch` from session `sid`, the first (opening the session) at `start`; each beat's result.
-    fn through(c: &mut Conn, sid: &str, ch: (i64, i64), start: time::OffsetDateTime, steps: &[Step]) -> Vec<BeatResult> {
+    fn through(c: &mut Conn, sid: &str, ch: (i64, i64), start: time::OffsetDateTime, steps: &[Step]) -> Vec<BeatResult> { through_with(c, 1, None, sid, ch, start, steps) }
+    /// The same beats from reader `uid`, reading with group `with` (None: their own reading).
+    fn through_with(c: &mut Conn, uid: i64, with: Option<i64>, sid: &str, ch: (i64, i64), start: time::OffsetDateTime, steps: &[Step]) -> Vec<BeatResult> {
         let mut t = start;
-        let beat = |t, s: &Step| Beat { book: Some(ch.0), chapter: Some(ch.1), active: s.screen, visible: s.screen, seen: Some(s.seen.clone()), heard: Some(s.heard.clone()), listening: Some(s.listening), ..local_beat(sid, t, 0) };
-        beat_at(c, 1, &beat(t, &on(0, 1, 1)), t).unwrap();
-        steps.iter().map(|s| { t += time::Duration::seconds(s.secs); beat_at(c, 1, &beat(t, s), t).unwrap() }).collect()
+        let beat = |t, s: &Step| Beat { book: Some(ch.0), chapter: Some(ch.1), active: s.screen, visible: s.screen, seen: Some(s.seen.clone()), heard: Some(s.heard.clone()), listening: Some(s.listening), with_group: with, ..local_beat(sid, t, 0) };
+        beat_at(c, uid, &beat(t, &on(0, 1, 1)), t).unwrap();
+        steps.iter().map(|s| { t += time::Duration::seconds(s.secs); beat_at(c, uid, &beat(t, s), t).unwrap() }).collect()
     }
     impl Beat { fn with_session(self, sid: &str) -> Beat { Beat { session_id: sid.into(), ..self } } }
     fn credits(rs: &[BeatResult]) -> Vec<usize> { rs.iter().enumerate().filter(|(_, r)| r.credited.is_some()).map(|(i, _)| i).collect() }
@@ -840,6 +890,20 @@ mod tests {
     }
 
     #[test]
+    fn read_counts_give_each_chapter_of_a_book_read_the_days_it_was_credited_on() {
+        let mut c = fresh();
+        for ch in [1, 2] { verses(&c, 43, ch, &[100; 6]); }
+        let read: Vec<Step> = [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 6), (6, 6), (6, 6), (6, 6), (6, 6)].iter().map(|&(a, b)| on(15, a, b)).collect();
+        let day1 = at("2026-10-14T12:00:00Z");
+        for (sid, ch, start) in [("a", 1, day1), ("b", 2, day1 + time::Duration::minutes(10)), ("c", 1, day1 + time::Duration::days(1))] {
+            assert_eq!(credits(&through(&mut c, sid, (43, ch), start, &read)).len(), 1, "John {ch} from {sid}");
+        }
+        let counts = read_counts(&c, 1).unwrap();
+        assert_eq!(counts.keys().collect::<Vec<_>>(), [&43], "only the books read");
+        assert_eq!(counts[&43], [vec![2, 1], vec![0; 19]].concat(), "John 1 on two days, John 2 on one, the other 19 never");
+    }
+
+    #[test]
     fn a_chapter_the_text_lacks_is_never_credited() {
         let mut c = fresh();
         let steps: Vec<Step> = (0..20).map(|_| on(15, 1, 1)).collect();
@@ -850,6 +914,96 @@ mod tests {
         // nor by the old rule, which took a chapter it did not know as 1000 words
         let mut c = fresh();
         assert!(visit(&mut c, "old", (65, 99), "2026-10-14T12:00:00Z", &vec![(20, END, 1.0); 40]).iter().all(|x| !x));
+    }
+
+    // ---------------- reading with a group (docs/READING.md): the chapter is the group's, the time the reader's
+
+    /// Philemon a screen at a time to its end, then waited on there: credited on the 10th beat (150 s, past the 144 s).
+    fn read_through() -> Vec<Step> { [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 6), (6, 6), (6, 6), (6, 6), (6, 6)].iter().map(|&(a, b)| on(15, a, b)).collect() }
+    /// A second reader and a group both are in (the household reading to a child): the group's id.
+    fn household(c: &Conn) -> i64 {
+        c.execute("INSERT INTO users (id, handle, display_name, password_hash) VALUES (2, 'p', 'P', 'x')", []).unwrap();
+        c.execute("INSERT INTO groups (id, name, slug, owner_id, invite_code) VALUES (9, 'Luca', 'luca', 1, 'LUCA1234')", []).unwrap();
+        c.execute("INSERT INTO group_members (group_id, user_id) VALUES (9, 1), (9, 2)", []).unwrap();
+        9
+    }
+    fn group_rows(c: &Conn) -> Vec<(i64, i64, String, Option<i64>)> {
+        c.prepare("SELECT book, chapter, date, user_id FROM group_reads ORDER BY date, rowid").unwrap().query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap().collect::<Result<_, _>>().unwrap()
+    }
+    fn credits_with(rs: &[BeatResult]) -> Vec<usize> { rs.iter().enumerate().filter(|(_, r)| r.credited_with.is_some()).map(|(i, _)| i).collect() }
+
+    #[test]
+    fn a_chapter_read_with_a_group_goes_to_the_groups_log_and_the_time_to_the_reader() {
+        let mut c = fresh();
+        philemon(&c);
+        let gid = household(&c);
+        let rs = through_with(&mut c, 1, Some(gid), "s", PHLM, at("2026-10-14T19:00:00Z"), &read_through());
+        assert!(credits(&rs).is_empty(), "nothing of it is the reader's own");
+        assert_eq!(credits_with(&rs), [9], "credited to the group once, on the beat that met the 144 s");
+        let w = rs[9].credited_with.as_ref().unwrap();
+        assert_eq!((w.group_id, w.book, w.chapter), (gid, PHLM.0, PHLM.1));
+        assert!(rs[9].reading.as_ref().unwrap().credited_today && !rs[8].reading.as_ref().unwrap().credited_today);
+        assert_eq!(group_rows(&c), [(PHLM.0, PHLM.1, "2026-10-14".into(), Some(1))]);
+        let own: (i64, i64) = c.query_row("SELECT (SELECT count(*) FROM chapters_read), (SELECT count(*) FROM page_credits)", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!(own, (0, 0));
+        let day: (i64, i64, i64) = c.query_row("SELECT active_seconds, pages, chapters FROM activity_days WHERE user_id=1", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+        assert_eq!(day, (150, 0, 0), "the minutes are theirs, the chapter is not");
+        assert_eq!(rs[9].active_seconds_today, 150);
+        // reading aloud to a child says nothing of the reader's own pace
+        assert_eq!(c.query_row("SELECT count(*) FROM reading_pace", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn the_same_chapter_alone_in_the_morning_and_with_the_group_at_night_credits_both() {
+        let mut c = fresh();
+        philemon(&c);
+        let gid = household(&c);
+        let day = at("2026-10-14T07:00:00Z");
+        let alone = through(&mut c, "morning", PHLM, day, &read_through());
+        assert_eq!(credits(&alone), [9]);
+        assert_eq!(c.query_row("SELECT count(*) FROM reading_pace WHERE user_id=1", [], |r| r.get::<_, i64>(0)).unwrap(), 1, "their own reading teaches their pace");
+        let together = through_with(&mut c, 1, Some(gid), "evening", PHLM, day + time::Duration::hours(12), &read_through());
+        assert!(credits(&together).is_empty());
+        assert_eq!(credits_with(&together), [9], "the evening's reading is the group's, though the chapter was theirs this morning");
+        assert!(!together[0].reading.as_ref().unwrap().credited_today, "the group's context starts afresh");
+        let n: (i64, i64) = c.query_row("SELECT (SELECT count(*) FROM page_credits WHERE user_id=1), (SELECT count(*) FROM group_reads)", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!(n, (1, 1));
+        let contexts: Vec<i64> = c.prepare("SELECT with_group FROM read_throughs WHERE user_id=1 ORDER BY with_group").unwrap().query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(contexts, [0, gid]);
+    }
+
+    #[test]
+    fn two_parents_reading_the_same_chapter_to_the_child_one_evening_are_one_read_and_the_next_evening_a_second() {
+        let mut c = fresh();
+        philemon(&c);
+        let gid = household(&c);
+        let night = at("2026-10-14T19:00:00Z");
+        assert_eq!(credits_with(&through_with(&mut c, 1, Some(gid), "mum", PHLM, night, &read_through())), [9]);
+        let dad = through_with(&mut c, 2, Some(gid), "dad", PHLM, night + time::Duration::minutes(30), &read_through());
+        assert!(credits_with(&dad).is_empty(), "the group has the chapter today already");
+        assert!(dad[9].reading.as_ref().unwrap().credited_today, "and the second reader is told so");
+        assert_eq!(group_rows(&c).len(), 1);
+        let next = through_with(&mut c, 2, Some(gid), "dad2", PHLM, night + time::Duration::days(1), &read_through());
+        assert_eq!(credits_with(&next), [9]);
+        assert_eq!(group_rows(&c), [(PHLM.0, PHLM.1, "2026-10-14".into(), Some(1)), (PHLM.0, PHLM.1, "2026-10-15".into(), Some(2))]);
+        let rows: Vec<(i64, i64, i64)> = c.prepare("SELECT book, chapter, count(*) FROM group_reads WHERE group_id=?1 GROUP BY book, chapter").unwrap().query_map(params![gid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(dense_counts(rows)[&PHLM.0], [2], "times: the days it was read with the group");
+        assert_eq!(c.query_row("SELECT count(*) FROM chapters_read", [], |r| r.get::<_, i64>(0)).unwrap(), 0, "neither parent's own record moves");
+    }
+
+    #[test]
+    fn a_group_the_reader_is_not_in_is_their_own_reading() {
+        let mut c = fresh();
+        philemon(&c);
+        let gid = household(&c);
+        c.execute("DELETE FROM group_members WHERE user_id=1", []).unwrap();
+        let rs = through_with(&mut c, 1, Some(gid), "s", PHLM, at("2026-10-14T19:00:00Z"), &read_through());
+        assert_eq!((credits(&rs), credits_with(&rs)), (vec![9], vec![]));
+        assert!(group_rows(&c).is_empty());
+        assert_eq!(c.query_row("SELECT with_group FROM read_throughs WHERE user_id=1", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+        // nor does a group that does not exist change anything
+        let rs = through_with(&mut c, 1, Some(404), "t", PHLM, at("2026-10-15T19:00:00Z"), &read_through());
+        assert_eq!((credits(&rs), credits_with(&rs)), (vec![9], vec![]));
     }
 
     /// Credits Revelation 1 by beats ending at `now` from a device at `offset`; the codes of the badges it earned.

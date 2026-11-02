@@ -2,13 +2,13 @@ import { useCallback, useMemo, useState } from 'react'
 import { Text, View } from 'react-native'
 import { Stack, useFocusEffect, useRouter } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { PATH_IDS, chapterKey, pathBlurb, pathBooks, pathChapters, pathCompanion, pathLength, pathTitle, progress as progressOf, readSetSince, type PathHistoryEntry, type PathId } from '@shared/paths'
+import { PATH_IDS, chapterKey, pathBlurb, pathBooks, pathChapters, pathCompanion, pathLength, pathTitle, progress as progressOf, readSetSince, readTotals, type PathHistoryEntry, type PathId } from '@shared/paths'
 import { get } from '../src/lib/api'
 import { PATH_READS_KEY, refreshPath, usePath } from '../src/lib/paths'
 import { useReadTicks } from '../src/hooks/useReadTicks'
 import { useEdition } from '../src/lib/edition'
 import { pathOffered } from '../src/lib/editionCore'
-import { countWords, paceLine, paceWords, portionTitle, thenLine } from '../src/lib/pathWords'
+import { biblePercentWords, countWords, paceLine, paceWords, portionTitle, thenLine } from '../src/lib/pathWords'
 import { useAuth } from '../src/store/auth'
 import { useInks } from '../src/hooks/useTheme'
 import { face } from '../src/theme'
@@ -90,6 +90,7 @@ export default function PathsScreen() {
                     accessibilityLabel={tn(path.progress.total, '{path}: {done} of {n} chapter read', '{path}: {done} of {n} chapters read', { path: pathTitle(state), done: path.progress.done })} />
                 ) : (
                   <>
+                    {ever && everRead.size ? <T small muted style={{ fontVariant: ['tabular-nums'] }}>{biblePercentWords(readTotals(everRead).chapters)}</T> : null}
                     <PathStrip route={null} readSet={ever ? everRead : null} delay={120} accessibilityLabel={tn(ever ? everRead.size : 0, 'The Bible: {n} chapter read', 'The Bible: {n} chapters read')} />
                     <T small muted>{ever && everRead.size ? t('What you have read so far: {n} of 1,189 chapters.', { n: everRead.size }) + ' ' : ''}{t('No path at the moment. A path is an order of chapters, never a calendar; set a date only if you want one.')}</T>
                   </>

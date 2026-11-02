@@ -14,6 +14,7 @@ import { GroupCardStrip } from '../../src/components/GroupPath'
 import { NOUN } from '@shared/brand'
 import { t, tc, tn } from '@shared/i18n'
 import { tr } from '../../src/i18n'
+import { keepReadingWithAmong } from '../../src/store/readingWith'
 
 export default function GroupsScreen() {
   const { user, ready } = useAuth()
@@ -41,7 +42,7 @@ export default function GroupsScreen() {
 
 function MyGroups() {
   const router = useRouter()
-  const { state } = useLoad(() => get<Group[]>('/groups'), [])
+  const { state } = useLoad(() => get<Group[]>('/groups').then(gs => { keepReadingWithAmong(gs); return gs }), [])
   // first load: the cards rise in turn; a group joined or created since (the list reloads on focus) opens into place
   const arrivals = useArrivals(state.kind === 'ready' ? state.data.map(g => g.id) : null)
   return (

@@ -38,6 +38,7 @@ const fills = page => page.getByTestId('path-strip-segment').evaluateAll(els => 
   const f = await fills(page)
   check('John is filled, Psalms in part, Genesis empty', f[42] > 0.99 && f[18] > 0 && f[18] < 0.05 && f[0] === 0, `John ${f[42]}, Psalms ${f[18]?.toFixed(4)}, Genesis ${f[0]}`)
   check('Progress by book lists John 21/21 and Psalms 1/150', await page.getByText('21/21', { exact: true }).isVisible() && await page.getByText('1/150', { exact: true }).isVisible())
+  check('Bible percent sits above the strip', await page.getByText('1.9% of the Bible', { exact: true }).count() >= 1)
   check('the sign-in card says what an account adds', await page.getByText('Sign in to keep a streak, badges and time, and to read with a group.').count() === 1 && await page.getByRole('button', { name: 'Sign in' }).count() === 1)
   check('no streak, time or badges are shown', !(await page.getByText(/^(Streak|Longest|Time|Badges|This week)$/).count()))
   check('no page errors', !errors.length, errors.join(' | '))

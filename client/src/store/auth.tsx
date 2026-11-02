@@ -4,6 +4,7 @@ import { Platform } from 'react-native'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { User } from '@shared/types'
 import { get, post, setToken, setUnauthorizedHandler } from '../lib/api'
+import { setReadingWith } from './readingWith'
 
 const TOKEN_KEY = 'berean_token'
 const USER_KEY = 'berean_user'
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await secure.del(TOKEN_KEY).catch(() => {})
     await AsyncStorage.removeItem(USER_KEY)
     setUser(null)
+    setReadingWith(null)
   }, [])
 
   useEffect(() => {

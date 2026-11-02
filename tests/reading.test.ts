@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { READ_MAX_SECONDS, READ_MIN_SECONDS, atEnd, chapterWords, requiredSeconds, wordCount } from '../shared/reading'
+import { READ_MAX_SECONDS, READ_MIN_SECONDS, atEnd, chapterWords, nextChapterAfter, requiredSeconds, wordCount } from '../shared/reading'
 import { freshThrough, type Shape } from '../shared/readThrough'
 import { MAX_BEAT_MS, adopt, earned, estimate, newVisit, noteHeard, noteScreen, takeEvidence } from '../client/src/lib/readCredit'
 
@@ -20,6 +20,17 @@ describe('time a chapter needs from an older app (the end-and-time rule the serv
     expect(requiredSeconds(600)).toBe(144)
     expect(requiredSeconds(2000)).toBe(480)
     expect(requiredSeconds(5000)).toBe(READ_MAX_SECONDS)
+  })
+})
+
+describe('the chapter after one', () => {
+  it('follows canonical order and goes round from Revelation 22 to Genesis 1', () => {
+    expect(nextChapterAfter(43, 3)).toEqual({ book: 43, chapter: 4 })
+    expect(nextChapterAfter(43, 21)).toEqual({ book: 44, chapter: 1 })
+    expect(nextChapterAfter(19, 150)).toEqual({ book: 20, chapter: 1 })
+    expect(nextChapterAfter(66, 22)).toEqual({ book: 1, chapter: 1 })
+    expect(nextChapterAfter(0, 5)).toEqual({ book: 1, chapter: 1 })
+    expect(nextChapterAfter(43, 99)).toEqual({ book: 44, chapter: 1 })
   })
 })
 

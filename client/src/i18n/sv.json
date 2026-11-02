@@ -22,6 +22,11 @@
  "{book}, chapter {chapter}.": "{book}, kapitel {chapter}.",
  "{book}, continued": "{book}, fortsättning",
  "{book}, no reference printed": "{book}, inget bibelställe angivet",
+ "{book}, read through {n} times": "{book}, genomläst {n} gånger",
+ "{book}, read through once, and {done} of {chapters} chapters again\u0000{book}, read through {n} times, and {done} of {chapters} chapters again": {
+  "one": "{book}, genomläst en gång, och {done} av {chapters} kapitel igen",
+  "other": "{book}, genomläst {n} gånger, och {done} av {chapters} kapitel igen"
+ },
  "{books} · {n} chapter, in the order you tap them\u0000{books} · {n} chapters, in the order you tap them": {
   "one": "{books} · {n} kapitel, i den ordning du trycker på dem",
   "other": "{books} · {n} kapitel, i den ordning du trycker på dem"
@@ -125,6 +130,10 @@
  "{n} chapter read this week\u0000{n} chapters read this week": {
   "one": "{n} kapitel läst den här veckan",
   "other": "{n} kapitel lästa den här veckan"
+ },
+ "{n} chapter read together\u0000{n} chapters read together": {
+  "one": "{n} kapitel läst tillsammans",
+  "other": "{n} kapitel lästa tillsammans"
  },
  "{n} chapter.\u0000{n} chapters.": {
   "one": "{n} kapitel.",
@@ -352,6 +361,7 @@
   "other": "{path}: {n} medlemmar följer läsplanen"
  },
  "{pct}% of goal": "{pct} % av målet",
+ "{pct}% of the Bible": "{pct} % av Bibeln",
  "{position} of {total}": "{position} av {total}",
  "{read} of {goal} today": "{read} av {goal} i dag",
  "{ref} is the first chapter": "{ref} är det första kapitlet",
@@ -376,6 +386,7 @@
  "+ Heading": "+ Rubrik",
  "+ Link": "+ Länk",
  "+ Note": "+ Notering",
+ "×{lap} {done}/{chapters}": "{lap}× {done}/{chapters}",
  "24-hour time, such as 06:30": "24-timmarsformat, till exempel 06:30",
  "24-hour time, such as 18:30": "24-timmarsformat, till exempel 18:30",
  "3 a week": "3 i veckan",
@@ -612,6 +623,7 @@
  "Chapters": "Kapitel",
  "Chapters {from}–{to}": "Kapitlen {from}–{to}",
  "Chapters a week": "Kapitel i veckan",
+ "Chapters go to the group’s log; your minutes still count for you.": "Kapitlen går till gruppens logg; dina minuter räknas fortfarande för dig.",
  "Chapters read for the first time ever; a chapter read before the event counts nothing.": "Kapitel som läses för första gången någonsin; ett kapitel som lästs före aktiviteten räknas inte.",
  "Chapters read here": "Kapitel lästa här",
  "Chapters this week": "Kapitel den här veckan",
@@ -643,6 +655,7 @@
  "Continue reading": "Fortsätt läsa",
  "Continue reading {ref}": "Fortsätt läsa {ref}",
  "Continue with Google": "Fortsätt med Google",
+ "Continue: {ref}": "Fortsätt: {ref}",
  "Copied": "Kopierat",
  "Copied with link": "Kopierat med länk",
  "Copy details": "Kopiera detaljer",
@@ -995,6 +1008,8 @@
  "Language": "Språk",
  "Lapsed": "Bruten",
  "Larger text": "Större text",
+ "Last: {ref}, {when}": "Senast: {ref}, {when}",
+ "Last: {ref}, {when}, {name}": "Senast: {ref}, {when}, {name}",
  "Late joiners score": "Sena deltagare får poäng",
  "Lavender": "Lavendel",
  "laying out…": "ordnar sidorna…",
@@ -1389,6 +1404,10 @@
   "other": "Läst i dag. {n} minuter kvar till målet"
  },
  "Read together": "Läs tillsammans",
+ "Read together: {ref}": "Läst tillsammans: {ref}",
+ "Read with {group}: {ref}": "Läst med {group}: {ref}",
+ "Read with this group": "Läs med den här gruppen",
+ "Read with…": "Läs med…",
  "Reading before the start date does not count.": "Läsning före startdatumet räknas inte.",
  "Reading groups": "Läsgrupper",
  "Reading groups, for a few reading together, once you sign in.": "Läsgrupper, för några som läser tillsammans, när du har loggat in.",
@@ -1401,6 +1420,7 @@
  },
  "Reading streak. Sign in to keep a streak": "Lässvit. Logga in för att hålla en svit",
  "Reading time, streaks, chapter credits, badges and the chapters you marked as read": "Lästid, sviter, räknade kapitel, märken och kapitlen du har bockat av som lästa",
+ "Reading with {group}": "Läser med {group}",
  "Reads offline; no word timings": "Läser offline; ingen ordsynkning",
  "Recent searches": "Senaste sökningar",
  "Reduce animation": "Minska animationer",
@@ -1581,6 +1601,7 @@
  "Stop after the selected verse": "Stoppa efter den valda versen",
  "Stop reading": "Sluta läsa upp",
  "Stop reading {ref}": "Sluta läsa upp {ref}",
+ "Stop reading with {group}": "Sluta läsa med {group}",
  "Stop the sample of {voice}": "Stoppa provet av {voice}",
  "Stop this path": "Avsluta läsplanen",
  "Storage and full-text search.": "Lagring och fritextsökning.",

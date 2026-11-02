@@ -4,7 +4,7 @@
  * "5 behind", never "about". Pure; tested in tests/pathStrip.test.ts.
  */
 import { BOOKS } from '@shared/books'
-import { dayOf, type Portion, type Progress, type Standing } from '@shared/paths'
+import { bibleReadPercent, dayOf, type Portion, type Progress, type Standing } from '@shared/paths'
 import { t, tc } from '@shared/i18n'
 
 /** "Mark 4". */
@@ -17,6 +17,12 @@ export function thenLine(p: Portion): string | null {
 }
 /** "12 of 89": the place of the next portion over the length; "89 of 89" once finished. */
 export const countWords = (pr: Progress): string => t('{position} of {total}', { position: pr.position, total: pr.total })
+/** "1.9% of the Bible": the share of the 1,189 chapters, tenths until a whole percent. */
+export function biblePercentWords(chapters: number): string {
+  const p = bibleReadPercent(chapters)
+  const pct = Number.isInteger(p) ? String(p) : p.toFixed(1)
+  return t('{pct}% of the Bible', { pct })
+}
 
 /** "on track", "2 ahead", "5 behind"; null without a target. */
 export function standingWords(s: Standing | null | undefined): string | null {

@@ -156,6 +156,54 @@ export function readTotals(readSet: ReadonlySet<string>): { chapters: number; bo
   for (const b of BOOKS) { const n = p[String(b.n)]?.length ?? 0; chapters += n; if (n === b.chapters) books++ }
   return { chapters, books }
 }
+/**
+ * `GET /stats/reads`: book number → how many days each of its chapters was credited on, chapter 1 first, 0 for one
+ * never read. Only the books with a chapter read are in it.
+ */
+export type ReadCounts = Record<string, number[]>
+/**
+ * A `GET /stats/progress` map as counts, each of its chapters read once: what a server from before `/stats/reads` can
+ * tell, and what this device read signed out. Keys that name no chapter of the Bible are left out.
+ */
+export function countsOf(progress: Record<string, number[]>): ReadCounts {
+  const out: ReadCounts = {}
+  for (const b of BOOKS) {
+    const times = new Array<number>(b.chapters).fill(0)
+    for (const c of progress[String(b.n)] ?? []) if (c >= 1 && c <= b.chapters) times[c - 1] = 1
+    if (times.includes(1)) out[String(b.n)] = times
+  }
+  return out
+}
+/** Chapters read at least once; keys that are not books of the Bible, and counts past a book's end, are left out. */
+export function chaptersRead(counts: ReadCounts | null | undefined): number {
+  if (!counts) return 0
+  let n = 0
+  for (const b of BOOKS) n += counts[String(b.n)]?.slice(0, b.chapters).filter(x => x > 0).length ?? 0
+  return n
+}
+/**
+ * A book's times through, from its counts read as `chapters` long (a missing count is a chapter unread, one past the
+ * end is dropped). `fills[k - 1]` is the share of its chapters read k times or more, for k up to the most any chapter
+ * was read; time k is whole when its share is 1. `lap` is the time through the reader is on and `done` its chapters
+ * read: the one after the whole ones while any chapter is ahead of them, else the last whole one (`done` = `chapters`);
+ * a book never read is on its first, with none done.
+ */
+export function laps(times: readonly number[], chapters: number): { fills: number[]; lap: number; done: number } {
+  const n = Array.from({ length: chapters }, (_, i) => times[i] ?? 0)
+  const most = Math.max(0, ...n), whole = Math.min(...n)
+  const atLeast = (k: number) => n.filter(x => x >= k).length
+  const lap = most > whole ? whole + 1 : Math.max(1, whole)
+  return { fills: Array.from({ length: most }, (_, k) => atLeast(k + 1) / chapters), lap, done: atLeast(lap) }
+}
+/**
+ * How much of the Bible those chapters are, in tenths of a percent (22 of 1,189 → 1.9). Clamped to 0…100.
+ */
+export function bibleReadPercent(chapters: number): number {
+  const total = BOOKS.reduce((n, b) => n + b.chapters, 0)
+  if (total <= 0) return 0
+  const c = Math.max(0, Math.min(chapters, total))
+  return Math.round((c * 1000) / total) / 10
+}
 /** A read set from the server's `read` list (already filtered to the path's start). */
 export const readSetOf = (read: Iterable<[number, number]>): Set<string> => new Set(Array.from(read, ([b, c]) => chapterKey(b, c)))
 

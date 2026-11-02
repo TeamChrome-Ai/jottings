@@ -68,6 +68,13 @@ function oklch(L: number, C: number, h: number): string {
     if (c === 0 || v.every(x => x > -0.0005 && x < 1.0005)) return '#' + v.map(x => { const y = Math.min(1, Math.max(0, x)); return Math.round(255 * (y <= 0.0031308 ? 12.92 * y : 1.055 * y ** (1 / 2.4) - 0.055)).toString(16).padStart(2, '0') }).join('')
   }
 }
+/** `#rrggbb` → OKLCH [lightness, chroma, hue°]: the way back from `oklch`. */
+function lch(hex: string): LCH {
+  const [r, g, b] = rgb(hex).map(v => { const s = v / 255; return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4 })
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b), m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b), s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+  const A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, B = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s
+  return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, Math.hypot(A, B), (Math.atan2(B, A) * 180 / Math.PI + 360) % 360]
+}
 /**
  * A theme's twelve highlight tints: the core four as they are, and each extra from its hue. An extra starts at its
  * lightness (a dark one lifted with the page) and steps away from the inks, lighter on a light page and darker on a
@@ -168,6 +175,19 @@ export const GROUPS: { group: Group; title: string; hint: string }[] = [
   { group: 'black', get title() { return tc('theme group', 'Black') }, get hint() { return t('True black for OLED screens; only the ink changes') } },
 ]
 export const isThemeId = (s: string): s is ThemeId => s in THEME_MAP
+
+/** Under this OKLCH chroma an accent is grey (Graphite, Ink) and has no hue to turn: its laps turn the default dark accent. */
+const GREY_ACCENT = 0.03
+/**
+ * The ink of the `lap`th time through a book on Stats (the first is the accent's): the accent's hue turned 120° a lap
+ * at its own lightness and chroma, so the fourth comes back round to it, then walked toward `text` until it reads at
+ * 3:1 on `card`.
+ */
+export function lapInk(c: Pick<Colors, 'accent' | 'card' | 'text'>, lap: number): string {
+  const own = lch(c.accent)
+  const [L, C, h] = own[1] < GREY_ACCENT ? lch(THEME_MAP[DARK_DEFAULT].accent) : own
+  return legible(oklch(L, C, h + 120 * (lap - 1)), c.text, [c.card], 3)
+}
 
 /** Pre-gallery preference values (`light`/`dark`/`sepia`) map onto the ids they became. */
 export function migrateThemeId(v: unknown): ThemeId | 'system' {

@@ -289,6 +289,7 @@ async fn calendar(State(s): State<AppState>, AuthUser(u): AuthUser, Query(q): Qu
     Ok(Json(activity::calendar(&conn, u.id, &from, &to)?))
 }
 async fn progress(State(s): State<AppState>, AuthUser(u): AuthUser) -> ApiResult<Json<Value>> { let conn = s.pool.get()?; Ok(Json(json!(activity::progress_map(&conn, u.id)?))) }
+async fn reads(State(s): State<AppState>, AuthUser(u): AuthUser) -> ApiResult<Json<Value>> { let conn = s.pool.get()?; Ok(Json(json!(activity::read_counts(&conn, u.id)?))) }
 async fn streak(State(s): State<AppState>, AuthUser(u): AuthUser, Query(q): Query<TzQ>) -> ApiResult<Json<activity::StreakInfo>> {
     let conn = s.pool.get()?;
     activity::remember_offset(&conn, u.id, q.tz)?;
@@ -345,6 +346,7 @@ pub fn router() -> Router<AppState> {
         .route("/stats", get(stats))
         .route("/stats/calendar", get(calendar))
         .route("/stats/progress", get(progress))
+        .route("/stats/reads", get(reads))
         .route("/stats/streak", get(streak))
         .route("/stats/recheck", post(recheck))
         .merge(crate::moderation::router())

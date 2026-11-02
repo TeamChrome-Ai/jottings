@@ -23,6 +23,7 @@ import { Swap } from '../../src/components/motion/community'
 import { tourRef } from '../../src/store/tour'
 import GroupStreakCard from '../../src/components/GroupStreakCard'
 import GroupPathSection from '../../src/components/GroupPath'
+import ReadTogether from '../../src/components/ReadTogether'
 import Avatar from '../../src/components/Avatar'
 import SignInCard from '../../src/components/SignInCard'
 import { BRAND } from '@shared/brand'
@@ -56,6 +57,7 @@ export default function GroupScreen() {
           <Enter style={{ gap: 12 }}>
             <Header group={state.data} me={user} reload={reload} />
             {state.data.streak ? <View ref={tourRef('group-streak')}><GroupStreakCard group={state.data} me={user} delay={120} /></View> : null}
+            <ReadTogether group={state.data} />
             <GroupPathSection group={state.data} me={user} />
             {state.data.role === 'admin' && <InviteTools group={state.data} reload={reload} />}
             <View ref={tourRef('group-members')} style={{ gap: 12 }}><Members group={state.data} me={user} reload={reload} /></View>

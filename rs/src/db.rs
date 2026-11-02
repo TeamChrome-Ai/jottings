@@ -128,13 +128,15 @@ CREATE TABLE IF NOT EXISTS chapter_marks (
   marked_at TEXT NOT NULL, PRIMARY KEY (user_id, book, chapter)
 );
 -- rs/src/readthrough.rs: a chapter part-read (which verses went past the reader, the time spent), kept two days after it
--- was last read so two sittings add up; `credited_date` holds a chapter credited today until tomorrow
+-- was last read so two sittings add up; `credited_date` holds a chapter credited today until tomorrow. One row per
+-- context: `with_group` 0 is the reader's own reading, else the group they are reading with (activity.rs, group_reads).
+-- A table from before `with_group` is rebuilt once in open_pool
 CREATE TABLE IF NOT EXISTS read_throughs (
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, book INTEGER NOT NULL, chapter INTEGER NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, with_group INTEGER NOT NULL DEFAULT 0, book INTEGER NOT NULL, chapter INTEGER NOT NULL,
   state TEXT NOT NULL, credited_date TEXT, updated_at TEXT NOT NULL,
   -- touch and scroll bursts until all of it was taken in, and the reading time that took (0: not yet): its pace
   signals INTEGER NOT NULL DEFAULT 0, covered_ms INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (user_id, book, chapter)
+  PRIMARY KEY (user_id, with_group, book, chapter)
 );
 -- readthrough.rs: a reader's own pace, from the last chapters they read themselves (words a minute, oldest first)
 CREATE TABLE IF NOT EXISTS reading_pace (
@@ -161,6 +163,13 @@ CREATE TABLE IF NOT EXISTS group_members (
   group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin','member')),
   joined_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), PRIMARY KEY (group_id, user_id)
+);
+-- activity.rs credit_together (docs/READING.md, Reading with a group): the group's shared log of chapters read with it,
+-- one row per group, chapter and day whoever of them read it; `user_id` is who, NULL once their account is gone
+CREATE TABLE IF NOT EXISTS group_reads (
+  group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE, book INTEGER NOT NULL, chapter INTEGER NOT NULL, date TEXT NOT NULL,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, credited_at TEXT NOT NULL,
+  UNIQUE (group_id, book, chapter, date)
 );
 CREATE TABLE IF NOT EXISTS group_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT, group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
@@ -432,6 +441,15 @@ pub fn open_pool(path: &str, key: Option<String>) -> Result<DbPool> {
             DROP TABLE bookmarks_old; COMMIT;"))?;
     }
     conn.execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS bookmarks_target ON bookmarks(user_id, book, ifnull(chapter, 0), ifnull(verse, 0))")?;
+    // a table from before reading with a group is keyed without the context: rebuild it once from SCHEMA, every row
+    // as the reader's own reading
+    let has_context: i64 = conn.query_row("SELECT count(*) FROM pragma_table_info('read_throughs') WHERE name='with_group'", [], |r| r.get(0))?;
+    if has_context == 0 {
+        conn.execute_batch(&format!("BEGIN IMMEDIATE; ALTER TABLE read_throughs RENAME TO read_throughs_old; {SCHEMA}
+            INSERT INTO read_throughs (user_id, with_group, book, chapter, state, credited_date, updated_at, signals, covered_ms)
+              SELECT user_id, 0, book, chapter, state, credited_date, updated_at, signals, covered_ms FROM read_throughs_old;
+            DROP TABLE read_throughs_old; COMMIT;"))?;
+    }
     conn.execute("INSERT OR IGNORE INTO users (id, handle, display_name, password_hash, is_admin, disabled) VALUES (0, 'system', 'Automatic scan', 'system:no-login', 0, 1)", [])?;
     // the first public directory was removed and every outline then public became link-only; that ran on every boot,
     // which would now unpublish what readers publish (outlines.rs, publish), so it runs once and is remembered
@@ -573,6 +591,34 @@ mod tests {
             c.execute("DELETE FROM bookmarks WHERE chapter IS NULL", []).unwrap();
             let indexes: i64 = c.query_row("SELECT count(*) FROM sqlite_master WHERE type='index' AND name IN ('bookmarks_user', 'bookmarks_target')", [], |r| r.get(0)).unwrap();
             assert_eq!(indexes, 2);
+        }
+        for suf in ["", "-wal", "-shm"] { let _ = std::fs::remove_file(format!("{}{suf}", path.display())); }
+    }
+
+    #[test]
+    fn read_throughs_from_before_reading_with_a_group_keep_their_rows_as_the_readers_own() {
+        let tag = format!("{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+        let path = std::env::temp_dir().join(format!("berean-test-rt-{tag}.db"));
+        // the table as it was: keyed by reader and chapter alone
+        Connection::open(&path).unwrap().execute_batch("
+            CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, handle TEXT NOT NULL UNIQUE COLLATE NOCASE, display_name TEXT NOT NULL, password_hash TEXT NOT NULL,
+              is_admin INTEGER NOT NULL DEFAULT 0, settings TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
+            INSERT INTO users (id, handle, display_name, password_hash) VALUES (7, 'anna', 'Anna', 'x');
+            CREATE TABLE read_throughs (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, book INTEGER NOT NULL, chapter INTEGER NOT NULL,
+              state TEXT NOT NULL, credited_date TEXT, updated_at TEXT NOT NULL, signals INTEGER NOT NULL DEFAULT 0, covered_ms INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, book, chapter));
+            INSERT INTO read_throughs (user_id, book, chapter, state, credited_date, updated_at, signals, covered_ms) VALUES (7, 43, 3, '{}', '2026-10-20', '2026-10-20T07:00:00.000Z', 4, 90000);").unwrap();
+        for _ in 0..2 {
+            // twice: the second boot finds the new table and leaves it alone
+            let pool = open_pool(path.to_str().unwrap(), None).unwrap();
+            let c = pool.get().unwrap();
+            let rows: Vec<(i64, i64, i64, i64, String, Option<String>, i64, i64)> = c.prepare("SELECT user_id, with_group, book, chapter, state, credited_date, signals, covered_ms FROM read_throughs").unwrap()
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?))).unwrap().collect::<Result<_, _>>().unwrap();
+            assert_eq!(rows, [(7, 0, 43, 3, "{}".into(), Some("2026-10-20".into()), 4, 90000)]);
+            // the same chapter read with a group is a row of its own
+            c.execute("INSERT INTO read_throughs (user_id, with_group, book, chapter, state, updated_at) VALUES (7, 5, 43, 3, '{}', '2026-10-21T07:00:00.000Z')", []).unwrap();
+            assert_eq!(c.query_row("SELECT count(*) FROM read_throughs", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
+            c.execute("DELETE FROM read_throughs WHERE with_group=5", []).unwrap();
+            assert_eq!(c.query_row("SELECT count(*) FROM sqlite_master WHERE name='read_throughs_old'", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
         }
         for suf in ["", "-wal", "-shm"] { let _ = std::fs::remove_file(format!("{}{suf}", path.display())); }
     }

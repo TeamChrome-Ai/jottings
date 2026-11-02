@@ -9,9 +9,12 @@ import { adopt, earned, estimate, judgeLocal, newVisit, noteHeard, noteScreen, t
 import { noteLocalRead } from '../lib/paths'
 import { sessionId } from '../lib/session'
 import { useAuth } from '../store/auth'
+import { readingWith } from '../store/readingWith'
 
-/** `date`: the reader-local day the beat was credited to. `reading`: where the beat's chapter stands. */
-export interface BeatResult { date?: string; active_seconds_today: number; pages_today: number; credited?: { book: number; chapter: number }; streak: StreakInfo; new_badges: Badge[]; /** reactions from friends not yet seen on Stats */ unseen_reactions?: number; /** friend invites waiting (none while invites are off) */ incoming_invites?: number; reading?: Standing }
+/** `date`: the reader-local day the beat was credited to. `reading`: where the beat's chapter stands, in the context the
+ *  beat was sent in (the reader's own, or the group they are reading with). `credited_with`: a chapter new today on a
+ *  group's shared log; `credited` stays the reader's own. */
+export interface BeatResult { date?: string; active_seconds_today: number; pages_today: number; credited?: { book: number; chapter: number }; credited_with?: { group_id: number; book: number; chapter: number }; streak: StreakInfo; new_badges: Badge[]; /** reactions from friends not yet seen on Stats */ unseen_reactions?: number; /** friend invites waiting (none while invites are off) */ incoming_invites?: number; reading?: Standing }
 type Listener = (r: BeatResult) => void
 const listeners = new Set<Listener>()
 export const onBeat = (l: Listener) => { listeners.add(l); return () => { listeners.delete(l) } }
@@ -171,6 +174,7 @@ export function useActivity(book: number | undefined, chapter: number | undefine
         reached_end: sv.reached, signals: signals.current, active, visible: visible.current, device: Platform.OS === 'web' ? 'web' : 'mobile',
         // the voice finishing a verse is the voice reading, though it goes quiet at the chapter's end
         seen: ev.seen, heard: ev.heard, listening: (!closing && src.current.listening()) || ev.heard.length > 0,
+        with_group: readingWith()?.groupId,
       }
       signals.current = 0
       queue = queue.then(() => post<BeatResult>('/activity/beat', body)).then(r => {

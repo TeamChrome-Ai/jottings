@@ -6,6 +6,7 @@ import { END_WORDS, endLine } from '../lib/chapterEnd'
 import { refreshPath, useDeviceReads, usePathCounts } from '../lib/paths'
 import { firstMark, markRead, unmarkRead } from '../lib/readMarks'
 import { useMarks } from '../hooks/useMarks'
+import { useReadingWith } from '../store/readingWith'
 import { useInks } from '../hooks/useTheme'
 import { useAuth } from '../store/auth'
 import { useToast } from '../store/toast'
@@ -50,6 +51,7 @@ export default memo(function ChapterEndLine({ book, chapter, credited, toCredit,
   const c = useInks()
   const toast = useToast()
   const marks = useMarks()
+  const withGroup = !!useReadingWith()
   const device = useDeviceReads()
   const path = usePathCounts(book, chapter)
   const k = chapterKey(book, chapter)
@@ -69,7 +71,8 @@ export default memo(function ChapterEndLine({ book, chapter, credited, toCredit,
     : line.toRead ? END_WORDS.toRead(line.toRead) : null
   const gapAt = line.kind === 'open' ? line.firstGap : null
   const cap = bare ? 1.1 : undefined
-  const action = line.kind === 'read' ? null : line.kind === 'marked' ? { title: END_WORDS.undo, onPress: undo } : { title: END_WORDS.mark, onPress: mark }
+  // reading with a group, the chapter is the group's: the reader's own mark would move their own path
+  const action = line.kind === 'read' || withGroup ? null : line.kind === 'marked' ? { title: END_WORDS.undo, onPress: undo } : { title: END_WORDS.mark, onPress: mark }
   return (
     <View style={[styles.line, bare ? styles.bare : styles.pad]}>
       {line.kind === 'read' ? <Icon name="check" size={14} color={c.muted} /> : null}

@@ -5,7 +5,7 @@ import { deltaE } from '../client/src/lib/themeFade'
 
 // theme.ts imports Platform for its font helpers; the colours need none of it
 vi.mock('../client/node_modules/react-native', () => ({ Platform: { OS: 'web', select: (o: Record<string, unknown>) => o.web } }))
-const { THEMES, contrast } = await import('../client/src/theme')
+const { THEMES, contrast, lapInk } = await import('../client/src/theme')
 const src = (path: string) => readFileSync(new URL(`../client/src/${path}`, import.meta.url), 'utf8')
 
 describe('the highlighters by name', () => {
@@ -62,5 +62,23 @@ describe('highlight tints on every theme', () => {
       expect(deltaE(t.hl[a], t.bg), `${t.id} ${a} on the page`).toBeGreaterThanOrEqual(APART)
       for (const b of HL_ALL.slice(i + 1)) expect(deltaE(t.hl[a], t.hl[b]), `${t.id} ${a} and ${b}`).toBeGreaterThanOrEqual(APART)
     })
+  })
+})
+
+/** CIE76 between the accent and a later time through a book, and between two of them: the nearest today is 34.7, Nord's
+ *  accent and its second time. A later time can also lie over a first still `muted`, which keeps APART from it. */
+const LAPS_APART = 30
+
+describe('the inks of a second and third time through a book (Stats)', () => {
+  it('stand clear of the accent and of each other, and read at 3:1 on the card, on all 25', () => {
+    for (const t of THEMES) {
+      const [second, third] = [lapInk(t, 2), lapInk(t, 3)]
+      expect(deltaE(second, third), `${t.id} second and third`).toBeGreaterThanOrEqual(LAPS_APART)
+      for (const [name, ink] of [['second', second], ['third', third]]) {
+        expect(deltaE(ink, t.accent), `${t.id} ${name} and the accent`).toBeGreaterThanOrEqual(LAPS_APART)
+        expect(deltaE(ink, t.muted), `${t.id} ${name} and muted`).toBeGreaterThanOrEqual(APART)
+        expect(contrast(ink, t.card), `${t.id} ${name} on the card`).toBeGreaterThanOrEqual(3)
+      }
+    }
   })
 })

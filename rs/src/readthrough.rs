@@ -1,7 +1,8 @@
 //! How a chapter comes to count as read (docs/READING.md): every part of it went past the reader, on screen long enough
 //! to be taken in or read out by the voice, and the time spent on it is what its length asks. The device holds the same
 //! rule in shared/readThrough.ts to say how far off a credit is; both are tested against shared/readThrough.cases.json.
-//! Kept per reader per chapter for `KEEP` after it was last read, so two sittings add up; cleared by the credit.
+//! Kept per reader, per context (`with_group`: 0 their own reading, else the group they read it with) and per chapter for
+//! `KEEP` after it was last read, so two sittings add up; cleared by the credit.
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -182,17 +183,17 @@ pub struct Standing {
 
 pub struct Stored { pub through: Option<ReadThrough>, pub credited_date: Option<String>, pub updated_at: String }
 
-pub fn load(conn: &Connection, user_id: i64, book: i64, chapter: i64) -> rusqlite::Result<Option<Stored>> {
-    conn.query_row("SELECT state, credited_date, updated_at FROM read_throughs WHERE user_id=?1 AND book=?2 AND chapter=?3", params![user_id, book, chapter], |r| {
+pub fn load(conn: &Connection, user_id: i64, with_group: i64, book: i64, chapter: i64) -> rusqlite::Result<Option<Stored>> {
+    conn.query_row("SELECT state, credited_date, updated_at FROM read_throughs WHERE user_id=?1 AND with_group=?2 AND book=?3 AND chapter=?4", params![user_id, with_group, book, chapter], |r| {
         let state: String = r.get(0)?;
         Ok(Stored { through: serde_json::from_str(&state).ok(), credited_date: r.get(1)?, updated_at: r.get(2)? })
     }).optional()
 }
 
-pub fn save(conn: &Connection, user_id: i64, book: i64, chapter: i64, t: &ReadThrough, credited_date: Option<&str>, now: &str) -> rusqlite::Result<()> {
-    conn.prepare_cached("INSERT INTO read_throughs (user_id, book, chapter, state, credited_date, updated_at) VALUES (?1,?2,?3,?4,?5,?6)
-        ON CONFLICT(user_id, book, chapter) DO UPDATE SET state=excluded.state, credited_date=excluded.credited_date, updated_at=excluded.updated_at")?
-        .execute(params![user_id, book, chapter, serde_json::to_string(t).unwrap_or_default(), credited_date, now])?;
+pub fn save(conn: &Connection, user_id: i64, with_group: i64, book: i64, chapter: i64, t: &ReadThrough, credited_date: Option<&str>, now: &str) -> rusqlite::Result<()> {
+    conn.prepare_cached("INSERT INTO read_throughs (user_id, with_group, book, chapter, state, credited_date, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)
+        ON CONFLICT(user_id, with_group, book, chapter) DO UPDATE SET state=excluded.state, credited_date=excluded.credited_date, updated_at=excluded.updated_at")?
+        .execute(params![user_id, with_group, book, chapter, serde_json::to_string(t).unwrap_or_default(), credited_date, now])?;
     Ok(())
 }
 
@@ -235,16 +236,17 @@ pub fn pace_ms_per_word(conn: &Connection, user_id: i64) -> rusqlite::Result<Opt
 }
 
 /// Counts the touches of a beat toward the chapter until all of it has been taken in, and notes the time that took.
-pub fn note_reading(conn: &Connection, user_id: i64, book: i64, chapter: i64, signals: i64, covered: bool, active_ms: i64) -> rusqlite::Result<()> {
-    conn.prepare_cached("UPDATE read_throughs SET signals = signals + CASE WHEN covered_ms = 0 THEN ?4 ELSE 0 END,
-        covered_ms = CASE WHEN covered_ms = 0 AND ?5 THEN max(?6, 1) ELSE covered_ms END WHERE user_id=?1 AND book=?2 AND chapter=?3")?
-        .execute(params![user_id, book, chapter, signals.clamp(0, 50), covered, active_ms])?;
+pub fn note_reading(conn: &Connection, user_id: i64, with_group: i64, book: i64, chapter: i64, signals: i64, covered: bool, active_ms: i64) -> rusqlite::Result<()> {
+    conn.prepare_cached("UPDATE read_throughs SET signals = signals + CASE WHEN covered_ms = 0 THEN ?5 ELSE 0 END,
+        covered_ms = CASE WHEN covered_ms = 0 AND ?6 THEN max(?7, 1) ELSE covered_ms END WHERE user_id=?1 AND with_group=?2 AND book=?3 AND chapter=?4")?
+        .execute(params![user_id, with_group, book, chapter, signals.clamp(0, 50), covered, active_ms])?;
     Ok(())
 }
 
-/// At a credit: the chapter's pace joins the reader's samples when it says something about them.
+/// At a credit of the reader's own reading: the chapter's pace joins their samples when it says something about them.
+/// A chapter read with a group (reading aloud to a child is slower) is never asked.
 pub fn learn_pace(conn: &Connection, user_id: i64, book: i64, chapter: i64, words: i64, heard_any: bool) -> rusqlite::Result<()> {
-    let row: Option<(i64, i64)> = conn.query_row("SELECT covered_ms, signals FROM read_throughs WHERE user_id=?1 AND book=?2 AND chapter=?3", params![user_id, book, chapter], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+    let row: Option<(i64, i64)> = conn.query_row("SELECT covered_ms, signals FROM read_throughs WHERE user_id=?1 AND with_group=0 AND book=?2 AND chapter=?3", params![user_id, book, chapter], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
     let Some(sample) = row.and_then(|(c, s)| pace_sample(words, c, s, heard_any)) else { return Ok(()) };
     let mut samples = pace_samples(conn, user_id)?;
     samples.push(sample);
@@ -256,8 +258,8 @@ pub fn learn_pace(conn: &Connection, user_id: i64, book: i64, chapter: i64, word
 }
 
 /// Forgets a stored chapter, so the next save starts it afresh (its touches and timing too).
-pub fn drop_row(conn: &Connection, user_id: i64, book: i64, chapter: i64) -> rusqlite::Result<()> {
-    conn.prepare_cached("DELETE FROM read_throughs WHERE user_id=?1 AND book=?2 AND chapter=?3")?.execute(params![user_id, book, chapter])?;
+pub fn drop_row(conn: &Connection, user_id: i64, with_group: i64, book: i64, chapter: i64) -> rusqlite::Result<()> {
+    conn.prepare_cached("DELETE FROM read_throughs WHERE user_id=?1 AND with_group=?2 AND book=?3 AND chapter=?4")?.execute(params![user_id, with_group, book, chapter])?;
     Ok(())
 }
 

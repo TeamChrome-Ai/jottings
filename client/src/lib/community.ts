@@ -4,7 +4,7 @@ import { Alert, Platform } from 'react-native'
 import { useFocusEffect } from 'expo-router'
 import type { Badge, Group, GroupEvent, LeaderboardRow, Stats, User } from '@shared/types'
 import type { EventStatus } from './events'
-import type { GroupPath } from '@shared/paths'
+import type { GroupPath, ReadCounts } from '@shared/paths'
 import type { GroupStreak } from '@shared/friends'
 import { ApiError, getApiBase } from './api'
 import { localDay } from './localDay'
@@ -30,8 +30,10 @@ export type GroupRole = 'admin' | 'member'
 export interface GroupMember { id: number; handle: string; display_name: string; role: GroupRole; joined_at: string; avatar?: string | null; /** a site admin in Admin mode: the Developer badge */ staff?: boolean }
 /** group_events rows also carry the optional book range and created_at that shared/types omits. */
 export type GroupEventFull = GroupEvent & { book_from?: number | null; book_to?: number | null; created_at?: string }
-/** `streak`: the group's shared streak, null while its owner has it off (`streak_enabled`). */
-export type GroupDetail = Group & { role: GroupRole; /** here as a site admin in Admin mode, not as a member */ site_admin?: boolean; members: GroupMember[]; events: GroupEventFull[]; streak_enabled?: boolean; streak?: GroupStreak | null; /** the group's path with each member's place (shared/paths.ts GroupPath); null while it walks none */ path?: GroupPath | null }
+/** What a group has read together (`group_reads`): `reads` as `/stats/reads` has them (days each chapter was credited on, dense per book), the distinct chapters, and the last one with who read it (null once that account is gone). */
+export interface GroupTogether { reads: ReadCounts; chapters: number; last: { book: number; chapter: number; at: string; user: { id: number; handle: string; display_name: string } | null } }
+/** `streak`: the group's shared streak, null while its owner has it off (`streak_enabled`). `together`: null until the group has read together. */
+export type GroupDetail = Group & { role: GroupRole; /** here as a site admin in Admin mode, not as a member */ site_admin?: boolean; members: GroupMember[]; events: GroupEventFull[]; streak_enabled?: boolean; streak?: GroupStreak | null; /** the group's path with each member's place (shared/paths.ts GroupPath); null while it walks none */ path?: GroupPath | null; together?: GroupTogether | null }
 /** `private`: the board was cut to my own row (event visibility `private_admin`, I am not an admin). */
 export interface EventLeaderboard { event: GroupEventFull; rows: LeaderboardRow[]; private?: boolean }
 export interface FeedPost {

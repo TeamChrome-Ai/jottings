@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { BOOKS } from '../shared/books'
 import { chapterKey, pathBooks, pathChapters, progress, standing, paceFor } from '../shared/paths'
 import { TOTAL_CHAPTERS, chapterX, layoutStrip, spreadDots, stripLabels } from '../client/src/lib/pathStrip'
-import { addMonths, countWords, daysInMonth, endOfYear, fmtTargetDay, monthGrid, paceLine, paceWords, portionTitle, standingWords, thenLine } from '../client/src/lib/pathWords'
+import { addMonths, biblePercentWords, countWords, daysInMonth, endOfYear, fmtTargetDay, monthGrid, paceLine, paceWords, portionTitle, standingWords, thenLine } from '../client/src/lib/pathWords'
 
 const gospels = pathChapters('gospels')
 const read = (chs: [number, number][]) => new Set(chs.map(([b, c]) => chapterKey(b, c)))
@@ -122,6 +122,9 @@ describe('the words', () => {
     expect(thenLine({ book: 1, chapter: 1, then: [{ author: 'coates', work: 'x', n: 1 }] })).toBe('then Coates on Genesis 1')
     expect(countWords(progress('gospels', read([[40, 1], [40, 2]])))).toBe('3 of 89')
     expect(countWords(progress('gospels', read(gospels)))).toBe('89 of 89')
+    expect(biblePercentWords(0)).toBe('0% of the Bible')
+    expect(biblePercentWords(22)).toBe('1.9% of the Bible')
+    expect(biblePercentWords(1189)).toBe('100% of the Bible')
   })
   it('says exactly where the reader stands, never vaguely', () => {
     expect(standingWords({ expected: 5, done: 5, delta: 0 })).toBe('on track')

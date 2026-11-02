@@ -2,12 +2,13 @@ import { useCallback, useMemo, useState } from 'react'
 import { View } from 'react-native'
 import { useFocusEffect } from 'expo-router'
 import { BOOKS } from '@shared/books'
-import { readProgress, readTotals } from '@shared/paths'
+import { chaptersRead, countsOf, laps, readProgress, readTotals, type ReadCounts } from '@shared/paths'
 import type { Stats } from '@shared/types'
-import { cachedGet } from '../../src/lib/api'
+import { ApiError, cachedGet } from '../../src/lib/api'
 import { fmtDuration } from '../../src/lib/format'
 import { useAuth } from '../../src/store/auth'
-import { useInks } from '../../src/hooks/useTheme'
+import { useColors, useInks } from '../../src/hooks/useTheme'
+import { lapInk } from '../../src/theme'
 import { fetchStats } from '../../src/hooks/useStreakAlive'
 import { localDay, streakToday } from '../../src/lib/localDay'
 import { goalView } from '../../src/lib/dailyGoal'
@@ -18,20 +19,26 @@ import { BadgeGrid, useFreshBadges } from '../../src/components/motion/badges'
 import { Card, Enter, ErrorText, H, H2, Row, SPACE, Screen, Spinner, T } from '../../src/components/ui'
 import SignInCard from '../../src/components/SignInCard'
 import PathStrip from '../../src/components/PathStrip'
+import { biblePercentWords } from '../../src/lib/pathWords'
 import { localReadSet } from '../../src/lib/paths'
 import { tourRef } from '../../src/store/tour'
 import { loadReactions, markReactionsSeen, type ReceivedReaction } from '../../src/lib/friends'
 import { ReactionNotice, badgeReactions } from '../../src/components/friends/StatsReactions'
-import { t, tc } from '@shared/i18n'
+import { t, tc, tn } from '@shared/i18n'
 
 const days = (n: number) => t('{n} d', { n: Math.round(n) })
 const whole = (n: number) => String(Math.round(n))
+/** The account's counts; a server from before `/stats/reads` answers 404, and its chapters read stand as read once. */
+const loadCounts = () => cachedGet<ReadCounts>('/stats/reads').catch(e => {
+  if (e instanceof ApiError && e.status === 404) return cachedGet<Record<string, number[]>>('/stats/progress').then(countsOf)
+  throw e
+})
 
 export default function StatsScreen() {
   const { user } = useAuth()
   const dailyGoal = usePref('dailyGoal')
   const [stats, setStats] = useState<Stats | null>(null)
-  const [progress, setProgress] = useState<Record<string, number[]> | null>(null)
+  const [counts, setCounts] = useState<ReadCounts | null>(null)
   const [err, setErr] = useState('')
   const [reactions, setReactions] = useState<ReceivedReaction[] | null>(null)
   const uid = user?.id
@@ -47,7 +54,7 @@ export default function StatsScreen() {
       setStats(s)
       if (r) { setReactions(r.reactions); if (r.reactions.some(x => !x.seen)) markReactionsSeen().catch(() => {}) }
     }).catch(e => { if (!cancelled) setErr((e as Error).message) })
-    cachedGet<Record<string, number[]>>('/stats/progress').then(p => { if (!cancelled) setProgress(p) }).catch(() => { if (!cancelled) setProgress(p => p ?? {}) })
+    loadCounts().then(r => { if (!cancelled) setCounts(r) }).catch(() => { if (!cancelled) setCounts(r => r ?? {}) })
 
     return () => { cancelled = true }
   }, [uid]))
@@ -78,8 +85,11 @@ export default function StatsScreen() {
             <BadgeCount earned={earned} total={stats.badges.length} />
           </Row>
           <View ref={tourRef('stats-badges')}><BadgeGrid badges={stats.badges} fresh={fresh} footer={reactions ? badgeReactions(reactions) : undefined} /></View>
-          <H2>{t('Progress by book')}</H2>
-          <BookProgress progress={progress} />
+          <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <H2>{t('Progress by book')}</H2>
+            <T small muted style={{ fontVariant: ['tabular-nums'] }}>{biblePercentWords(chaptersRead(counts))}</T>
+          </Row>
+          <BookProgress counts={counts} />
         </>
       )}
       <View style={{ height: 24 }} />
@@ -100,7 +110,7 @@ function LocalStats() {
     return () => { cancelled = true }
   }, []))
   const totals = useMemo(() => readSet ? readTotals(readSet) : null, [readSet])
-  const progress = useMemo(() => readSet ? readProgress(readSet) : null, [readSet])
+  const counts = useMemo(() => readSet ? countsOf(readProgress(readSet)) : null, [readSet])
   if (!readSet || !totals) return null
   const any = totals.chapters > 0
   const signIn = <SignInCard ref={tourRef('stats-signin')} text={t('Sign in to keep a streak, badges and time, and to read with a group.')} />
@@ -124,6 +134,7 @@ function LocalStats() {
       </Enter>
       <Enter delay={80}>
         <Card style={{ gap: 10 }}>
+          <T small muted style={{ fontVariant: ['tabular-nums'] }}>{biblePercentWords(totals.chapters)}</T>
           {strip}
           <T small muted>{t('{n} of 1,189 chapters', { n: totals.chapters.toLocaleString() })}</T>
         </Card>
@@ -132,7 +143,7 @@ function LocalStats() {
       <Enter delay={160}>{signIn}</Enter>
       <Enter delay={240} style={{ gap: SPACE.l }}>
         <H2>{t('Progress by book')}</H2>
-        <BookProgress progress={progress} />
+        <BookProgress counts={counts} />
       </Enter>
       <View style={{ height: 24 }} />
     </>
@@ -155,23 +166,32 @@ function BadgeCount({ earned, total }: { earned: number; total: number }) {
   return <T small muted style={{ fontVariant: ['tabular-nums'] }}>{t('{n} of {total} earned', { n, total })}</T>
 }
 
+/** A book's row in words: the first time through as the strip says it, a later one by the times whole and the chapters since. */
+function lapWords(book: string, chapters: number, lap: number, done: number): string {
+  if (lap === 1) return tn(chapters, '{book}, {read} of {n} chapter read', '{book}, {read} of {n} chapters read', { book, read: done })
+  if (done < chapters) return tn(lap - 1, '{book}, read through once, and {done} of {chapters} chapters again', '{book}, read through {n} times, and {done} of {chapters} chapters again', { book, done, chapters })
+  return t('{book}, read through {n} times', { book, n: lap })
+}
+
 /**
  * 66 bars, drawn still. The card sits below the badge grid, well under the fold on every screen, so an entrance here
- * only ever played to nobody while costing an Animated node per row.
+ * only ever played to nobody while costing an Animated node per row. Each time through a book lies over the one before
+ * it from the left, in its own ink (`lapInk`), so a book read again fills again.
  */
-function BookProgress({ progress }: { progress: Record<string, number[]> | null }) {
-  const c = useInks()
+function BookProgress({ counts }: { counts: ReadCounts | null }) {
+  const c = useInks(), colors = useColors()
   return (
     <Card style={{ gap: 6 }}>
       {BOOKS.map(b => {
-        const read = progress?.[String(b.n)]?.length ?? 0
+        const { fills, lap, done } = laps(counts?.[String(b.n)] ?? [], b.chapters)
         return (
-          <View key={b.n} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View key={b.n} accessible accessibilityLabel={lapWords(b.name, b.chapters, lap, done)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <T small style={{ width: 64 }} numberOfLines={1}>{b.abbr}</T>
             <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: c.border, overflow: 'hidden' }}>
-              <View style={{ width: `${(read / b.chapters) * 100}%`, height: 6, backgroundColor: read === b.chapters ? c.accent : c.muted }} />
+              {/* a time as wide as the one over it is hidden by it: Psalm 23 read daily would stack a View a day */}
+              {fills.map((f, k) => f === fills[k + 1] ? null : <View key={k} style={{ position: 'absolute', left: 0, width: `${f * 100}%`, height: 6, backgroundColor: k ? lapInk(colors, k + 1) : f === 1 ? c.accent : c.muted }} />)}
             </View>
-            <T small muted style={{ width: 52, textAlign: 'right' }}>{read}/{b.chapters}</T>
+            <T small muted numberOfLines={1} style={{ width: 76, textAlign: 'right', fontVariant: ['tabular-nums'] }}>{lap > 1 ? t('×{lap} {done}/{chapters}', { lap, done, chapters: b.chapters }) : `${done}/${b.chapters}`}</T>
           </View>
         )
       })}

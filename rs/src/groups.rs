@@ -102,6 +102,7 @@ async fn detail(State(s): State<AppState>, AuthUser(u): AuthUser, Path(slug): Pa
     if g.role.as_deref() != Some("admin") { v.as_object_mut().unwrap().remove("invite_code"); }
     v["members"] = json!(members); v["events"] = json!(events);
     v["streak"] = if g.streak_enabled { json!(group_streak(&conn, g.id)?) } else { Value::Null };
+    v["together"] = group_together(&conn, g.id)?;
     let ed = s.edition().await;
     v["path"] = group_path(&conn, &g, ed)?;
     v["path_id"] = json!(g.path_id.as_deref().map(|p| crate::edition::shown_path(ed, p)));
@@ -122,6 +123,21 @@ fn group_path(conn: &Connection, g: &Group, ed: crate::edition::Edition) -> rusq
         members.push(json!({ "user_id": uid, "done": done, "position": position }));
     }
     Ok(json!({ "id": id, "started_at": started, "target_date": g.path_target_date, "members": members }))
+}
+/// The chapters read with the group (activity::credit_together): `reads` laid out as `/stats/reads` lays a reader's
+/// (a chapter's times are the days it was read with the group), `chapters` the distinct ones, `last` the latest and
+/// who read it (null once their account is gone). Null while the group has never read together.
+fn group_together(conn: &Connection, gid: i64) -> rusqlite::Result<Value> {
+    let mut st = conn.prepare_cached("SELECT book, chapter, count(*) FROM group_reads WHERE group_id=?1 GROUP BY book, chapter")?;
+    let rows: Vec<(i64, i64, i64)> = st.query_map(params![gid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
+    let reads = activity::dense_counts(rows);
+    if reads.is_empty() { return Ok(Value::Null) }
+    let chapters: usize = reads.values().map(|v| v.iter().filter(|n| **n > 0).count()).sum();
+    let last = conn.query_row("SELECT r.book, r.chapter, r.credited_at, u.id, u.handle, u.display_name FROM group_reads r LEFT JOIN users u ON u.id=r.user_id WHERE r.group_id=?1 ORDER BY r.credited_at DESC, r.rowid DESC LIMIT 1", params![gid], |r| {
+        let user = match r.get::<_, Option<i64>>(3)? { Some(id) => json!({ "id": id, "handle": r.get::<_, String>(4)?, "display_name": r.get::<_, String>(5)? }), None => Value::Null };
+        Ok(json!({ "book": r.get::<_, i64>(0)?, "chapter": r.get::<_, i64>(1)?, "at": r.get::<_, String>(2)?, "user": user }))
+    })?;
+    Ok(json!({ "reads": reads, "chapters": chapters, "last": last }))
 }
 #[derive(Deserialize)] struct GroupPathIn { path_id: Option<String>, #[serde(default)] restart: bool, #[serde(default, deserialize_with = "some")] target_date: Option<Option<String>> }
 fn some<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<T>, D::Error> { T::deserialize(d).map(Some) }
@@ -829,5 +845,32 @@ mod tests {
         // one turned off stays as it is
         call(&app, "PATCH", &format!("/groups/{slug}/events/{}", d["events"][0]["id"]), Some(&anna), json!({ "repeat": "none" })).await;
         assert_eq!(sweep_repeats(&c, "2027-01-01").unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn the_chapters_read_with_a_group_come_with_its_detail() {
+        let (app, pool) = app();
+        let (anna_id, anna) = user(&pool, "anna");
+        let (ben_id, ben) = user(&pool, "ben");
+        let (_, g) = call(&app, "POST", "/groups", Some(&anna), json!({ "name": "Luca" })).await;
+        let slug = g["slug"].as_str().unwrap().to_string();
+        call(&app, "POST", "/groups/join", Some(&ben), json!({ "invite_code": g["invite_code"] })).await;
+        let (_, d) = call(&app, "GET", &format!("/groups/{slug}"), Some(&ben), Value::Null).await;
+        assert!(d["together"].is_null(), "never read together");
+        let gid = g["id"].as_i64().unwrap();
+        for (book, ch, day, uid) in [(43, 1, "2026-10-20", anna_id), (43, 1, "2026-10-21", anna_id), (43, 2, "2026-10-22", ben_id)] {
+            pool.get().unwrap().execute("INSERT INTO group_reads (group_id, book, chapter, date, user_id, credited_at) VALUES (?1,?2,?3,?4,?5,?4 || 'T19:00:00.000Z')", params![gid, book, ch, day, uid]).unwrap();
+        }
+        let (_, d) = call(&app, "GET", &format!("/groups/{slug}"), Some(&anna), Value::Null).await;
+        let t = &d["together"];
+        assert_eq!(t["reads"]["43"], json!([vec![2, 1], vec![0; 19]].concat()), "John 1 on two days, John 2 on one, as /stats/reads lays a reader's out");
+        assert_eq!((t["chapters"].as_i64(), t["last"]["book"].as_i64(), t["last"]["chapter"].as_i64(), t["last"]["at"].as_str()), (Some(2), Some(43), Some(2), Some("2026-10-22T19:00:00.000Z")));
+        assert_eq!(t["last"]["user"], json!({ "id": ben_id, "handle": "ben", "display_name": "Ben" }));
+        let (_, list) = call(&app, "GET", "/groups", Some(&anna), Value::Null).await;
+        assert!(list[0].get("together").is_none(), "the list does not carry it");
+        // a reader whose account is gone is no longer named; the household's record stays whole
+        assert_eq!(call(&app, "DELETE", "/me", Some(&ben), json!({ "confirm": "delete" })).await.0, 200);
+        let (_, d) = call(&app, "GET", &format!("/groups/{slug}"), Some(&anna), Value::Null).await;
+        assert_eq!((d["together"]["chapters"].as_i64(), d["together"]["last"]["chapter"].as_i64(), &d["together"]["last"]["user"]), (Some(2), Some(2), &Value::Null));
     }
 }

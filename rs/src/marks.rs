@@ -219,6 +219,7 @@ mod tests {
             "streak": get("/stats/streak".into(), Some(token.into())).await,
             "calendar": get("/stats/calendar?from=2000-01-01&to=2100-01-01".into(), Some(token.into())).await,
             "progress": get("/stats/progress".into(), Some(token.into())).await,
+            "reads": get("/stats/reads".into(), Some(token.into())).await,
             "profile as a stranger sees it": get("/users/anna".into(), None).await,
             "profile as ben sees it": get("/users/anna".into(), Some(ben.into())).await,
             "friends as ben sees them": get("/friends".into(), Some(ben.into())).await,
@@ -274,7 +275,7 @@ mod tests {
             let mut t = time::OffsetDateTime::now_utc() - time::Duration::seconds(80);
             let mut credited = false;
             for _ in 0..5 {
-                let b = crate::activity::Beat { session_id: "s-anna-matthew".into(), book: Some(40), chapter: Some(1), progress: Some(1.0), signals: Some(1), active: true, visible: true, device: None, local_date: None, tz_offset_min: None, reached_end: Some(true), seen: None, heard: None, listening: None };
+                let b = crate::activity::Beat { session_id: "s-anna-matthew".into(), book: Some(40), chapter: Some(1), progress: Some(1.0), signals: Some(1), active: true, visible: true, device: None, local_date: None, tz_offset_min: None, reached_end: Some(true), seen: None, heard: None, listening: None, with_group: None };
                 credited |= crate::activity::beat_at(&mut c, anna_id, &b, t).unwrap().credited.is_some();
                 t += time::Duration::seconds(20);
             }
@@ -291,6 +292,7 @@ mod tests {
         let before = earned(&app, &pool, (anna_id, &anna), &ben, &slug).await;
         // the figures are real ones, so "unchanged" below is not "empty before and after"
         assert_eq!((before["stats"]["chapters_read"].as_i64(), before["stats"]["total_pages"].as_i64(), before["progress"]["40"].clone()), (Some(1), Some(1), json!([1])));
+        assert_eq!((before["reads"]["40"][0].as_i64(), before["reads"]["40"].as_array().map(Vec::len), before["reads"].as_object().map(|o| o.len())), (Some(1), Some(28), Some(1)));
         assert!(before["stats"]["total_active_seconds"].as_i64().unwrap() >= 45);
         let codes = |v: &Value| v["rows"]["badges"].as_array().unwrap().iter().map(|b| b.as_str().unwrap().split('|').next().unwrap().to_string()).collect::<Vec<_>>();
         assert!(codes(&before).contains(&"first_page".to_string()), "{:?}", codes(&before));
@@ -316,7 +318,7 @@ mod tests {
         {
             let mut c = pool.get().unwrap();
             let t = time::OffsetDateTime::now_utc();
-            let beat = || crate::activity::Beat { session_id: "s-anna-mark".into(), book: Some(40), chapter: Some(2), progress: Some(1.0), signals: Some(1), active: true, visible: true, device: None, local_date: None, tz_offset_min: None, reached_end: Some(true), seen: None, heard: None, listening: None };
+            let beat = || crate::activity::Beat { session_id: "s-anna-mark".into(), book: Some(40), chapter: Some(2), progress: Some(1.0), signals: Some(1), active: true, visible: true, device: None, local_date: None, tz_offset_min: None, reached_end: Some(true), seen: None, heard: None, listening: None, with_group: None };
             crate::activity::beat_at(&mut c, anna_id, &beat(), t).unwrap();
             let r = crate::activity::beat_at(&mut c, anna_id, &beat(), t + time::Duration::seconds(15)).unwrap();
             assert!(r.credited.is_none() && r.new_badges.is_empty(), "a marked chapter still needs its time");

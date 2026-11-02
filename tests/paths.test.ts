@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { BOOKS } from '../shared/books'
 import type { CompanionIndex } from '../shared/companion'
-import { COATES_BOOKS, PATH_IDS, chapterKey, defaultWithMinistry, nextPortion, paceFor, standing, withMinistry, onPath, pathBlurb, pathBooks, pathChapters, pathLength, pathTitle, portionAt, progress, readProgress, readSetOf, readSetSince, readTotals, type PathState } from '../shared/paths'
+import { COATES_BOOKS, PATH_IDS, bibleReadPercent, chapterKey, chaptersRead, countsOf, defaultWithMinistry, laps, nextPortion, paceFor, standing, withMinistry, onPath, pathBlurb, pathBooks, pathChapters, pathLength, pathTitle, portionAt, progress, readProgress, readSetOf, readSetSince, readTotals, type PathState } from '../shared/paths'
 import { inOrder } from '../tools/path_orders'
 import { HAS_TEXTS } from './_texts'
 
@@ -196,6 +196,60 @@ describe('what a read set amounts to (signed-out Stats)', () => {
   })
   it('keys that name no chapter are not counted', () => {
     expect(readTotals(new Set(['43.22', '67.1', '0.1', 'x', chapterKey(57, 1)]))).toEqual({ chapters: 1, books: 1 })
+  })
+  it('the Bible percent is tenths of the 1,189, from a read set or the counts', () => {
+    expect(bibleReadPercent(0)).toBe(0)
+    expect(bibleReadPercent(22)).toBe(1.9)
+    expect(bibleReadPercent(1189)).toBe(100)
+    expect(bibleReadPercent(2000)).toBe(100)
+    expect(bibleReadPercent(-3)).toBe(0)
+    expect(chaptersRead({ '43': [2, 1, 3, ...new Array(18).fill(0)], '19': [0, 1] })).toBe(4)
+    expect(chaptersRead({ '67': [1], '57': [1, 4], '43': [0, 1] })).toBe(2)
+    expect(chaptersRead(null)).toBe(0)
+  })
+  it('as counts, every chapter read stands as read once, each book its full length, only the books read', () => {
+    const counts = countsOf(readProgress(new Set([...chaptersOf(43), chapterKey(19, 23)])))
+    expect(Object.keys(counts).sort()).toEqual(['19', '43'])
+    expect(counts['43']).toEqual(new Array(21).fill(1))
+    expect([counts['19'].length, counts['19'].indexOf(1), counts['19'].lastIndexOf(1)]).toEqual([150, 22, 22])
+    expect(chaptersRead(counts)).toBe(22)
+  })
+  it('as counts, keys and chapters that are not in the Bible are left out', () => {
+    expect(countsOf({ '67': [1], '43': [0, 22], '57': [1, 2] })).toEqual({ '57': [1] })
+    expect(countsOf({})).toEqual({})
+  })
+})
+
+describe('times through a book (Stats, progress by book)', () => {
+  const john = (...times: number[]) => laps(times, 21)
+  const all = (n: number) => new Array<number>(21).fill(n)
+  it('never read: the first time, nothing done, no fill', () => {
+    expect(john()).toEqual({ fills: [], lap: 1, done: 0 })
+    expect(john(...all(0))).toEqual({ fills: [], lap: 1, done: 0 })
+  })
+  it('part read once: the first time, the chapters read', () => {
+    expect(john(1, 1, 0, 1)).toEqual({ fills: [3 / 21], lap: 1, done: 3 })
+  })
+  it('every chapter once: the first time, whole', () => {
+    expect(john(...all(1))).toEqual({ fills: [1], lap: 1, done: 21 })
+  })
+  it('every chapter once and five again: the second time, five done, its fill over the first', () => {
+    expect(john(2, 2, 2, 2, 2, ...all(1).slice(5))).toEqual({ fills: [1, 5 / 21], lap: 2, done: 5 })
+  })
+  it('every chapter twice: the second time, whole', () => {
+    expect(john(...all(2))).toEqual({ fills: [1, 1], lap: 2, done: 21 })
+  })
+  it('one chapter three times and the rest never: still the first time, one done, three fills one chapter wide', () => {
+    expect(john(3)).toEqual({ fills: [1 / 21, 1 / 21, 1 / 21], lap: 1, done: 1 })
+  })
+  it('reads counts short of the book as unread and drops counts past its end', () => {
+    expect(john(2, 1)).toEqual({ fills: [2 / 21, 1 / 21], lap: 1, done: 2 })
+    expect(john(...all(1), 5, 5)).toEqual({ fills: [1], lap: 1, done: 21 })
+    expect(laps([1, 1, 1, 1, 3], 4)).toEqual({ fills: [1], lap: 1, done: 4 })
+  })
+  it('never fills a later time wider than an earlier one', () => {
+    const { fills } = john(4, 1, 2, 0, 3, 2, 1, 5)
+    expect(fills).toEqual([7, 5, 3, 2, 1].map(n => n / 21))
   })
 })
 

@@ -22,6 +22,11 @@
  "{book}, chapter {chapter}.": "{book}, hoofdstuk {chapter}.",
  "{book}, continued": "{book}, vervolg",
  "{book}, no reference printed": "{book}, geen verwijzing gedrukt",
+ "{book}, read through {n} times": "{book}, {n} keer helemaal doorgelezen",
+ "{book}, read through once, and {done} of {chapters} chapters again\u0000{book}, read through {n} times, and {done} of {chapters} chapters again": {
+  "one": "{book}, één keer helemaal doorgelezen, en {done} van de {chapters} hoofdstukken opnieuw",
+  "other": "{book}, {n} keer helemaal doorgelezen, en {done} van de {chapters} hoofdstukken opnieuw"
+ },
  "{books} · {n} chapter, in the order you tap them\u0000{books} · {n} chapters, in the order you tap them": {
   "one": "{books} · {n} hoofdstuk, in de volgorde waarin u ze aantikt",
   "other": "{books} · {n} hoofdstukken, in de volgorde waarin u ze aantikt"
@@ -125,6 +130,10 @@
  "{n} chapter read this week\u0000{n} chapters read this week": {
   "one": "deze week {n} hoofdstuk gelezen",
   "other": "deze week {n} hoofdstukken gelezen"
+ },
+ "{n} chapter read together\u0000{n} chapters read together": {
+  "one": "{n} hoofdstuk samen gelezen",
+  "other": "{n} hoofdstukken samen gelezen"
  },
  "{n} chapter.\u0000{n} chapters.": {
   "one": "{n} hoofdstuk.",
@@ -352,6 +361,7 @@
   "other": "{path}: {n} leden op de leesweg"
  },
  "{pct}% of goal": "{pct}% van het doel",
+ "{pct}% of the Bible": "{pct}% van de Bijbel",
  "{position} of {total}": "{position} van {total}",
  "{read} of {goal} today": "{read} van {goal} vandaag",
  "{ref} is the first chapter": "{ref} is het eerste hoofdstuk",
@@ -376,6 +386,7 @@
  "+ Heading": "+ Kop",
  "+ Link": "+ Link",
  "+ Note": "+ Notitie",
+ "×{lap} {done}/{chapters}": "{lap}× {done}/{chapters}",
  "24-hour time, such as 06:30": "24-uursnotatie, bijvoorbeeld 06:30",
  "24-hour time, such as 18:30": "24-uursnotatie, bijvoorbeeld 18:30",
  "3 a week": "3 per week",
@@ -612,6 +623,7 @@
  "Chapters": "Hoofdstukken",
  "Chapters {from}–{to}": "Hoofdstukken {from}–{to}",
  "Chapters a week": "Hoofdstukken per week",
+ "Chapters go to the group’s log; your minutes still count for you.": "Hoofdstukken gaan naar het logboek van de groep; uw minuten tellen nog steeds voor u.",
  "Chapters read for the first time ever; a chapter read before the event counts nothing.": "Hoofdstukken die voor het eerst ooit worden gelezen; een hoofdstuk dat vóór de leesactie is gelezen, telt niet.",
  "Chapters read here": "Hier gelezen hoofdstukken",
  "Chapters this week": "Hoofdstukken deze week",
@@ -643,6 +655,7 @@
  "Continue reading": "Verder lezen",
  "Continue reading {ref}": "Verder lezen in {ref}",
  "Continue with Google": "Doorgaan met Google",
+ "Continue: {ref}": "Verder: {ref}",
  "Copied": "Gekopieerd",
  "Copied with link": "Gekopieerd met link",
  "Copy details": "Details kopiëren",
@@ -995,6 +1008,8 @@
  "Language": "Taal",
  "Lapsed": "Onderbroken",
  "Larger text": "Grotere tekst",
+ "Last: {ref}, {when}": "Laatst: {ref}, {when}",
+ "Last: {ref}, {when}, {name}": "Laatst: {ref}, {when}, {name}",
  "Late joiners score": "Late deelnemers tellen mee",
  "Lavender": "Lavendel",
  "laying out…": "bezig met opmaken…",
@@ -1389,6 +1404,10 @@
   "other": "Vandaag gelezen. Nog {n} minuten tot uw doel"
  },
  "Read together": "Samen lezen",
+ "Read together: {ref}": "Samen gelezen: {ref}",
+ "Read with {group}: {ref}": "Gelezen met {group}: {ref}",
+ "Read with this group": "Lezen met deze groep",
+ "Read with…": "Lezen met…",
  "Reading before the start date does not count.": "Lezen vóór de begindatum telt niet.",
  "Reading groups": "Leesgroepen",
  "Reading groups, for a few reading together, once you sign in.": "Leesgroepen, voor een paar mensen die samen lezen, zodra u inlogt.",
@@ -1401,6 +1420,7 @@
  },
  "Reading streak. Sign in to keep a streak": "Leesreeks. Log in om een reeks bij te houden",
  "Reading time, streaks, chapter credits, badges and the chapters you marked as read": "Leestijd, reeksen, meegetelde hoofdstukken, insignes en de hoofdstukken die u als gelezen hebt aangevinkt",
+ "Reading with {group}": "Lezen met {group}",
  "Reads offline; no word timings": "Leest offline; geen woordtiming",
  "Recent searches": "Recente zoekopdrachten",
  "Reduce animation": "Minder animatie",
@@ -1581,6 +1601,7 @@
  "Stop after the selected verse": "Stoppen na het geselecteerde vers",
  "Stop reading": "Voorlezen stoppen",
  "Stop reading {ref}": "Voorlezen van {ref} stoppen",
+ "Stop reading with {group}": "Stoppen met lezen met {group}",
  "Stop the sample of {voice}": "Voorbeeld van {voice} stoppen",
  "Stop this path": "Deze leesweg stoppen",
  "Storage and full-text search.": "Opslag en zoeken in de volledige tekst.",

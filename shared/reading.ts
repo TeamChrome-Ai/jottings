@@ -1,6 +1,7 @@
 // What it took for a chapter to count as read before 1.0.5: at its end, with time to match its length. The server still
 // judges the beats of older apps by it (rs/src/bible.rs `chapter_required_seconds`, rs/src/activity.rs); the rule since
 // is shared/readThrough.ts (docs/READING.md). The word count and `atEnd` are used by both.
+import { BOOKS } from './books.js'
 
 /** An unhurried reader's pace: 400 credited chapters read halfway (build 31). */
 export const READ_WPM = 250
@@ -20,6 +21,14 @@ export const chapterWords = (verses: readonly { t: string }[]) => verses.reduce(
  *  to 45 s … 10 min, with the crediting beat finding the reader AT the end: see rs/src/activity.rs. */
 export function requiredSeconds(words: number): number {
   return Math.min(READ_MAX_SECONDS, Math.max(READ_MIN_SECONDS, Math.round(words / READ_WPM * 60)))
+}
+
+/** The chapter after `book` `chapter` in canonical order, Revelation 22 going round to Genesis 1 (a group's "Continue"). */
+export function nextChapterAfter(book: number, chapter: number): { book: number; chapter: number } {
+  const b = BOOKS[book - 1]
+  if (!b) return { book: 1, chapter: 1 }
+  if (chapter < b.chapters) return { book, chapter: chapter + 1 }
+  return { book: book < BOOKS.length ? book + 1 : 1, chapter: 1 }
 }
 
 /** The scroll has reached the chapter's end, or the chapter fits without scrolling. `slack` absorbs sub-pixel rounding. */

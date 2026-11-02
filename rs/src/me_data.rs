@@ -126,8 +126,11 @@ pub async fn export(State(s): State<AppState>, AuthUser(u): AuthUser) -> ApiResu
         // the reading path (docs/PATHS.md): the active one and, inside history, the ones left for it
         "path": rows(&conn, "SELECT path_id, started_at, target_date, pace_per_week, with_ministry, custom_json, history_json FROM user_paths WHERE user_id=?1", u.id)?.pop(),
         // chapters marked read by hand (marks.rs): the reader's own, outside the signature because they earn nothing
-        // chapters part-read (readthrough.rs), kept two days: which verses went past, the time spent so far
-        "read_throughs": rows(&conn, "SELECT book, chapter, state, credited_date, updated_at, signals, covered_ms FROM read_throughs WHERE user_id=?1 ORDER BY updated_at", u.id)?,
+        // chapters part-read (readthrough.rs), kept two days: which verses went past, the time spent so far; `with_group`
+        // 0 is their own reading, else the group it is read with
+        "read_throughs": rows(&conn, "SELECT book, chapter, with_group, state, credited_date, updated_at, signals, covered_ms FROM read_throughs WHERE user_id=?1 ORDER BY updated_at", u.id)?,
+        // chapters read with a group (activity.rs credit_together): the reader's own rows of each group's shared log
+        "together": rows(&conn, "SELECT g.name, g.slug, r.book, r.chapter, r.date FROM group_reads r JOIN groups g ON g.id=r.group_id WHERE r.user_id=?1 ORDER BY r.credited_at, r.rowid", u.id)?,
         // the reader's own pace (readthrough.rs), words a minute from the last chapters they read themselves
         "reading_pace": rows(&conn, "SELECT samples FROM reading_pace WHERE user_id=?1", u.id)?.pop(),
         "chapter_marks": rows(&conn, "SELECT book, chapter, marked_at FROM chapter_marks WHERE user_id=?1 ORDER BY marked_at, book, chapter", u.id)?,
@@ -178,6 +181,7 @@ pub async fn delete_data(State(s): State<AppState>, AuthUser(u): AuthUser, Json(
                 n += tx.execute("DELETE FROM chapter_marks WHERE user_id=?1", params![u.id])?;
                 n += tx.execute("DELETE FROM read_throughs WHERE user_id=?1", params![u.id])?;
                 n += tx.execute("DELETE FROM reading_pace WHERE user_id=?1", params![u.id])?;
+                n += tx.execute("DELETE FROM group_reads WHERE user_id=?1", params![u.id])?;
                 n
             }
             "bookmarks" => tx.execute("DELETE FROM bookmarks WHERE user_id=?1", params![u.id])?,
@@ -641,5 +645,27 @@ mod tests {
         part.insert("user".into(), json!({ "id": id }));
         let (st, v) = call(&app, "POST", "/me/restore-activity", Some(&anna), Value::Object(part)).await;
         assert_eq!((st, &restored(&v)[..3]), (200, &[3, 2, 2][..]), "{v}");
+    }
+
+    #[tokio::test]
+    async fn chapters_read_with_a_group_are_exported_and_go_with_the_reading_history() {
+        let (app, pool) = app();
+        let (id, anna) = user(&pool, "anna");
+        let (ben_id, ben) = user(&pool, "ben");
+        let (_, g) = call(&app, "POST", "/groups", Some(&ben), json!({ "name": "Luca" })).await;
+        call(&app, "POST", "/groups/join", Some(&anna), json!({ "invite_code": g["invite_code"] })).await;
+        let gid = g["id"].as_i64().unwrap();
+        let add = |uid: i64, day: &str| { pool.get().unwrap().execute("INSERT INTO group_reads (group_id, book, chapter, date, user_id, credited_at) VALUES (?1, 43, 3, ?2, ?3, ?2 || 'T19:00:00.000Z')", params![gid, day, uid]).unwrap(); };
+        let rows = || -> Vec<(String, Option<i64>)> { pool.get().unwrap().prepare("SELECT date, user_id FROM group_reads ORDER BY date").unwrap().query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap() };
+        add(id, "2026-10-20"); add(ben_id, "2026-10-21");
+        let doc = call(&app, "GET", "/me/export", Some(&anna), NULL).await.1;
+        assert_eq!(doc["together"], json!([{ "name": "Luca", "slug": g["slug"], "book": 43, "chapter": 3, "date": "2026-10-20" }]), "their own rows only");
+        // deleting their reading history takes their rows from the group's log; ben's stay
+        assert_eq!(call(&app, "DELETE", "/me/data", Some(&anna), json!({ "categories": ["activity"] })).await.0, 200);
+        assert_eq!(rows(), [("2026-10-21".to_string(), Some(ben_id))]);
+        // closing the account keeps the household's record, no longer in their name
+        add(id, "2026-10-22");
+        assert_eq!(call(&app, "DELETE", "/me", Some(&anna), json!({ "confirm": "delete" })).await.0, 200);
+        assert_eq!(rows(), [("2026-10-21".to_string(), Some(ben_id)), ("2026-10-22".to_string(), None)]);
     }
 }

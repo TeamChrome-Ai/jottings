@@ -11,14 +11,14 @@ import ReaderPage, { type PageLayout } from '../../../../src/components/ReaderPa
 import VerseIndex, { VersePill, type VerseIndexHandle, type VerseIndexPort } from '../../../../src/components/VerseIndex'
 import { JUMP_HOLD_MS } from '../../../../src/lib/verseIndex'
 import * as Clipboard from 'expo-clipboard'
-import type { Outline } from '@shared/types'
+import type { Group, Outline } from '@shared/types'
 import { formatRef, formatVerseRuns, type Ref } from '@shared/ref'
 import { book as bookMeta, chapterIndex, fetchChapter, key as chapterKeyOf, nextChapter, peekChapter, prevChapter, validRef, verseId, warmAround, type ChapterData } from '../../../../src/lib/bible'
 import { useText } from '../../../../src/lib/text'
 import { TEXT_SHORT, peekShownText } from '@shared/texts'
 import { note } from '../../../../src/lib/readAloudLog'
 import { place } from '../../../../src/lib/readAloudLogCore'
-import { get, getApiBase, isNetworkError } from '../../../../src/lib/api'
+import { cachedGet, get, getApiBase, isNetworkError } from '../../../../src/lib/api'
 import { addBookmark, listBookmarks, removeBookmark } from '../../../../src/lib/library'
 import { bookmarkIds, bookmarkKey, bookmarkTitle, markedVerses, type BookmarkTarget } from '../../../../src/lib/bookmarks'
 import { useMergeTick } from '../../../../src/hooks/useLocalLibraryMerge'
@@ -60,6 +60,8 @@ import { offerTourControls, tourRef } from '../../../../src/store/tour'
 import { TOOLBAR_WIDE } from '../../../../src/lib/tour'
 import { usePathHere } from '../../../../src/lib/paths'
 import { useReadTicks } from '../../../../src/hooks/useReadTicks'
+import ReadingWithPill, { ReadWithSheet } from '../../../../src/components/ReadingWithPill'
+import { keepReadingWithAmong, readingWith } from '../../../../src/store/readingWith'
 import { t, tn } from '@shared/i18n'
 
 type Target = { book: number; chapter: number }
@@ -148,6 +150,17 @@ function ReadScreenPage() {
   const [addOutline, setAddOutline] = useState(false)
   const [themes, setThemes] = useState(false)
   const [more, setMore] = useState(false)          // the controls behind More: on a phone those that do not fit beside the picker; on a wide screen Reading settings
+  const [readWith, setReadWith] = useState(false)
+  /** The reader's groups, for "Read with…" (shown only with one to choose); a group gone takes the toggle with it. */
+  const [groups, setGroups] = useState<Group[]>([])
+  const groupsRef = useRef(groups)
+  groupsRef.current = groups
+  useEffect(() => {
+    if (!user) { setGroups([]); return }
+    let on = true
+    cachedGet<Group[]>('/groups').then(gs => { if (on) { setGroups(gs); keepReadingWithAmong(gs) } }, () => {})
+    return () => { on = false }
+  }, [user?.id])  // eslint-disable-line react-hooks/exhaustive-deps
   const [allNotes, setAllNotes] = useState(false)
   const [wordAsked, setWordAsked] = useState(false)
   // Strong's tags and Morrish's headwords are the English text's words: another Bible has no word lookup (docs/LANGUAGES.md)
@@ -508,6 +521,12 @@ function ReadScreenPage() {
   // a chapter left just before its credit lands is credited by the beat that closes it, with this screen on the next
   useEffect(() => onBeat(r => {
     if (r.credited) { const k = chapterKeyOf(r.credited.book, r.credited.chapter); setReadSet(s => s.has(k) ? s : new Set(s).add(k)); toast.show(t('Chapter credited')) }
+    // a chapter new on a group's log: said with the group's name, and no tick of the reader's own
+    if (r.credited_with) {
+      const w = r.credited_with, ref = formatRef({ book: w.book, chapter: w.chapter })
+      const name = groupsRef.current.find(g => g.id === w.group_id)?.name ?? (readingWith()?.groupId === w.group_id ? readingWith()?.name : undefined)
+      toast.show(name ? t('Read with {group}: {ref}', { group: name, ref }) : t('Read together: {ref}', { ref }))
+    }
     for (const b of r.new_badges ?? []) toast.show(t('Badge earned: {name}', { name: b.name }))
   }), [toast])
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -815,6 +834,8 @@ function ReadScreenPage() {
         {!compact && chapterMinistry ? <Button ref={tourRef('reader-ministry')} iconName="companion" title={chapterMinistry} onPress={() => openChapterMinistry(false)} /> : null}
         <Button ref={tourRef('reader-more')} iconName="more" title={t('More')} primary={compact && wordMode} onPress={() => setMore(true)} />
       </View>
+      <ReadingWithPill />
+      <ReadWithSheet open={readWith} groups={groups} onClose={() => setReadWith(false)} />
       <Sheet open={more} onClose={() => setMore(false)} title={formatRef({ book: bookN, chapter: chapterN })}>
         <View style={{ padding: 16, gap: 12 }}>
           {compact ? <View ref={tourRef('more-size')} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -827,6 +848,7 @@ function ReadScreenPage() {
           {compact ? <Button ref={tourRef('more-bookmark')} lead="bookmark" title={chapterMarked ? t('Remove chapter bookmark') : t('Bookmark this chapter')} onPress={() => { setMore(false); void toggleMark({ book: bookN, chapter: chapterN }) }} /> : null}
           {compact && chapterMinistry ? <Button ref={tourRef('more-ministry')} lead="companion" title={chapterMinistry} onPress={() => openChapterMinistry(true)} /> : null}
           {compact ? <Button ref={tourRef('more-paged')} lead="pages" title={t('Paged mode')} onPress={() => { setMore(false); openFlip() }} /> : null}
+          {user && groups.length ? <Button lead="users" title={t('Read with…')} onPress={() => { setMore(false); setTimeout(() => setReadWith(true), reduce ? 0 : scaleMs(EXIT_MS)) }} /> : null}
           <Button lead="share" title={t('Share this chapter')} onPress={() => { setMore(false); void shareChapter(bookN, chapterN).then(r => { if (r === 'copied') toast.show(t('Link copied')) }) }} />
           <Button lead="sliders" title={t('Reading settings')} onPress={() => { setMore(false); router.push('/settings/text') }} />
         </View>

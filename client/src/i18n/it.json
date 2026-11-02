@@ -22,6 +22,11 @@
  "{book}, chapter {chapter}.": "{book}, capitolo {chapter}.",
  "{book}, continued": "{book}, seguito",
  "{book}, no reference printed": "{book}, nessun riferimento stampato",
+ "{book}, read through {n} times": "{book}, letto per intero {n} volte",
+ "{book}, read through once, and {done} of {chapters} chapters again\u0000{book}, read through {n} times, and {done} of {chapters} chapters again": {
+  "one": "{book}, letto per intero una volta, e {done} capitoli su {chapters} riletti",
+  "other": "{book}, letto per intero {n} volte, e {done} capitoli su {chapters} riletti"
+ },
  "{books} · {n} chapter, in the order you tap them\u0000{books} · {n} chapters, in the order you tap them": {
   "one": "{books} · {n} capitolo, nell’ordine in cui li tocchi",
   "other": "{books} · {n} capitoli, nell’ordine in cui li tocchi"
@@ -125,6 +130,10 @@
  "{n} chapter read this week\u0000{n} chapters read this week": {
   "one": "{n} capitolo letto questa settimana",
   "other": "{n} capitoli letti questa settimana"
+ },
+ "{n} chapter read together\u0000{n} chapters read together": {
+  "one": "{n} capitolo letto insieme",
+  "other": "{n} capitoli letti insieme"
  },
  "{n} chapter.\u0000{n} chapters.": {
   "one": "{n} capitolo.",
@@ -352,6 +361,7 @@
   "other": "{path}: {n} membri sul percorso"
  },
  "{pct}% of goal": "{pct}% dell’obiettivo",
+ "{pct}% of the Bible": "{pct}% della Bibbia",
  "{position} of {total}": "{position} di {total}",
  "{read} of {goal} today": "{read} di {goal} oggi",
  "{ref} is the first chapter": "{ref} è il primo capitolo",
@@ -376,6 +386,7 @@
  "+ Heading": "+ Intestazione",
  "+ Link": "+ Link",
  "+ Note": "+ Commento",
+ "×{lap} {done}/{chapters}": "×{lap} {done}/{chapters}",
  "24-hour time, such as 06:30": "Formato 24 ore, per esempio 06:30",
  "24-hour time, such as 18:30": "Formato 24 ore, per esempio 18:30",
  "3 a week": "3 a settimana",
@@ -612,6 +623,7 @@
  "Chapters": "Capitoli",
  "Chapters {from}–{to}": "Capitoli {from}–{to}",
  "Chapters a week": "Capitoli a settimana",
+ "Chapters go to the group’s log; your minutes still count for you.": "I capitoli vanno al registro del gruppo; i tuoi minuti contano comunque per te.",
  "Chapters read for the first time ever; a chapter read before the event counts nothing.": "Capitoli letti per la prima volta in assoluto; un capitolo letto prima dell’evento non conta.",
  "Chapters read here": "Capitoli letti qui",
  "Chapters this week": "Capitoli di questa settimana",
@@ -643,6 +655,7 @@
  "Continue reading": "Continua a leggere",
  "Continue reading {ref}": "Continua a leggere {ref}",
  "Continue with Google": "Continua con Google",
+ "Continue: {ref}": "Continua: {ref}",
  "Copied": "Copiato",
  "Copied with link": "Copiato con il link",
  "Copy details": "Copia i dettagli",
@@ -995,6 +1008,8 @@
  "Language": "Lingua",
  "Lapsed": "Interrotta",
  "Larger text": "Testo più grande",
+ "Last: {ref}, {when}": "Ultimo: {ref}, {when}",
+ "Last: {ref}, {when}, {name}": "Ultimo: {ref}, {when}, {name}",
  "Late joiners score": "Punti anche a chi entra dopo",
  "Lavender": "Lavanda",
  "laying out…": "impaginazione…",
@@ -1389,6 +1404,10 @@
   "other": "Letto oggi. Mancano {n} minuti all’obiettivo"
  },
  "Read together": "Leggere insieme",
+ "Read together: {ref}": "Letto insieme: {ref}",
+ "Read with {group}: {ref}": "Letto con {group}: {ref}",
+ "Read with this group": "Leggi con questo gruppo",
+ "Read with…": "Leggi con…",
  "Reading before the start date does not count.": "La lettura prima della data di inizio non conta.",
  "Reading groups": "Gruppi di lettura",
  "Reading groups, for a few reading together, once you sign in.": "I gruppi di lettura, per poche persone che leggono insieme, quando accedi.",
@@ -1401,6 +1420,7 @@
  },
  "Reading streak. Sign in to keep a streak": "Serie di lettura. Accedi per tenere una serie",
  "Reading time, streaks, chapter credits, badges and the chapters you marked as read": "Tempo di lettura, serie, capitoli conteggiati, badge e i capitoli che hai segnato come letti",
+ "Reading with {group}": "Lettura con {group}",
  "Reads offline; no word timings": "Legge offline; senza sincronia delle parole",
  "Recent searches": "Ricerche recenti",
  "Reduce animation": "Riduci animazioni",
@@ -1581,6 +1601,7 @@
  "Stop after the selected verse": "Fermati dopo il versetto selezionato",
  "Stop reading": "Interrompi la lettura",
  "Stop reading {ref}": "Interrompi la lettura di {ref}",
+ "Stop reading with {group}": "Smetti di leggere con {group}",
  "Stop the sample of {voice}": "Interrompi l’esempio di {voice}",
  "Stop this path": "Interrompi questo percorso",
  "Storage and full-text search.": "Archiviazione e ricerca a testo completo.",
