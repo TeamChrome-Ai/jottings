@@ -1,8 +1,8 @@
 // The scroll reader's verse index (1.3.2): nothing at rest or on a link's landing, the reader's own scrolling brings it
 // up and it goes once the page rests; on the band a tap turns the chapter, a still press and a short sideways drag do
 // not, a vertical drag scrubs (the page at the verse under the finger, the pill naming it, fine mode one verse per
-// 16 px, the landing tinted once, the page then still, the text untouched); the same with footnotes open, a second
-// Bible, Reduce animation, and a narrow phone. BASE=http://127.0.0.1:8098 node scripts/verse-index-check.mjs
+// 16 px, the landing tinted once, the page then still, the text untouched); the same with footnotes open; the dot never
+// on a number; a second Bible, Reduce animation, and a narrow phone. BASE=http://127.0.0.1:8098 node scripts/verse-index-check.mjs
 import { chromium } from 'playwright'
 const base = process.env.BASE ?? 'http://127.0.0.1:8787'
 const api = process.env.API ?? base
@@ -282,6 +282,60 @@ async function scrubChecks(page, finger, tag) {
   await page.screenshot({ path: `${shots}/verse-index-wheel.png` })
   await goneAfter(page, t0, 'mouse', 'the wheel')
   check(!errors.length, errors.length ? 'page errors: ' + errors.join(' | ') : 'no page errors (wheel)')
+  await page.context().close()
+}
+
+// ---- the dot never covers a number (report #29): wheeled through John 1 (labels every 5) and Psalm 119 (every 10) ----
+/** The face while fully up: each label's digits as inked (the font's own metrics place them in the 14 px line box,
+ *  which is taller than they are) and the dot's centre, null when it is not drawn. */
+const faceMarks = page => page.evaluate(() => {
+  const face = document.querySelector('[data-testid="verse-index"]')
+  if (!face || +getComputedStyle(face).opacity < 0.99) return null
+  const ctx = document.createElement('canvas').getContext('2d')
+  const labels = [...face.firstElementChild.children].map(el => {
+    const s = getComputedStyle(el), r = el.getBoundingClientRect(), range = document.createRange()
+    ctx.font = `${s.fontWeight} ${s.fontSize} ${s.fontFamily}`
+    const m = ctx.measureText(el.textContent)
+    range.selectNodeContents(el)
+    const x = range.getBoundingClientRect().left
+    const baseline = r.top + (parseFloat(s.lineHeight) - m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2 + m.fontBoundingBoxAscent
+    return { text: el.textContent, left: x - m.actualBoundingBoxLeft, right: x + m.actualBoundingBoxRight, top: baseline - m.actualBoundingBoxAscent, bottom: baseline + m.actualBoundingBoxDescent }
+  })
+  const dot = [...face.children].map(el => el.getBoundingClientRect()).find(d => Math.round(d.width) === 5 && Math.round(d.height) === 5)
+  return { labels, dot: dot ? { x: dot.left + 2.5, y: dot.top + 2.5 } : null }
+})
+/** From the dot's edge to a label's digits, in px: under 0 it is on them. */
+const air = (dot, l) => Math.hypot(Math.max(l.left - dot.x, 0, dot.x - l.right), Math.max(l.top - dot.y, 0, dot.y - l.bottom)) - 2.5
+for (const [route, tag] of [['/read/43/1', 'John 1'], ['/read/19/119', 'Psalm 119']]) {
+  const { page, errors } = await open()
+  await page.goto(base + route, { waitUntil: 'networkidle' })
+  await page.waitForFunction(() => !!window.__cur()); await page.waitForTimeout(900)
+  const r = await band(page)
+  await page.mouse.move(r.left - 120, (r.top + r.bottom) / 2)
+  let up = 0, dots = 0, worst = null
+  for (let i = 0; i < 1500; i++) {
+    await page.mouse.wheel(0, 60)
+    await page.waitForTimeout(40)
+    const f = await faceMarks(page)
+    if (f) {
+      up++
+      if (f.dot) {
+        dots++
+        for (const l of f.labels) {
+          const a = air(f.dot, l)
+          if (!worst || a < worst.air) {
+            worst = { air: a, label: l.text, y: f.dot.y }
+            if (a < 0.5) await page.screenshot({ path: `${shots}/verse-index-dot-${tag.replace(/\W+/g, '-')}.png`, clip: { x: r.left - 30, y: l.top - 30, width: 60, height: 60 } })
+          }
+        }
+      }
+    }
+    const s = await scrollState(page)
+    if (s.top >= s.max) break
+  }
+  check(up > 20 && worst && worst.air >= 0.5, `${tag}, wheeled to the end: over ${up} samples with the index up the drawn dot comes no nearer a number's digits than ${worst ? `${worst.air.toFixed(1)} px ("${worst.label}", dot at y ${worst.y.toFixed(1)})` : '(no dot drawn)'}`)
+  check(dots >= up / 4, `${tag}: the dot is drawn, between the numbers, in ${dots} of those ${up} samples`)
+  check(!errors.length, errors.length ? 'page errors: ' + errors.join(' | ') : `no page errors (the dot, ${tag})`)
   await page.context().close()
 }
 

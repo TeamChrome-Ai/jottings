@@ -21,6 +21,10 @@ export const COL_PAD = 8
 /** Labels at least this far apart; the step is the smallest of LABEL_STEPS that keeps them so (the owner's spec). */
 export const LABEL_GAP = 20
 export const LABEL_STEPS = [5, 10, 20, 25, 50, 100] as const
+/** The dot gives way to a label whose centre is nearer its own than this: half a label's digits at their largest (11 px
+ *  bold under the 1.2 text-size cap, under 11 px tall), the dot's radius (2.5) and a pixel of air. Under half LABEL_GAP,
+ *  so between any two labels there is room for the dot. */
+export const DOT_CLEAR = 9
 /** The column's labels dim to this while fine mode's box lists the verses instead. */
 export const LABEL_DIM = 0.25
 /** Travel that tells a scrub (vertical first) or a sideways drag from a tap: Android's touch slop. */
@@ -136,6 +140,12 @@ export function nearestLabel(labels: readonly number[], i: number): number {
   let best = labels.length ? labels[0] : 0
   for (const k of labels) { if (k > i) break; best = k }
   return best
+}
+/** What marks stop `i` in the column. A dot within DOT_CLEAR of a label would sit on its digits (report #29), so there
+ *  that label takes the accent and the dot is left out. */
+export function faceMark(labels: readonly number[], i: number, n: number, h: number): { accent: number; dot: boolean } {
+  const under = labels.find(k => Math.abs(stopY(k, n, h) - stopY(i, n, h)) < DOT_CLEAR)
+  return under === undefined ? { accent: nearestLabel(labels, i), dot: true } : { accent: under, dot: false }
 }
 
 // ---- the live page's geometry ----

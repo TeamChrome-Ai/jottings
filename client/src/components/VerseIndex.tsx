@@ -10,7 +10,7 @@ import { face } from '../theme'
 import { Button, tick } from './ui'
 import {
   COL_W, EDGE_CLEAR, EDGE_W, FINE_BOX_W, FINE_STEP, INDEX_IN_MS, INDEX_OUT_MS, LABEL_DIM,
-  createVerseIndex, indexVerses, labelStops, nearestLabel, neighbours, stopY,
+  createVerseIndex, faceMark, indexVerses, labelStops, neighbours, stopY,
   type FaceView, type IndexPort, type IndexVerse, type VerseIndexController,
 } from '../lib/verseIndex'
 
@@ -180,12 +180,13 @@ const Face = memo(function Face({ store, stops, labels, h, bottom, opacity, boxA
   const c = useInks()
   const { cur, fine } = useSyncExternalStore(store.subscribe, store.get, store.get)
   const n = stops.length
+  const { accent, dot } = faceMark(labels, cur, n, h)
   const faceStyle = useMemo(() => ({ bottom, opacity }), [bottom, opacity])
   const boxStyle = useMemo(() => ({ transform: boxAt.getTranslateTransform() }), [boxAt])
   return (
     <Animated.View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden style={[styles.face, faceStyle]} testID="verse-index">
-      <Labels stops={stops} labels={labels} accent={nearestLabel(labels, cur)} h={h} dim={fine} ink={c.muted} accentInk={c.accent} />
-      <View style={[styles.dot, { backgroundColor: c.accent, top: stopY(cur, n, h) - 2.5 }]} />
+      <Labels stops={stops} labels={labels} accent={accent} h={h} dim={fine} ink={c.muted} accentInk={c.accent} />
+      {dot ? <View style={[styles.dot, { backgroundColor: c.accent, top: stopY(cur, n, h) - 2.5 }]} /> : null}
       {fine ? (
         <Animated.View style={[styles.box, { backgroundColor: c.card }, boxStyle]}>
           {neighbours(cur, n).map((k, row) => <Text key={row} maxFontSizeMultiplier={1.2} style={[styles.row, k === cur && styles.rowCur, { color: k === cur ? c.accent : c.muted }]}>{k === null ? '' : stops[k].label}</Text>)}

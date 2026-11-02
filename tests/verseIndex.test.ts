@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import {
-  COL_PAD, EDGE_CLEAR, EDGE_W, FINE_BACK, FINE_BOX_GAP, FINE_BOX_H, FINE_IN, FINE_STEP, INDEX_IN_MS, INDEX_OUT_MS, INDEX_REST_MS, INITIAL, INPUT_FRESH_MS,
-  JUMP_HOLD_MS, LABEL_GAP, MIN_SCREENS, SCRUB_SLOP, TAP_MAX_MS, TURN_LEFT,
-  createVerseIndex, fineBoxAt, fineStop, indexStep, indexVerses, labelStops, nearestLabel, neighbours, stopAt, stopAtOffset, stopTargets, stopY,
+  COL_PAD, DOT_CLEAR, EDGE_CLEAR, EDGE_W, FINE_BACK, FINE_BOX_GAP, FINE_BOX_H, FINE_IN, FINE_STEP, INDEX_IN_MS, INDEX_OUT_MS, INDEX_REST_MS, INITIAL,
+  INPUT_FRESH_MS, JUMP_HOLD_MS, LABEL_GAP, MIN_SCREENS, SCRUB_SLOP, TAP_MAX_MS, TURN_LEFT,
+  createVerseIndex, faceMark, fineBoxAt, fineStop, indexStep, indexVerses, labelStops, nearestLabel, neighbours, stopAt, stopAtOffset, stopTargets, stopY,
   type IndexEnv, type IndexEvent, type IndexPort, type IndexState, type PageNow,
 } from '../client/src/lib/verseIndex'
 import { HOUSE_TEMPO } from '../client/src/lib/motionSpeed'
@@ -92,6 +92,33 @@ describe('the labels', () => {
     expect(nearestLabel([0, 4, 9], 7)).toBe(4)
     expect(nearestLabel([0, 4, 9], 9)).toBe(9)
     expect(nearestLabel([0, 4, 9], 0)).toBe(0)
+  })
+  it('draw the dot beside that label, but where it would sit on a number leave it out and paint that number (report #29)', () => {
+    expect(faceMark([0, 4, 9], 7, 10, 460)).toEqual({ accent: 4, dot: true })
+    expect(faceMark([0, 4, 9], 9, 10, 460)).toEqual({ accent: 9, dot: false })
+    expect(faceMark([0, 4, 9], 0, 10, 460)).toEqual({ accent: 0, dot: false })
+    const ps = indexVerses(verses(176), 119), labels = labelStops(ps, 460), ten = labels[1]
+    const verse = stopY(1, 176, 460) - stopY(0, 176, 460)
+    expect(ps[ten].label).toBe('10')
+    expect(3 * verse).toBeLessThan(DOT_CLEAR)
+    expect(4 * verse).toBeGreaterThanOrEqual(DOT_CLEAR)
+    for (const i of [ten - 3, ten - 1, ten + 3]) expect(faceMark(labels, i, 176, 460)).toEqual({ accent: ten, dot: false })
+    expect(faceMark(labels, ten + 4, 176, 460)).toEqual({ accent: ten, dot: true })
+    expect(faceMark(labels, ten - 4, 176, 460)).toEqual({ accent: 0, dot: true })
+  })
+  it('draw the dot at least DOT_CLEAR from every number, and somewhere in every chapter longer than its labels', () => {
+    expect(2 * DOT_CLEAR).toBeLessThan(LABEL_GAP)
+    for (const [n, h] of [[51, 460], [176, 460], [176, 300], [2, 460]]) {
+      const labels = labelStops(indexVerses(verses(n), 1), h)
+      let drawn = 0
+      for (let i = 0; i < n; i++) {
+        const { dot } = faceMark(labels, i, n, h)
+        if (!dot) continue
+        drawn++
+        for (const k of labels) expect(Math.abs(stopY(k, n, h) - stopY(i, n, h))).toBeGreaterThanOrEqual(DOT_CLEAR)
+      }
+      if (labels.length < n) expect(drawn).toBeGreaterThan(0)
+    }
   })
 })
 
