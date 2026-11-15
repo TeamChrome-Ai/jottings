@@ -1,0 +1,23 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.medialibrary'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.medialibrary"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // ReactApplication and its host, to start JavaScript when a car asks before the app has run: the app's own React Native
+  compileOnly 'com.facebook.react:react-android'
+  // the Media3 that expo-audio 57 brings in: one version of it in the app (check expo-audio's build.gradle on an upgrade)
+  implementation 'androidx.media3:media3-session:1.9.0'
+  implementation 'androidx.media3:media3-common:1.9.0'
+}

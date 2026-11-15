@@ -2,13 +2,14 @@
 // paths.ts), against a stand-in server: signed out, at sign-in, against a server from before marks (404), offline, and
 // the Home card's "Next on your path" in each of the ways it used to stay on a chapter.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { nextOnPath, type PathState } from '../shared/paths'
 
 const h = vi.hoisted(() => {
   const store = new Map<string, string>()
   /** The server: an account's marks and path, whether it knows marks at all, and every request it was sent; the badges
    *  the next mark earns, and an answer it is holding back. */
   const server = {
-    token: null as string | null, online: true, hasMarks: true, clock: '2026-10-13T12:00:00.000Z',
+    token: null as string | null, uid: 7 as number | undefined, online: true, hasMarks: true, clock: '2026-10-13T12:00:00.000Z',
     marks: new Map<string, string>(), account: { path: null, history: [], read: [] } as Record<string, unknown>, calls: [] as string[], bodies: [] as unknown[],
     badges: [] as { code: string; name: string }[], hold: null as Promise<void> | null,
   }
@@ -43,7 +44,7 @@ vi.mock('../client/src/lib/api', () => {
     get: (p: string) => call('GET', p), cachedGet: (p: string) => call('GET', p), post: (p: string, b: unknown) => call('POST', p, b), put: (p: string, b: unknown) => call('PUT', p, b), del: (p: string) => call('DELETE', p),
   }
 })
-vi.mock('../client/src/store/auth', () => ({ useAuth: () => ({ user: null, ready: true }) }))
+vi.mock('../client/src/store/auth', () => ({ useAuth: () => ({ user: null, ready: true }), storedSession: async () => (h.server.token ? h.server.uid : undefined) }))
 vi.mock('../client/src/lib/companion', () => ({ loadCompanionIndex: async () => null }))
 vi.mock('../client/src/lib/edition', () => ({ useEdition: () => '1961' }))
 
@@ -259,7 +260,7 @@ describe('"Next on your path" (Home’s card reads the path store)', () => {
     expect(next(P)).toBe('40.2')
     // the reader's own next turn from Matthew 2 goes past a marked Matthew 3 as it goes past a credited one
     await M.markRead(40, 3)
-    expect(P.peekNextPortion({ book: 40, chapter: 2 })).toEqual({ book: 40, chapter: 4 })
+    expect(P.peekPathNextAfter(40, 2)).toEqual({ book: 40, chapter: 4 })
     await M.unmarkRead(40, 1)
     expect(next(P)).toBe('40.1')
   })
@@ -331,5 +332,73 @@ describe('"Next on your path" (Home’s card reads the path store)', () => {
     expect((await P.localPathNext())?.next).toEqual({ book: 40, chapter: 3 })
     await P.refreshPath()
     expect(server.calls).toEqual([])
+  })
+})
+
+// Read aloud goes on into the path's next portion (docs/PATHS.md rule 3) when a car started the app and no screen is
+// mounted: no hook has loaded the path, so read aloud asks for it itself (pathForReadAloud).
+describe('the path for read aloud, with no screen mounted', () => {
+  const at = (id: string, more: Record<string, unknown> = {}) => ({ id, started_at: '2026-09-01T00:00:00Z', target_date: null, pace_per_week: null, with_ministry: false, ...more })
+  const LIFE = at('life-of-christ'), COATES = at('coates'), OWN = at('custom', { custom: { title: 'Mine', books: [45, 58] } })
+  const signedIn = (path: unknown) => { server.token = 't'; server.account = { path, history: [], read: [] } }
+
+  it('until it has been asked for, a chapter has no next portion and the Bible\'s order applies', async () => {
+    store.set('berean_path', JSON.stringify({ path: LIFE, history: [] }))
+    const { P } = await launch()
+    expect(P.peekPathNextAfter(40, 2)).toBeNull()
+  })
+
+  it('signed out: the path kept on the device, and the server is not asked', async () => {
+    store.set('berean_path', JSON.stringify({ path: LIFE, history: [] }))
+    const { P } = await launch()
+    await P.pathForReadAloud()
+    const next = P.peekPathNextAfter(40, 2)
+    expect(next).toMatchObject({ book: 42, chapter: 1 })       // the life of Christ: Luke 1 after Matthew 2, not Matthew 3
+    expect(server.calls).toEqual([])
+  })
+
+  it('signed in: the account\'s path, Coates\'s order from Nehemiah to the Psalms and a path of chosen books into the next book', async () => {
+    signedIn(COATES)
+    let { P } = await launch()
+    await P.pathForReadAloud()
+    // Coates's order leaves Esther and Job out: after Nehemiah come the Psalms, not Esther 1
+    expect(P.peekPathNextAfter(16, 13)).toMatchObject(nextOnPath(COATES as PathState, new Set(), 16, 13)!)
+    expect(P.peekPathNextAfter(16, 13)).toMatchObject({ book: 19, chapter: 1 })
+    signedIn(OWN)
+    ;({ P } = await launch())
+    await P.pathForReadAloud()
+    expect(P.peekPathNextAfter(45, 16)).toMatchObject({ book: 58, chapter: 1 })   // Romans, then Hebrews: not 1 Corinthians 1
+  })
+
+  it('asked again by each start, it asks the server once', async () => {
+    signedIn(LIFE)
+    const { P } = await launch()
+    await P.pathForReadAloud()
+    await P.pathForReadAloud()
+    await P.pathForReadAloud()
+    expect(calls(/path/)).toEqual(['GET /me/path'])
+  })
+
+  it('an account\'s path that cannot be fetched: the asking ends, the Bible\'s order applies, and the next start asks again', async () => {
+    signedIn(LIFE)
+    server.online = false
+    const { P } = await launch()
+    await P.pathForReadAloud()
+    expect(P.peekPathNextAfter(40, 2)).toBeNull()
+    await P.pathForReadAloud()
+    expect(P.peekPathNextAfter(40, 2)).toBeNull()
+    server.online = true
+    await P.pathForReadAloud()
+    expect(P.peekPathNextAfter(40, 2)).toMatchObject({ book: 42, chapter: 1 })
+  })
+
+  it('the path a screen has loaded already is left as it is', async () => {
+    signedIn(LIFE)
+    const { P } = await launch()
+    await P.loadPath(7)
+    server.calls.length = 0
+    await P.pathForReadAloud()
+    expect(server.calls).toEqual([])
+    expect(P.peekPathNextAfter(40, 2)).toMatchObject({ book: 42, chapter: 1 })
   })
 })

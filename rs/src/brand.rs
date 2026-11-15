@@ -7,6 +7,8 @@ use serde_json::Value;
 pub struct Brand {
     /// `name`, and `storeName`: the title of a page that has none of its own
     pub name: String, pub store_name: String,
+    /// `ownerShort`: who makes the app, as the assistant says it; the name where the brand gives none
+    pub owner_short: String,
     /// `site`, with no slash at its end; `androidPackage`
     pub site: String, pub android_package: String,
     /// `androidCertFingerprints`: the signing certificates the site vouches for in assetlinks.json; none is allowed
@@ -31,7 +33,7 @@ impl Brand {
         let agent = format!("{}LinkPreview/1.0 (+{site})", name.chars().filter(char::is_ascii_alphanumeric).collect::<String>());
         let android_certs = v.pointer("/androidCertFingerprints").and_then(Value::as_array).ok_or("the key /androidCertFingerprints is missing or is not a list")?
             .iter().map(|c| c.as_str().map(String::from).ok_or("/androidCertFingerprints holds something that is not text")).collect::<Result<Vec<_>, _>>()?;
-        Ok(Brand { store_name: text("/storeName")?, android_package: text("/androidPackage")?, android_certs, agent,
+        Ok(Brand { store_name: text("/storeName")?, owner_short: text("/ownerShort").unwrap_or_else(|_| name.clone()), android_package: text("/androidPackage")?, android_certs, agent,
             noun: Noun { many: text("/noun/many")?, a: format!("{article} {one}"), a_cap: format!("A{} {one}", &article[1..]) }, name, site })
     }
 }

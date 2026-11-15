@@ -111,6 +111,80 @@ describe('the conversation a reader message posts', () => {
     const sizes = (h.posts as unknown[]).map(p => new TextEncoder().encode(JSON.stringify(p)).length)
     expect(Math.max(...sizes)).toBeLessThan(100_000)
   })
+  it('keeps up to twelve reader messages, and cuts back to eight when the thirteenth comes', async () => {
+    setActionHost(host().h)
+    await loadConversation(1)
+    newConversation()
+    h.answers = Array.from({ length: 18 }, (_, k) => answered(k + 1))
+    for (let k = 1; k <= 18; k++) await ask(`question ${k}`)
+    const readers = (n: number) => posted(n - 1).messages.filter(m => m.role === 'user').map(m => m.content)
+    expect([8, 9, 10, 11, 12, 13, 14, 17, 18].map(n => [readers(n).length, readers(n)[0]])).toEqual([[8, 'question 1'], [9, 'question 1'], [10, 'question 1'], [11, 'question 1'], [12, 'question 1'],
+      [8, 'question 6'], [9, 'question 6'], [12, 'question 6'], [8, 'question 11']])
+    // what is kept on the device is what was posted, with the answer since
+    const kept = JSON.parse(h.store.get('berean_assistant') ?? '{}').messages as { role: string; content: string }[]
+    expect(kept.filter(m => m.role === 'user').map(m => m.content)).toEqual(readers(18))
+  })
+  it('posts, from the ninth message to the twelfth, what it posted before with only more after it', async () => {
+    setActionHost(host().h)
+    await loadConversation(1)
+    newConversation()
+    h.answers = Array.from({ length: 14 }, (_, k) => answered(k + 1))
+    for (let k = 1; k <= 14; k++) await ask(`question ${k}`)
+    const sent = (n: number) => JSON.stringify(posted(n - 1).messages)
+    // byte for byte the start of the next, which a provider's cache keeps; the cut at the thirteenth starts anew, once
+    expect([9, 10, 11, 12, 13, 14].map(n => sent(n).startsWith(sent(n - 1).slice(0, -1)))).toEqual([true, true, true, true, false, true])
+    for (let n = 9; n <= 14; n++) for (const m of posted(n - 1).messages.filter(m => m.role === 'tool')) expect(m.content).toMatch(/^\{"paragraphs":\[\{"id":\d+\}/)
+  })
+  it('keeps eight, as before, once twelve would be more than the server takes', async () => {
+    setActionHost(host().h)
+    await loadConversation(1)
+    newConversation()
+    const long = (k: number) => sse([['message', { role: 'assistant', content: `${'é'.repeat(4500)} ${k}` }], ['answer', { sentences: [] }], ['done', {}]])
+    h.answers = Array.from({ length: 14 }, (_, k) => long(k + 1))
+    for (let k = 1; k <= 14; k++) await ask(`question ${k}`)
+    const readers = (n: number) => posted(n - 1).messages.filter(m => m.role === 'user').length
+    expect([8, 9, 10, 11, 12, 13, 14].map(readers)).toEqual([8, 8, 8, 8, 8, 8, 8])
+    const sizes = (h.posts as unknown[]).map(p => new TextEncoder().encode(JSON.stringify(p)).length)
+    expect(Math.max(...sizes)).toBeLessThan(80_000)
+  })
+  it('keeps on the device, after a long library result, the window the turn was posted with', async () => {
+    setActionHost(host().h)
+    await loadConversation(1)
+    newConversation()
+    const said = (k: number) => sse([['message', { role: 'assistant', content: `${'x'.repeat(3800)} ${k}` }], ['answer', { sentences: [] }], ['done', {}]])
+    const read = sse([
+      ['message', { role: 'assistant', content: null, tool_calls: [{ id: 's10', type: 'function', function: { name: 'search_library', arguments: '{"question":"grace"}' } }] }],
+      ['message', { role: 'tool', tool_call_id: 's10', content: JSON.stringify({ paragraphs: [{ id: 7, author: 'darby', work: { id: 'cw-1', title: 'Collected Writings 1', collection: 'cw' }, n: 1, para: 0, section: 'Grace', text: 'y'.repeat(12_000) }] }) }],
+      ['message', { role: 'assistant', content: 'Grace reigns [7].' }], ['answer', { sentences: [{ text: 'Grace reigns.', ids: [7], supported: true }] }], ['done', {}]])
+    h.answers = [...Array.from({ length: 9 }, (_, k) => said(k + 1)), read, said(11)]
+    for (let k = 1; k <= 10; k++) await ask(`question ${k}`)
+    // the result is whole on the device until the reader writes again, and is not counted whole against the window
+    const kept = JSON.parse(h.store.get('berean_assistant') ?? '{}').messages as { role: string; content: string }[]
+    expect(kept.filter(m => m.role === 'user').map(m => m.content)).toEqual(Array.from({ length: 10 }, (_, k) => `question ${k + 1}`))
+    await ask('question 11')
+    expect(posted(10).messages.filter(m => m.role === 'user').length).toBe(11)
+  })
+  it('does not move the window while a turn runs: what a hand-over posts begins with what the server signed', async () => {
+    const app = host()
+    app.release()
+    setActionHost(app.h)
+    await loadConversation(1)
+    newConversation()
+    // ten reader messages whose post is just under the bytes the window may be, so that the model's call, coming
+    // during the turn, takes it over them
+    const q = (k: number) => `what did Darby say about the sealing of the Spirit? ${k}`
+    const size = (len: number) => new TextEncoder().encode(JSON.stringify(Array.from({ length: 10 }, (_, k) => [{ role: 'user', content: q(k + 1) }, ...(k < 9 ? [{ role: 'assistant', content: 'x'.repeat(len) }] : [])]).flat())).length
+    const len = Math.floor((39_990 - size(0)) / 9)
+    expect(size(len)).toBeGreaterThan(39_900)
+    expect(size(len)).toBeLessThanOrEqual(40_000)
+    const said = () => sse([['message', { role: 'assistant', content: 'x'.repeat(len) }], ['answer', { sentences: [] }], ['done', {}]])
+    h.answers = [...Array.from({ length: 9 }, said), HANDED, sse([['message', { role: 'assistant', content: 'Done.' }], ['answer', { sentences: [] }], ['done', {}]])]
+    for (let k = 1; k <= 10; k++) await ask(q(k))
+    expect([posted(9).messages.length, posted(9).messages[0].content]).toEqual([19, q(1)])
+    // the hand-over: all that was posted, the model's call, and the two results
+    const handed = h.posts[10] as { messages: { role: string; content: string }[]; token?: string }
+    expect([handed.token, handed.messages.length, handed.messages[0].content, handed.messages.slice(-3).map(m => m.role)]).toEqual(['t', 22, q(1), ['assistant', 'tool', 'tool']])
+  })
   it('keeps every citation’s place once the paragraphs’ text is gone', async () => {
     const app = host()
     const opened: unknown[] = []
@@ -131,5 +205,20 @@ describe('the conversation a reader message posts', () => {
     await ask('one more')
     const conv = JSON.parse(h.store.get('berean_assistant') ?? '{}')
     expect(conv.shown.at(-1)).toEqual({ kind: 'error', text: 'This conversation is too long for Ask. Start a new conversation to go on.' })
+  })
+})
+
+describe('the words shown while an answer comes', () => {
+  // the model sometimes writes markdown, which the app does not draw (the real model on 2026-11-15: "- **John 14:3:**
+  // …" for a question about where the Bible says a thing). The server takes the asterisks out before it reads the
+  // words for a name (rs/src/assistant.rs Filter); the app takes out a line's list mark and nothing else, so it never
+  // joins what the server judged apart
+  it('show no list dash and no bracket of ids, and leave every other mark to the server', async () => {
+    const { streamed } = await import('../client/src/lib/assistant')
+    expect(streamed('- John 14:3: “I am coming again”\n- 1 Thess')).toBe('John 14:3: “I am coming again”\n1 Thess')
+    expect(streamed('• Grace reigns [12].\n  - Peace follows')).toBe('Grace reigns.\nPeace follows')
+    expect(streamed('It is 3 - 2, and well-known.')).toBe('It is 3 - 2, and well-known.')
+    expect(streamed('Open **AI** made this.')).toBe('Open **AI** made this.')
+    expect(streamed('G**PT')).toBe('G**PT')
   })
 })

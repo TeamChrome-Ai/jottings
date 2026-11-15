@@ -138,17 +138,36 @@ pub async fn passages(State(s): State<AppState>, Query(q): Query<PassagesQ>) -> 
 pub(crate) struct Nearest { q: String, state: Asked, by: By, pub(crate) items: Vec<(i64, Value)>, pub(crate) served: Served }
 pub(crate) async fn nearest(s: &AppState, q: &str) -> ApiResult<Nearest> {
     let (asked, kept) = expand::question(q);
-    let (mut e, mut served) = expand::expansion(s, asked.as_deref(), kept.clone()).await?;
+    // A new question's vector is asked for while its expansion is, not after it: the embedder takes only the question
+    // as asked. It begins once the expansion has taken its place among the day's calls (`expansion_asking`), so at the
+    // day's last call the expansion is the one made. A vector made beside an expansion that then fails or finds
+    // nothing is kept as any other, and that question makes the call once.
+    let (begin, begun) = tokio::sync::oneshot::channel::<()>();
+    let beside = async {
+        match (&asked, &s.near.vectors, s.near.key.is_some(), begun.await) {
+            (Some(asked), Some(_), true, Ok(())) => Some(question_vector(s, asked, &kept).await),
+            _ => None,
+        }
+    };
+    let (expanded, beside) = tokio::join!(expand::expansion_asking(s, asked.as_deref(), kept.clone(), move || { let _ = begin.send(()); }), beside);
+    let (mut e, mut served) = expanded?;
     let (Some(lib), Some(asked), Asked::Ok) = (s.ministry.clone(), asked, e.state) else { return Ok(Nearest { q: e.q, state: e.state, by: By::Matches, items: Vec::new(), served }) };
     let mut ranked = in_order(&lib, &e, served).await?;
     let mut near = None;
-    if let (Some(v), false, true) = (&s.near.vectors, ranked.is_empty(), s.near.key.is_some()) {
-        near = question_vector(s, &asked, &e.q).await?.map(|q| (v.clone(), q));
+    if let (Some(v), true) = (&s.near.vectors, s.near.key.is_some()) {
+        // a question asked before has its expansion kept and asks no model: its vector is kept too, or is asked for
+        // now, when there are paragraphs to order
+        let (q, called) = match beside {
+            Some(q) => (q?, true),
+            None if !ranked.is_empty() => (question_vector(s, &asked, &e.q).await?, true),
+            None => (None, false),
+        };
         // the embedding call can outlast edition::TTL: the answer is counted again in the edition served once it is back
-        if s.served().await != served {
+        if called && s.served().await != served {
             (e, served) = expand::expansion(s, Some(&asked), kept).await?;
             ranked = in_order(&lib, &e, served).await?;
         }
+        near = q.filter(|_| !ranked.is_empty()).map(|q| (v.clone(), q));
     }
     let (by, order) = match near {
         Some((v, q)) if !ranked.is_empty() => {
@@ -231,7 +250,7 @@ fn floats(bytes: &[u8]) -> Vec<f32> { bytes.chunks_exact(4).map(|b| f32::from_le
 async fn embed(cfg: &Config, text: &str) -> Result<Vec<u8>, String> {
     use base64::prelude::{Engine, BASE64_STANDARD};
     let key = cfg.key.as_deref().ok_or_else(|| "no BEREAN_EMBED_KEY".to_string())?;
-    let res = reqwest::Client::new().post(format!("{}/v1/embeddings", cfg.url)).bearer_auth(key).timeout(TIMEOUT)
+    let res = crate::http_client().post(format!("{}/v1/embeddings", cfg.url)).bearer_auth(key).timeout(TIMEOUT)
         .json(&serde_json::json!({ "model": cfg.model, "input": text, "encoding_format": "base64" })).send().await.map_err(|e| e.to_string())?;
     let status = res.status();
     let v: Value = res.json().await.map_err(|e| e.to_string())?;
@@ -256,9 +275,11 @@ mod tests {
     type Calls = Arc<Mutex<Vec<(HeaderMap, Value)>>>;
     type Embed = fn(&str) -> (u16, Vec<f32>);
 
-    /// How long each stand-in takes to answer, and a note to the test that a call has come in.
+    /// How long each stand-in takes to answer, a note to the test that a call has come in, and the address each call
+    /// came from: one address is one connection.
     #[derive(Clone, Default)]
-    struct Slow { model: std::time::Duration, embedder: std::time::Duration, model_called: Arc<tokio::sync::Notify>, embedder_called: Arc<tokio::sync::Notify> }
+    struct Slow { model: std::time::Duration, embedder: std::time::Duration, model_called: Arc<tokio::sync::Notify>, embedder_called: Arc<tokio::sync::Notify>, peers: Arc<Mutex<Vec<std::net::SocketAddr>>> }
+    type Peer = axum::extract::ConnectInfo<std::net::SocketAddr>;
 
     /// The Messages API and the embeddings API on one local port, every call kept: the model answers `answer` to every
     /// question, the embedder `embed(input)`, a status and the vector, each after `slow`'s wait.
@@ -266,8 +287,9 @@ mod tests {
         let (model, embedder): (Calls, Calls) = Default::default();
         let (m, e, s) = (model.clone(), embedder.clone(), slow.clone());
         let app = axum::Router::new()
-            .route("/v1/messages", axum::routing::post(move |headers: HeaderMap, Json(body): Json<Value>| {
+            .route("/v1/messages", axum::routing::post(move |axum::extract::ConnectInfo(peer): Peer, headers: HeaderMap, Json(body): Json<Value>| {
                 let (m, slow) = (m.clone(), s.clone());
+                slow.peers.lock().unwrap().push(peer);
                 async move {
                     slow.model_called.notify_one();
                     tokio::time::sleep(slow.model).await;
@@ -275,8 +297,9 @@ mod tests {
                     Json(crate::expand::tests::text(&answer()).1)
                 }
             }))
-            .route("/v1/embeddings", axum::routing::post(move |headers: HeaderMap, Json(body): Json<Value>| {
+            .route("/v1/embeddings", axum::routing::post(move |axum::extract::ConnectInfo(peer): Peer, headers: HeaderMap, Json(body): Json<Value>| {
                 let (e, slow) = (e.clone(), slow.clone());
+                slow.peers.lock().unwrap().push(peer);
                 async move {
                     slow.embedder_called.notify_one();
                     tokio::time::sleep(slow.embedder).await;
@@ -291,7 +314,7 @@ mod tests {
             }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        tokio::spawn(async move { axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap() });
         (url, model, embedder)
     }
 
@@ -369,6 +392,21 @@ mod tests {
         assert_eq!((v["q"].as_str(), v["state"].as_str(), v["by"].as_str()), (Some("how can i be sealed with the spirit"), Some("ok"), Some("meaning")), "{v}");
         assert_eq!(ids(&db, &v), [1000, 4, 1100, 2, 301, 1]);
         assert_eq!(t.calls(), (1, 1));
+    }
+
+    /// The calls of a second question go over the connections the first one's left open: no call makes a client, and
+    /// with it a connection, of its own. A new question's two calls are made together, here to one host, so they are
+    /// two connections and no more.
+    #[tokio::test]
+    async fn near_the_calls_of_a_second_question_go_over_the_firsts_connections() {
+        let db = library();
+        let slow = Slow::default();
+        let t = test_with(&db, sealing, toward_coates, 2000, true, Some(vectors(&db, hot)), slow.clone()).await;
+        for q in [Q, "what is the sealing of the Spirit"] { assert_eq!(ask(&t.app, q).await["by"], "meaning") }
+        let peers = slow.peers.lock().unwrap().clone();
+        let connections: std::collections::HashSet<std::net::SocketAddr> = peers.iter().copied().collect();
+        assert_eq!((t.calls(), peers.len()), ((2, 2), 4));
+        assert!(connections.len() <= 2, "a call opened a connection of its own: {peers:?}");
     }
 
     #[tokio::test]
@@ -511,10 +549,13 @@ mod tests {
         }
     }
 
+    /// The two calls of a new question are made together, the expansion's place in the day's calls taken first: with
+    /// one call left it is the expansion that is made, however slow its model, and the paragraphs come in its order.
     #[tokio::test]
     async fn near_an_embedding_takes_one_of_the_days_calls_before_it_is_made() {
         let db = library();
-        let one = test(&db, sealing, toward_coates, 1, true, Some(vectors(&db, hot))).await;
+        let slow = Slow { model: std::time::Duration::from_millis(200), ..Default::default() };
+        let one = test_with(&db, sealing, toward_coates, 1, true, Some(vectors(&db, hot)), slow).await;
         let v = ask(&one.app, Q).await;
         assert_eq!((v["state"].as_str(), v["by"].as_str(), ids(&db, &v)), (Some("ok"), Some("matches"), SEALING.to_vec()));
         assert_eq!(one.calls(), (1, 0), "the expansion took the day's one call");
@@ -524,13 +565,60 @@ mod tests {
         assert_eq!((next["state"].as_str(), next["items"].as_array().map(Vec::len), two.calls()), (Some("busy"), Some(0), (1, 1)));
     }
 
+    /// The last call of a day goes to the expansion of the next new question: its embedding, made beside it on any
+    /// other day, is not made, and the answer is in the expansion's order.
     #[tokio::test]
-    async fn near_a_question_whose_expansion_finds_nothing_makes_no_embedding_call() {
+    async fn near_the_days_last_call_is_the_expansions() {
+        let db = library();
+        let t = test(&db, sealing, toward_coates, 3, true, Some(vectors(&db, hot))).await;
+        assert_eq!(ask(&t.app, Q).await["by"], "meaning");
+        let last = ask(&t.app, "what is the sealing of the Spirit").await;
+        assert_eq!((last["state"].as_str(), last["by"].as_str(), ids(&db, &last)), (Some("ok"), Some("matches"), SEALING.to_vec()));
+        let taken: i64 = t.pool.get().unwrap().query_row("SELECT sum(calls) FROM search_expansion_calls", [], |r| r.get(0)).unwrap();
+        assert_eq!((t.calls(), taken), ((2, 1), 3));
+    }
+
+    /// A new question's embedding is asked for while its expansion is: the embedder has the call before the model has
+    /// answered.
+    #[tokio::test]
+    async fn near_asks_for_a_new_questions_embedding_while_its_expansion_is_asked_for() {
+        let db = library();
+        let slow = Slow { model: std::time::Duration::from_millis(600), ..Default::default() };
+        let t = test_with(&db, sealing, toward_coates, 2000, true, Some(vectors(&db, hot)), slow.clone()).await;
+        let app = t.app.clone();
+        let asking = tokio::spawn(async move { ask(&app, Q).await });
+        slow.embedder_called.notified().await;
+        assert_eq!(t.model.lock().unwrap().len(), 0, "the embedding waited for the expansion's answer");
+        let v = asking.await.unwrap();
+        assert_eq!((v["by"].as_str(), ids(&db, &v), t.calls()), (Some("meaning"), vec![1000, 4, 1100, 2, 301, 1], (1, 1)));
+    }
+
+    /// The embedding made beside an expansion that then finds nothing is one of the day's calls and is kept, so the
+    /// same question makes it once.
+    #[tokio::test]
+    async fn near_a_question_whose_expansion_finds_nothing_makes_its_embedding_call_once() {
         fn nothing() -> String { json!({ "phrases": ["free bitcoin"], "verses": ["Jude 20"], "related": ["the Spirit sealed"] }).to_string() }
         let db = library();
         let t = test(&db, nothing, toward_coates, 2000, true, Some(vectors(&db, hot))).await;
-        assert_eq!(ask(&t.app, Q).await, json!({ "q": "how can i be sealed with the spirit", "state": "ok", "by": "matches", "items": [] }), "a related subject is no candidate");
-        assert_eq!(t.calls(), (1, 0));
+        for _ in 0..2 { assert_eq!(ask(&t.app, Q).await, json!({ "q": "how can i be sealed with the spirit", "state": "ok", "by": "matches", "items": [] }), "a related subject is no candidate") }
+        let c = t.pool.get().unwrap();
+        let (kept, taken): (i64, i64) = (c.query_row("SELECT count(*) FROM search_vectors WHERE q = 'how can i be sealed with the spirit'", [], |r| r.get(0)).unwrap(), c.query_row("SELECT sum(calls) FROM search_expansion_calls", [], |r| r.get(0)).unwrap());
+        assert_eq!((t.calls(), kept, taken), ((1, 1), 1, 2));
+    }
+
+    /// And beside an expansion whose model gave nothing to keep: the question is busy, its vector is kept, and the next
+    /// ask makes the expansion's call alone.
+    #[tokio::test]
+    async fn near_an_expansion_that_fails_keeps_the_embedding_made_beside_it() {
+        fn prose() -> String { "Here are some phrases: sealed with the Spirit.".to_string() }
+        let db = library();
+        let t = test(&db, prose, toward_coates, 2000, true, Some(vectors(&db, hot))).await;
+        for calls in [(1, 1), (2, 1)] {
+            let v = ask(&t.app, Q).await;
+            assert_eq!((v["state"].as_str(), v["items"].as_array().map(Vec::len), t.calls()), (Some("busy"), Some(0), calls));
+        }
+        let kept: i64 = t.pool.get().unwrap().query_row("SELECT count(*) FROM search_vectors", [], |r| r.get(0)).unwrap();
+        assert_eq!(kept, 1);
     }
 
     #[tokio::test]

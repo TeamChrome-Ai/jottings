@@ -69,6 +69,11 @@ const fx = vi.hoisted(() => {
     },
     useMemo: (f: () => unknown, deps: unknown[]) => { const [, s] = slot(); if (!same(s.deps, deps)) { s.v = f(); s.deps = deps } return s.v },
     useCallback: (f: unknown, deps: unknown[]) => hooks.useMemo(() => f, deps),
+    useSyncExternalStore: (subscribe: (f: () => void) => () => void, get: () => unknown) => {
+      const [r, s] = slot()
+      if (!s.cleanup) s.cleanup = subscribe(() => { r.dirty = true })
+      return get()
+    },
     useEffect: (f: () => unknown, deps: unknown[]) => {
       const [r, s] = slot()
       if (same(s.deps, deps)) return
@@ -77,8 +82,12 @@ const fx = vi.hoisted(() => {
     },
   }
   /** Render the provider; the returned function renders it again when its state has changed, and gives its value. */
+  const trees: Tree[] = []
+  /** The screens go: every effect cleans up, as when the app is swiped away. */
+  function unmount() { for (const r of trees.splice(0)) for (const s of r.slots) if (typeof s.cleanup === 'function') s.cleanup() }
   function mount<T>(Provider: (p: { children: null }) => unknown): () => T {
     const r: Tree = { slots: [], i: 0, dirty: true, effects: [], value: null }
+    trees.push(r)
     return () => {
       while (r.dirty) {
         r.dirty = false; r.i = 0; rendering = r
@@ -91,7 +100,9 @@ const fx = vi.hoisted(() => {
 
   const later = () => { let release = () => {}; const p = new Promise<void>(r => { release = r }); return { p, release } }
   const fx = {
-    Clip, speech, hooks, mount,
+    Clip, speech, hooks, mount, unmount,
+    /** The sounds whose own media session was given up for the app's one. */
+    owned: [] as unknown[],
     clips: [] as InstanceType<typeof Clip>[],
     prefs: {} as Record<string, unknown>,
     marks: new Map<string, ChapterMarksLike>(),
@@ -101,6 +112,10 @@ const fx = vi.hoisted(() => {
     /** Marks not come yet. */
     slowMarks: new Map<string, ReturnType<typeof later>>(),
     downloads: [] as string[],
+    /** The reading path's next portion after a chapter, where the chapter is on the path. */
+    pathNext: new Map<string, { book: number; chapter: number }>(),
+    /** How often read aloud asked for the reader's path. */
+    pathAsked: 0,
     /** Each clip as it begins from its top. */
     begun: [] as string[],
     /** play() on a clip that has ended starts it again from the top, as on the web. */
@@ -109,7 +124,7 @@ const fx = vi.hoisted(() => {
     numberSeconds: 0.6,
     later,
     reset() {
-      fx.clips = []; fx.downloads = []; fx.begun = []; fx.restartAtEnd = false; fx.numberSeconds = 0.6; fx.slowAudio.clear(); fx.slowMarks.clear()
+      fx.clips = []; fx.owned = []; fx.downloads = []; fx.begun = []; fx.restartAtEnd = false; fx.numberSeconds = 0.6; fx.slowAudio.clear(); fx.slowMarks.clear(); fx.pathNext.clear(); fx.pathAsked = 0
       speech.said = []; speech.now = null; speech.stopsAs = 'stopped'
       fx.prefs = { ttsDevice: false, ttsVoice: 'adam', ttsSpeed: 1, ttsPause: 'none', ttsNumbers: false, ttsAutoNext: false, ttsHeading: false, ttsWord: false }
     },
@@ -132,6 +147,12 @@ vi.mock('../client/src/lib/bible', () => ({
   book: () => ({ name: 'Genesis', nameEn: 'Genesis' }),
   fetchChapter: async (b: number, c: number) => ({ book: b, chapter: c, verses: fx.texts.get(`${b}/${c}`) ?? [] }),
   warmChapter: () => {},
+  nextChapter: (b: number, c: number) => (fx.texts.has(`${b}/${c + 1}`) ? { book: b, chapter: c + 1 } : null),
+}))
+vi.mock('../client/src/lib/paths', () => ({
+  peekPathNextAfter: (b: number, c: number) => fx.pathNext.get(`${b}/${c}`) ?? null,
+  // the asking never answers here: a car with no signal
+  pathForReadAloud: () => { fx.pathAsked++; return new Promise<void>(() => {}) },
 }))
 vi.mock('../client/src/lib/readAloudClock', () => ({ keepClock: () => {} }))
 vi.mock('../client/src/lib/readAloudLog', () => ({ note: () => {}, noteStill: () => {}, watchReading: () => {} }))
@@ -147,7 +168,8 @@ vi.mock('../client/src/lib/tts', () => ({
   PAUSE_MS: { none: 0, short: 500, long: 1200 },
   positionAt: () => null,
 }))
-vi.mock('../client/src/store/prefs', () => ({ usePrefsStore: () => ({ get: () => fx.prefs }) }))
+vi.mock('../client/src/store/prefs', () => { const store = { get: () => fx.prefs }; return { usePrefsStore: () => store, prefsStore: store } })
+vi.mock('../client/src/lib/mediaLibrary', () => ({ mediaLibrary: { own: (clip: unknown) => { fx.owned.push(clip) } } }))
 
 type Player = ReturnType<typeof import('../client/src/store/player').usePlayer>
 
@@ -179,8 +201,6 @@ afterEach(() => { vi.useRealTimers() })
 describe('the read-aloud player', () => {
   it('reads a recorded chapter verse by verse to its end', async () => {
     recorded(19, 117, 2)
-    const ended: string[] = []
-    player().onEnded((b, c) => ended.push(`${b}:${c}`))
     player().start(19, 117)
     await adv(100)
     const rec = fx.clips[0]
@@ -188,7 +208,127 @@ describe('the read-aloud player', () => {
     expect(player().status).toBe('playing')
     await until(() => player().status === 'idle')
     expect(rec.currentTime).toBeGreaterThan(7.8)
-    expect(ended).toEqual(['19:117'])
+  })
+})
+
+describe('the player with no screen mounted', () => {
+  type Engine = ReturnType<typeof import('../client/src/store/player').playerEngine>
+  let engine: Engine
+  beforeEach(async () => {
+    fx.unmount()
+    vi.resetModules()
+    fx.reset()
+    engine = (await import('../client/src/store/player')).playerEngine()
+  })
+
+  it('reads a chapter and goes on into the next, as a car asks it to with the app not open', async () => {
+    recorded(19, 117, 2); recorded(19, 118, 2)
+    fx.prefs.ttsAutoNext = true
+    engine.start(19, 117)
+    await until(() => engine.getState().status === 'playing')
+    expect(engine.getState().chapter).toBe(117)
+    await until(() => engine.getState().chapter === 118 && engine.getState().status === 'playing')
+    expect(fx.begun).toEqual(['chapter/adam/19/117', 'chapter/adam/19/118'])
+  })
+
+  it('asks for the reader\'s path at each start, and reads without waiting for the answer', async () => {
+    recorded(19, 117, 2); recorded(19, 118, 2)
+    fx.prefs.ttsAutoNext = true
+    engine.start(19, 117)
+    await until(() => engine.getState().status === 'playing')
+    expect(fx.pathAsked).toBe(1)
+    await until(() => engine.getState().chapter === 118 && engine.getState().status === 'playing')
+    expect(fx.pathAsked).toBe(2)
+  })
+
+  it('tells what has settled: a chapter\'s end and the next one\'s start are one change, never a stop between', async () => {
+    recorded(19, 117, 2); recorded(19, 118, 2)
+    fx.prefs.ttsAutoNext = true
+    const seen: string[] = []
+    engine.onSettled(s => { const now = `${s.chapter} ${s.status}`; if (seen[seen.length - 1] !== now) seen.push(now) })
+    engine.start(19, 117)
+    await until(() => engine.getState().chapter === 118 && engine.getState().status === 'playing')
+    await adv(50)
+    expect(seen).toEqual(['117 loading', '117 playing', '118 loading', '118 playing'])
+  })
+
+  it('gives up each sound\'s own media session: the app has one for the whole reading', async () => {
+    recorded(19, 117, 2)
+    fx.prefs.ttsNumbers = true
+    engine.start(19, 117)
+    await until(() => engine.getState().status === 'idle')
+    expect(fx.clips).toHaveLength(2)
+    expect(fx.owned).toEqual(fx.clips)
+  })
+
+  it('a reading the screens started ends when the screens go', async () => {
+    const { PlayerProvider } = await import('../client/src/store/player')
+    const shown = fx.mount<Player>(PlayerProvider as never)
+    recorded(19, 117, 3)
+    shown().start(19, 117)
+    await until(() => shown().status === 'playing')
+    fx.unmount()
+    await adv(200)
+    expect(engine.getState().status).toBe('idle')
+    expect(fx.clips[0].playing).toBe(false)
+  })
+
+  it('a reading held from outside goes on when the screens go', async () => {
+    const { PlayerProvider } = await import('../client/src/store/player')
+    fx.mount<Player>(PlayerProvider as never)()
+    recorded(19, 117, 3)
+    engine.heldOutside()
+    engine.start(19, 117)
+    await until(() => engine.getState().status === 'playing')
+    fx.unmount()
+    await adv(200)
+    expect(engine.getState().status).toBe('playing')
+    expect(fx.clips[0].playing).toBe(true)
+  })
+
+  it('the screens show the reading a car started before they opened', async () => {
+    recorded(19, 117, 3)
+    engine.start(19, 117)
+    await until(() => engine.getState().status === 'playing')
+    const { PlayerProvider } = await import('../client/src/store/player')
+    const shown = fx.mount<Player>(PlayerProvider as never)
+    expect(shown().status).toBe('playing')
+    expect(shown().chapter).toBe(117)
+    shown().toggle()
+    expect(shown().status).toBe('paused')
+    expect(engine.getState().status).toBe('paused')
+  })
+})
+
+describe('the end of a chapter with no reader on screen', () => {
+  it('goes on into the next chapter by itself', async () => {
+    recorded(19, 117, 2); recorded(19, 118, 2)
+    fx.prefs.ttsAutoNext = true
+    const moved: string[] = []
+    player().onNextChapter((from, to) => moved.push(`${from.book}:${from.chapter} to ${to.book}:${to.chapter}`))
+    player().start(19, 117)
+    await until(() => player().chapter === 118 && player().status === 'playing')
+    expect(player().spoken?.v).toBe(1)
+    expect(fx.begun).toContain('chapter/adam/19/118')
+    expect(moved).toEqual(['19:117 to 19:118'])
+  })
+
+  it('takes the reading path\'s next portion before the Bible\'s next chapter', async () => {
+    recorded(19, 117, 2); recorded(19, 118, 2); recorded(43, 3, 2)
+    fx.prefs.ttsAutoNext = true
+    fx.pathNext.set('19/117', { book: 43, chapter: 3 })
+    player().start(19, 117)
+    await until(() => player().book === 43 && player().status === 'playing')
+    expect(player().chapter).toBe(3)
+  })
+
+  it('stops at the end with "next chapter" off', async () => {
+    recorded(19, 117, 2); recorded(19, 118, 2)
+    player().start(19, 117)
+    await until(() => player().status === 'idle')
+    await adv(5000)
+    expect(player().status).toBe('idle')
+    expect(fx.begun).not.toContain('chapter/adam/19/118')
   })
 })
 
@@ -266,9 +406,10 @@ describe('a chapter left while it loads', () => {
   })
 
   it('Listen on a verse selection while the same chapter loads from its top reads the selection and stops at its end', async () => {
-    recorded(43, 3)
-    const ended: string[] = []
-    player().onEnded((b, c) => ended.push(`${b}:${c}`))
+    recorded(43, 3); recorded(43, 4)
+    fx.prefs.ttsAutoNext = true
+    const moved: string[] = []
+    player().onNextChapter((from, to) => moved.push(`${from.book}:${from.chapter} to ${to.book}:${to.chapter}`))
     const down = fx.later()
     fx.slowAudio.set('chapter/adam/43/3', down)
     player().start(43, 3)                                 // Listen: the chapter from its top
@@ -283,7 +424,8 @@ describe('a chapter left while it loads', () => {
     expect(rec.currentTime).toBeLessThan(4.5)
     await until(() => player().status === 'idle')
     expect(rec.currentTime).toBeLessThan(8.1)             // verse 3 is not read
-    expect(ended).toEqual([])
+    await adv(5000)
+    expect(moved).toEqual([])                             // nor the next chapter begun
   })
 
   it('a stop at the end of a selection asked while the same chapter loads from that verse is kept', async () => {

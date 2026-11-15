@@ -64,6 +64,12 @@ describe('the table', () => {
     expect(props.theme.enum).toEqual(['system', ...ids])
     expect([...props.themeLight.enum!, ...props.themeDark.enum!].sort()).toEqual([...ids].sort())
   })
+  it('names the themes in change_settings once, in the fields that take them, not again in its description', () => {
+    const said = toolRow('change_settings')!.description
+    // the two a reader gets by default, and the word the true black ones begin with
+    expect(THEMES.map(th => th.id).filter(id => new RegExp(`\\b${id}\\b`).test(said))).toEqual(['paper', 'slate', 'black'])
+    expect(said).toContain('system follows the device between themeLight and themeDark')
+  })
   it('gives change_settings the ranges the validator holds to', () => {
     for (const [key, p] of Object.entries(toolRow('change_settings')!.input.properties)) {
       const ok = (v: unknown) => readPrefs({ [key]: v })?.[key as keyof ReturnType<typeof readPrefs>] !== undefined

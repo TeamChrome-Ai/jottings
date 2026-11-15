@@ -1,6 +1,5 @@
 import { AppRegistry, Platform } from 'react-native'
 import { requireOptionalNativeModule } from 'expo'
-import { t } from '@shared/i18n'
 import { createHold } from './readAloudHold'
 import type { ExitInfo, Phone, Scene } from './readAloudLogCore'
 
@@ -14,7 +13,6 @@ import type { ExitInfo, Phone, Scene } from './readAloudLogCore'
 const TASK = 'ReadAloudClock'
 interface Native {
   hold(task: string): boolean
-  voice(title: string, label: string): void
   snapshot(): Phone
   exitReasons(max: number): ExitInfo[]
   watch(on: boolean): void
@@ -26,11 +24,19 @@ const hold = createHold(() => native?.hold(TASK) ?? false, (fn, ms) => { const t
 /** Registered at startup (index.ts), before Android can be asked for the task. */
 export function registerReadAloudTask() { if (native) AppRegistry.registerHeadlessTask(TASK, () => hold.task) }
 
-/** The player's status, on every change: a reading is on from loading until it goes idle or fails. `voice`: the chapter
- *  the device voice reads, for the notification of the service that keeps it going (ReadingService.kt, report #36). */
-export const keepClock = (reading: boolean, voice?: string) => {
+let on = false
+/** The player's status, on every change: a reading is on from loading until it goes idle or fails. (The service that
+ *  keeps the app from being frozen while it reads, the device voice included, is the media session's:
+ *  modules/media-library, report #36.) */
+export const keepClock = (reading: boolean) => {
+  on = reading
   hold.set(reading)
-  if (reading && voice) native?.voice(voice, t('Read aloud'))
+}
+/** A command from outside the screens (a car's Play, lib/car.ts) has work to do before a reading is on, and the app
+ *  may not be on screen or even open: the task is opened for it, and let go as after a reading unless one starts. */
+export const wakeClock = () => {
+  hold.set(true)
+  if (!on) hold.set(false)
 }
 
 /** The phone's state for the read-aloud log (lib/readAloudLog.ts); null off Android. */

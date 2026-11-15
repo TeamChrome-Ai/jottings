@@ -152,8 +152,9 @@ export type OutlineLoad =
 export const outlineApiPath = (p: { id?: string; code?: string }): string | null =>
   p.code ? `/outlines/shared/${encodeURIComponent(p.code)}` : p.id ? `/outlines/${encodeURIComponent(p.id)}` : null
 
-/** The reader accepts the verse as a `v` query param (it scrolls once, then clears it), not the web `#v` hash. */
-export const openRef = (r: Ref) => router.push({ pathname: '/read/[book]/[chapter]', params: { book: String(r.book), chapter: String(r.chapter), v: r.v1 !== undefined ? String(r.v1) : '' } })
+/** The reader accepts the verse as a `v` query param (it scrolls once, then clears it), not the web `#v` hash; a range
+ *  ("Rom. 8:1-4") gives its last verse as `v2`, as Search does, and the reader marks them all. */
+export const openRef = (r: Ref) => router.push({ pathname: '/read/[book]/[chapter]', params: { book: String(r.book), chapter: String(r.chapter), v: r.v1 !== undefined ? String(r.v1) : '', v2: r.v1 !== undefined && r.v2 !== undefined && r.v2 > r.v1 ? String(r.v2) : '' } })
 
 /**
  * Loads the outline named by the route; `reloadKey` forces a refetch (sign-in turning a 403 into a load).

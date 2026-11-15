@@ -5,7 +5,8 @@ import { authorShown } from '../../../../src/lib/editionCore'
 import { siteOrigin } from '../../../../src/lib/outlines'
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native'
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router'
+import type { NavigationProp, ParamListBase } from 'expo-router/build/react-navigation/native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import SwipePager, { type Page, type SwipePagerHandle } from '../../../../src/components/SwipePager'
 import ReaderPage, { type PageLayout } from '../../../../src/components/ReaderPage'
@@ -17,8 +18,6 @@ import { formatRef, formatVerseRuns, type Ref } from '@shared/ref'
 import { book as bookMeta, chapterIndex, fetchChapter, key as chapterKeyOf, nextChapter, peekChapter, prevChapter, validRef, verseId, warmAround, type ChapterData } from '../../../../src/lib/bible'
 import { useText } from '../../../../src/lib/text'
 import { TEXT_SHORT, peekShownText } from '@shared/texts'
-import { note } from '../../../../src/lib/readAloudLog'
-import { place } from '../../../../src/lib/readAloudLogCore'
 import { cachedGet, get, getApiBase, isNetworkError } from '../../../../src/lib/api'
 import { addBookmark, listBookmarks, removeBookmark } from '../../../../src/lib/library'
 import { bookmarkIds, bookmarkKey, bookmarkTitle, markedVerses, type BookmarkTarget } from '../../../../src/lib/bookmarks'
@@ -96,9 +95,10 @@ export default function ReadScreen() {
 }
 
 function ReadScreenPage() {
-  const params = useLocalSearchParams<{ book: string; chapter: string; v?: string; v2?: string; listen?: string; ministry?: string }>()
+  const params = useLocalSearchParams<{ book: string; chapter: string; v?: string; v2?: string; ministry?: string }>()
   const player = usePlayer()
   const router = useRouter()
+  const navigation = useNavigation<NavigationProp<ParamListBase>>()
   const { user, ready } = useAuth()
   // the fields this screen reads, not the whole record: a theme tap must not re-render the reader
   const livePrefs = usePrefPick(SCREEN_PREFS)
@@ -465,21 +465,8 @@ function ReadScreenPage() {
     markRef.current()
     if (spokenHere.v > 0 && !scrubbing.current) { const y = verseY(spokenHere.v); if (y !== null) scrollRef.current?.scrollTo({ y, animated: !prefs.reduceMotion }) }
   }, [spokenHere, verseY, prefs.reduceMotion])
-  useEffect(() => {
-    player.onEnded((b, c) => {
-      if (!prefs.ttsAutoNext) return note('no-next', 'continue into the next chapter is off')
-      if (b !== bookN || c !== chapterN) return note('no-next', `the reader shows ${place(bookN, chapterN)}`)
-      // the path's next portion while one is on (its chapter; the ministry `then` is read, not listened to)
-      const nx = nextRef.current
-      if (!nx) return note('no-next', 'the end of the path or of the Bible')
-      note('next', undefined, place(nx.book, nx.chapter))
-      router.replace({ pathname: '/read/[book]/[chapter]', params: { book: String(nx.book), chapter: String(nx.chapter), listen: '1' } })
-    })
-    return () => player.onEnded(null)
-  }, [player, prefs.ttsAutoNext, bookN, chapterN, router])
   const readingHere = player.status === 'playing' && player.book === bookN && player.chapter === chapterN
   useEffect(() => { if (readingHere && prefs.ttsAutoNext && next) player.warm(next.book, next.chapter) }, [readingHere, prefs.ttsAutoNext, next?.book, next?.chapter])  // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (params.listen === '1' && data) player.start(bookN, chapterN, 1) }, [params.listen, data, bookN, chapterN])  // eslint-disable-line react-hooks/exhaustive-deps
   const listen = () => { if (player.status === 'loading') return; if (player.status !== 'idle' && player.book === bookN && player.chapter === chapterN) player.toggle(); else player.start(bookN, chapterN, selList[0] ?? 1, prefs.ttsStopAtSelection && selList.length ? { stopAfter: selList[selList.length - 1] } : undefined) }
 
   /** Footnote cross-reference: within this chapter scroll to the verse and flash it selected; elsewhere open that chapter. */
@@ -562,9 +549,13 @@ function ReadScreenPage() {
   const navigate = useCallback((t: Target) => {
     scrollY.current = 0
     scrollRef.current?.scrollTo({ y: 0, animated: false })
-    // setParams keeps every param it is not given: the arrival's (the verse, read aloud going on, a ministry link) act once
-    router.setParams({ book: String(t.book), chapter: String(t.chapter), v: '', v2: '', listen: '', ministry: '' })
-  }, [router])
+    // setParams keeps every param it is not given: the arrival's (the verse, a ministry link) act once. This
+    // screen's own params: read aloud turns a reader that sits behind another tab or screen too
+    navigation.setParams({ book: String(t.book), chapter: String(t.chapter), v: '', v2: '', ministry: '' })
+  }, [navigation])
+  // read aloud went on into the next chapter: a reader showing the one it finished turns with it
+  const { onNextChapter } = player
+  useEffect(() => onNextChapter((from, to) => { if (from.book === bookN && from.chapter === chapterN) navigate(to) }), [onNextChapter, bookN, chapterN, navigate])
   const reduce = prefs.reduceMotion
   const reduceRef = useRef(reduce)
   reduceRef.current = reduce

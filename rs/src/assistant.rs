@@ -24,10 +24,16 @@ const URL: &str = "https://api.openai.com";
 const EFFORT: &str = "none";
 /// Reader messages a day (UTC), all accounts together, and for one account.
 const DAILY: i64 = 2000;
-const EACH: i64 = 30;
+const EACH: i64 = 75;
+/// The reader messages a UTC day for the accounts of under a day together (`BEREAN_CHAT_NEW`): an account is free to
+/// make, so accounts made by the hundred would each bring `EACH` messages and only `DAILY` would stop them, for
+/// every reader.
+const FRESH: i64 = 300;
 /// Model calls one reader message may take, its tools' rounds included (shared/assistantTools.ts TURN_CALLS).
 pub(crate) const CALLS: usize = 6;
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
+/// How long the end of a reply is waited for once its `[DONE]` has come (`complete`).
+const DRAIN: std::time::Duration = std::time::Duration::from_millis(100);
 /// Past this many bytes of one reply (its words and its calls' arguments) the server stops reading it: the request sets
 /// no output limit, which the three providers name differently.
 const ANSWER_CHARS: usize = 8000;
@@ -39,15 +45,26 @@ const CONVERSATION_BYTES: usize = 200_000;
 const REQUEST_BYTES: usize = 96_000;
 /// The tools run for one reply of the model; a call past them is answered that there were too many.
 const CALLS_AT_ONCE: usize = 8;
-/// The reader messages the model is shown, with what followed each.
-const HISTORY: usize = 8;
+/// The results that give paragraphs of the library for one reader message; a library tool called past them is not run
+/// (`ENOUGH`). Two leaves a question of two subjects its second search, and a first search that missed another.
+const READINGS: usize = 2;
+/// The reader messages the model is shown at most, with what followed each. The app keeps up to this many and cuts
+/// back to eight when one more comes (client/src/lib/assistant.ts `trimmed`), so the conversation the model is shown
+/// begins with the same messages from one reader message to the next and a provider's cache keeps it; an app of
+/// before 2.0.1 keeps eight and drops the oldest at every message, and all eight are shown.
+const HISTORY: usize = 12;
 const MESSAGE_CHARS: usize = 2000;
 const RESULT_CHARS: usize = 20_000;
 const MESSAGES: usize = 400;
 /// A paragraph in a library tool's answer, as the model test of 2026-11-14 gave them; read_paragraph gives more.
+/// `BEREAN_PARA_CHARS` sets another cut for the library's paragraphs, within `PARA_BOUNDS` (`para_chars`).
 const PARA_CHARS: usize = 1500;
+const PARA_BOUNDS: std::ops::RangeInclusive<usize> = 600..=3000;
 const WHOLE_CHARS: usize = 6000;
 const ON_VERSE: usize = 8;
+/// The verses search_bible gives of those it finds, and the characters of a query it reads.
+const FOUND: usize = 10;
+const QUERY_CHARS: usize = 200;
 /// How long the app has to run its tools and post again.
 const PENDING_SECS: i64 = 600;
 
@@ -57,7 +74,9 @@ const PENDING_SECS: i64 = 600;
 /// caches keep it and the tools as one prefix while the edition stays.
 pub const SYSTEM: &str = r#"You are Ask, the assistant inside {app}, a Bible study app with J. N. Darby's translation and a library of the written ministry of 19th and early 20th century "Brethren" writers{authors}. You answer questions about the Bible and the ministry, help the reader find their way round the app, and open screens and change settings when the reader asks you to.
 
-For a question about the Bible, doctrine or the Christian life, call search_library (or ministry_on_verse for one verse), then answer the reader's question in 3 to 6 sentences, using only the paragraphs you are given. After each sentence, put in square brackets the id of every paragraph that sentence rests on, like [12345]. Say nothing the paragraphs do not say. If the paragraphs do not answer the question, say so plainly in one sentence. Plain prose, no headings, no lists.
+If the reader asks what you are, who made you, or which model, company or technology is behind you, say only that you are Ask, the assistant of {app}, made by {owner}. Never name any other company, model or provider as what you are or run on, and neither confirm nor deny a guess about one.
+
+For a question about the Bible, doctrine or the Christian life, call search_library (or ministry_on_verse for one verse), then answer the reader's question in 3 to 6 sentences, using only the paragraphs you are given. After each sentence, put in square brackets the id of every paragraph that sentence rests on, like [12345]. Say nothing the paragraphs do not say. Where several paragraphs bear on the question, bring in what each one adds, and what one writer says that another does not, rather than resting the whole answer on the first one or two. If the paragraphs do not answer the question, or answer only part of it, say so plainly in one sentence about the library ("The library does not say …"), and never speak of paragraphs, of passages you were given, or of your search: the reader sees only the answer and its sources. Plain prose, no headings, no lists. Search the library once for one message of the reader's, and a second time only if their question has two distinct subjects. Only when the reader asks where the Bible says something, or asks for a verse or a passage itself, call search_bible with the words to find (read_verses for a passage you can already name) and answer from the verses, saying only what they say. For every other question the answer is from the library's paragraphs: a verse may be quoted beside them but never takes their place. Give every verse you speak of by its reference, like John 3:16, and never put a paragraph's id after a verse. Do not ask the reader a question back.
 
 For a question about the app, call app_guide and answer from the sections it gives, in plain steps, and offer to open the screen they name.
 
@@ -70,7 +89,9 @@ Answer in the language the reader writes in."#;
 /// Read once from the environment: without `BEREAN_CHAT_KEY` the assistant is off and no model is asked. `url` is the
 /// chat completions host (`BEREAN_CHAT_URL`), a local stand-in for the tests and the web check. `secret` signs what a
 /// turn hands to the app; it is new at every start, so a turn in flight across a restart is asked again.
-pub struct Config { pub(crate) key: Option<String>, pub(crate) model: String, pub(crate) url: String, pub(crate) daily: i64, pub(crate) each: i64, pub(crate) effort: Option<String>, secret: [u8; 32], spent: std::sync::Mutex<HashMap<String, i64>> }
+/// `extra` is `BEREAN_CHAT_EXTRA`: fields added to every request to the model, none unless the operator sets them.
+/// `para_chars` is where a paragraph of search_library and ministry_on_verse is cut (`BEREAN_PARA_CHARS`).
+pub struct Config { pub(crate) key: Option<String>, pub(crate) model: String, pub(crate) url: String, pub(crate) daily: i64, pub(crate) each: i64, pub(crate) fresh: i64, pub(crate) effort: Option<String>, pub(crate) extra: serde_json::Map<String, Value>, pub(crate) para_chars: usize, secret: [u8; 32], spent: std::sync::Mutex<HashMap<String, i64>> }
 impl Config {
     pub fn from_env() -> Config {
         let var = |k: &str| std::env::var(k).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
@@ -78,11 +99,40 @@ impl Config {
             var("BEREAN_CHAT_URL").map(|u| u.trim_end_matches('/').to_string()).unwrap_or_else(|| URL.into()),
             var("BEREAN_CHAT_DAILY").and_then(|d| d.parse().ok()).unwrap_or(DAILY), var("BEREAN_CHAT_EACH").and_then(|d| d.parse().ok()).unwrap_or(EACH));
         if let Some(e) = var("BEREAN_CHAT_EFFORT") { c.effort = Some(e).filter(|e| e != "default") }
-        if c.key.is_some() { tracing::info!("assistant on: {}, at most {} reader messages a day and {} for an account", c.model, c.daily, c.each) } else { tracing::info!("assistant off: no BEREAN_CHAT_KEY") }
+        if let Some(n) = var("BEREAN_CHAT_NEW").and_then(|d| d.parse().ok()) { c.fresh = n }
+        if c.key.is_some() { tracing::info!("assistant on: {}, at most {} reader messages a day, {} for an account and {} for the accounts of under a day together", c.model, c.daily, c.each, c.fresh) } else { tracing::info!("assistant off: no BEREAN_CHAT_KEY") }
+        let (extra, refused) = extra_fields(var("BEREAN_CHAT_EXTRA").as_deref());
+        for why in refused { tracing::warn!("{why}") }
+        // the names only: a value may be an account's own (a cache key)
+        if !extra.is_empty() { tracing::info!("assistant: BEREAN_CHAT_EXTRA adds to every request to the model: {}", extra.keys().cloned().collect::<Vec<_>>().join(", ")) }
+        c.extra = extra;
+        let (chars, said) = para_chars(var("BEREAN_PARA_CHARS").as_deref());
+        if let Some(said) = said { tracing::info!("{said}") }
+        c.para_chars = chars;
         c
     }
-    pub fn new(key: Option<String>, model: String, url: String, daily: i64, each: i64) -> Config { Config { key, model, url, daily, each, effort: Some(EFFORT.into()), secret: rand::random(), spent: Default::default() } }
+    pub fn new(key: Option<String>, model: String, url: String, daily: i64, each: i64) -> Config { Config { key, model, url, daily, each, fresh: FRESH, effort: Some(EFFORT.into()), extra: Default::default(), para_chars: PARA_CHARS, secret: rand::random(), spent: Default::default() } }
     pub fn off() -> Config { Config::new(None, MODEL.into(), URL.into(), DAILY, EACH) }
+}
+/// `BEREAN_PARA_CHARS` as read at start: the characters a paragraph of search_library and ministry_on_verse is cut
+/// at, and what the log says of it. It is for trying a shorter cut against the real model without a build: unset, or
+/// not a whole number, it is `PARA_CHARS`; a number outside `PARA_BOUNDS` is the nearer bound.
+pub(crate) fn para_chars(raw: Option<&str>) -> (usize, Option<String>) {
+    let Some(raw) = raw else { return (PARA_CHARS, None) };
+    let Ok(asked) = raw.parse::<usize>() else { return (PARA_CHARS, Some(format!("assistant: BEREAN_PARA_CHARS is not a whole number: a library paragraph is cut at {PARA_CHARS} characters, as without it"))) };
+    let chars = asked.clamp(*PARA_BOUNDS.start(), *PARA_BOUNDS.end());
+    (chars, Some(if chars == asked { format!("assistant: a library paragraph is cut at {chars} characters (BEREAN_PARA_CHARS)") } else { format!("assistant: BEREAN_PARA_CHARS is {asked}, outside {} to {}: a library paragraph is cut at {chars} characters", PARA_BOUNDS.start(), PARA_BOUNDS.end()) }))
+}
+/// The fields of a request that are the server's own (`request`): `BEREAN_CHAT_EXTRA` sets none of them.
+const OWN_FIELDS: [&str; 5] = ["model", "messages", "tools", "stream", "stream_options"];
+/// `BEREAN_CHAT_EXTRA` as read at start: the fields it adds to every request, and what is said of what it may not set.
+/// It is for what the providers name differently and the request leaves out: an output limit, a cache's key or its
+/// lifetime. Only a JSON object adds anything, and none of the server's `OWN_FIELDS`. Nothing said here holds a value.
+pub(crate) fn extra_fields(raw: Option<&str>) -> (serde_json::Map<String, Value>, Vec<String>) {
+    let Some(raw) = raw else { return (Default::default(), Vec::new()) };
+    let Ok(Value::Object(mut fields)) = serde_json::from_str::<Value>(raw) else { return (Default::default(), vec!["assistant: BEREAN_CHAT_EXTRA is not a JSON object: ignored, and no field is added".into()]) };
+    let refused = OWN_FIELDS.iter().filter(|k| fields.remove(**k).is_some()).map(|k| format!("assistant: BEREAN_CHAT_EXTRA may not set {k}, the server's own field: ignored")).collect();
+    (fields, refused)
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -98,14 +148,14 @@ static TOOL_DEFS: Lazy<Value> = Lazy::new(|| json!(TOOLS.iter().map(|r| json!({ 
 
 /// The server's tools: a row of the table that runs on the server is one of these.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum ServerTool { SearchLibrary, MinistryOnVerse, ReadParagraph, ReadVerses, LookUpWord, AppGuide }
+pub(crate) enum ServerTool { SearchLibrary, MinistryOnVerse, ReadParagraph, ReadVerses, SearchBible, LookUpWord, AppGuide }
 impl ServerTool {
-    pub(crate) const ALL: [ServerTool; 6] = [ServerTool::SearchLibrary, ServerTool::MinistryOnVerse, ServerTool::ReadParagraph, ServerTool::ReadVerses, ServerTool::LookUpWord, ServerTool::AppGuide];
+    pub(crate) const ALL: [ServerTool; 7] = [ServerTool::SearchLibrary, ServerTool::MinistryOnVerse, ServerTool::ReadParagraph, ServerTool::ReadVerses, ServerTool::SearchBible, ServerTool::LookUpWord, ServerTool::AppGuide];
     pub(crate) fn of(name: &str) -> Option<ServerTool> { ServerTool::ALL.into_iter().find(|t| t.name() == name) }
     pub(crate) fn name(self) -> &'static str {
         match self {
             ServerTool::SearchLibrary => "search_library", ServerTool::MinistryOnVerse => "ministry_on_verse", ServerTool::ReadParagraph => "read_paragraph",
-            ServerTool::ReadVerses => "read_verses", ServerTool::LookUpWord => "look_up_word", ServerTool::AppGuide => "app_guide",
+            ServerTool::ReadVerses => "read_verses", ServerTool::SearchBible => "search_bible", ServerTool::LookUpWord => "look_up_word", ServerTool::AppGuide => "app_guide",
         }
     }
     /// The tools whose answers are paragraphs of the library, which an answer's citations name.
@@ -153,6 +203,12 @@ fn server_results_since_reader(msgs: &[Msg]) -> Vec<ServerTool> {
     let names = call_names(msgs);
     msgs[last_reader(msgs)..].iter().filter_map(|m| match m { Msg::Tool { tool_call_id, .. } => names.get(tool_call_id.as_str()).and_then(|n| ServerTool::of(n)), _ => None }).collect()
 }
+/// The results that have given paragraphs of the library since the reader's latest message: a result with none (a
+/// search that found nothing, no such paragraph, `ENOUGH`) is no reading.
+fn readings(msgs: &[Msg]) -> usize {
+    let names = call_names(msgs);
+    msgs[last_reader(msgs)..].iter().filter(|m| matches!(m, Msg::Tool { tool_call_id, content } if !paragraph_ids(names.get(tool_call_id.as_str()).copied(), content).is_empty())).count()
+}
 /// The paragraph ids the library tools have given in this conversation.
 fn supplied(msgs: &[Msg]) -> HashSet<i64> {
     let names = call_names(msgs);
@@ -170,11 +226,30 @@ pub(crate) fn stand_in(name: Option<&str>, content: &str) -> String {
     let ids = paragraph_ids(name, content);
     if ids.is_empty() { json!({ "done": true }) } else { json!({ "paragraphs": ids.into_iter().map(|id| json!({ "id": id })).collect::<Vec<_>>() }) }.to_string()
 }
+/// A library tool's result as the model is shown it for the reader's latest message: each paragraph as a line
+/// `[id] author, work, section` with its text under it, and a blank line between two. The id is what an answer cites;
+/// the paragraph's place in its work (`n`, `para`, the work's id and collection) is the app's, to open it by, and the
+/// model is not shown it. None for anything but paragraphs in the server's own shape (why there are none, a search that
+/// found nothing, what a client made up), which goes to the model as it came. The app is sent the JSON, keeps it and
+/// posts it back; `supplied`, `stand_in` and the hand-over's digest read that, never this.
+fn plain_paragraphs(name: Option<&str>, content: &str) -> Option<String> {
+    if !name.and_then(ServerTool::of).is_some_and(ServerTool::paragraphs) { return None }
+    let v: Value = serde_json::from_str(content).ok()?;
+    let paragraphs = v.as_object().filter(|o| o.len() == 1)?.get("paragraphs")?.as_array().filter(|ps| !ps.is_empty())?;
+    let mut out = Vec::new();
+    for p in paragraphs {
+        let (id, text) = (p["id"].as_i64()?, p["text"].as_str()?);
+        let from: Vec<&str> = [&p["author"], &p["work"]["title"], &p["section"]].into_iter().filter_map(Value::as_str).filter(|s| !s.is_empty()).collect();
+        out.push(format!("[{id}] {}\n{text}", from.join(", ")));
+    }
+    Some(out.join("\n\n"))
+}
 
 /// The conversation as the model is shown it: the system prompt, then the last HISTORY reader messages with what
 /// followed each. A call the app never answered (a turn the reader stopped) is left out with its message if nothing
 /// else is in it. Every tool's result for an earlier reader message is its `stand_in`: no text a tool read for one
-/// message can steer the next, and the conversation does not grow by ten paragraphs a question.
+/// message can steer the next, and the conversation does not grow by ten paragraphs a question. A library tool's
+/// result for the latest message is its `plain_paragraphs`: the same paragraphs in fewer tokens than their JSON.
 fn prompt(msgs: &[Msg], authors: &str) -> Vec<Value> {
     let names = call_names(msgs);
     let answered: HashSet<&str> = msgs.iter().filter_map(|m| match m { Msg::Tool { tool_call_id, .. } => Some(tool_call_id.as_str()), _ => None }).collect();
@@ -195,7 +270,8 @@ fn prompt(msgs: &[Msg], authors: &str) -> Vec<Value> {
             }
             Msg::Tool { tool_call_id, content } => {
                 if !called.contains(tool_call_id.as_str()) { continue }
-                let content = if i < latest { stand_in(names.get(tool_call_id.as_str()).copied(), content) } else { content.clone() };
+                let name = names.get(tool_call_id.as_str()).copied();
+                let content = if i < latest { stand_in(name, content) } else { plain_paragraphs(name, content).unwrap_or_else(|| content.clone()) };
                 out.push(json!({ "role": "tool", "tool_call_id": tool_call_id, "content": content }));
             }
             Msg::User { .. } => out.push(json!(m)),
@@ -218,10 +294,118 @@ fn ids_so_far(held: &str) -> bool { held.strip_prefix('[').is_some_and(|r| r.byt
 
 /// The model's words as they stream, with every bracket of ids kept to the ids the tools supplied: a bracket left with
 /// none is dropped. A bracket is held until it closes, so no id the tools did not supply reaches the reader.
-pub(crate) struct Filter { supplied: HashSet<i64>, held: String }
+///
+/// And no answer says whose model answers (`NAMES`): the words that may yet be the start of a name wait for what
+/// follows them (`hold_from`), so a name is seen whole before any of it is sent, and from a name on nothing more is.
+/// `turn` then gives the reader `own_line` for the whole answer.
+pub(crate) struct Filter { supplied: HashSet<i64>, held: String, tail: String, named: bool }
+/// The maker of the model behind Ask and its models, as an answer might name them: the owner's rule is that Ask is the
+/// app's own and says so (SYSTEM), and this holds it to that whatever the model says. "open air" is no name.
+/// Between the halves there may be a space or two (a no-break or zero-width one too), or one hyphen, dash, stop or
+/// underline; any word that begins GPT is one of its models.
+static NAMES: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"(?i)\bopen(?:[\s\u{200B}-\u{200D}\u{2060}]{0,2}|[-–—._])ai\b|chat(?:[\s\u{200B}-\u{200D}\u{2060}]{0,2}|[-–—._])gpt|\bgpt").unwrap());
+/// A bracket's own marks, with the figures of ids after its `[`.
+static MARKS: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"\[[0-9 ,;]*|\]").unwrap());
+/// For each byte of `text`, whether it stands outside every bracket: a closed bracket goes with all it holds (one
+/// inside another too), a `]` that closes nothing goes, and a bracket never closed loses its `[` alone.
+fn outside(text: &str) -> Vec<bool> {
+    let mut keep = vec![true; text.len()];
+    let mut open: Vec<usize> = Vec::new();
+    for (i, c) in text.char_indices() {
+        match c {
+            '[' => open.push(i),
+            ']' => match open.pop() { Some(a) => keep[a..=i].fill(false), None => keep[i] = false },
+            _ => {}
+        }
+    }
+    for a in open { keep[a] = false }
+    keep
+}
+/// For each byte of `text`, whether it is no bracket's mark and no figure of ids after a `[`.
+fn unmarked(text: &str) -> Vec<bool> {
+    let mut keep = vec![true; text.len()];
+    for m in MARKS.find_iter(text) { keep[m.range()].fill(false) }
+    keep
+}
+/// Whether the words name another. A bracket between the halves of a name hides neither from the other: the reader
+/// never sees a citation (the app shows it apart, and `sentences` takes it out), and reads past any other. So a name
+/// is looked for in the words as they stand, without their brackets and what those hold, and without the brackets'
+/// marks alone. A name at the very end is one only when the words have `ended`: the next letter may make it another
+/// word ("open air").
+fn named_in(text: &str, ended: bool) -> bool {
+    [vec![true; text.len()], outside(text), unmarked(text)].iter().any(|keep| {
+        let (left, _) = view(text, keep);
+        NAMES.find_iter(&left).any(|m| ended || m.end() < left.len())
+    })
+}
+/// `text` as it is read under `keep`: the bytes kept, a run of space as one space, in small letters; and for each
+/// letter of that, where it stands in `text`.
+fn view(text: &str, keep: &[bool]) -> (String, Vec<usize>) {
+    let (mut left, mut at) = (String::new(), Vec::new());
+    for (i, c) in text.char_indices().filter(|(i, _)| keep[*i]) {
+        if c.is_whitespace() {
+            if !left.ends_with(' ') { left.push(' '); at.push(i) }
+        } else {
+            for l in c.to_lowercase() { left.push(l); at.push(i) }
+        }
+    }
+    (left, at)
+}
+/// Every way `NAMES` lets a name be written, in small letters: what the words still held are measured against.
+static SPELT: Lazy<Vec<Vec<char>>> = Lazy::new(|| {
+    let gaps = [' ', '\u{200B}', '\u{200C}', '\u{200D}', '\u{2060}'];
+    let mut between: Vec<String> = vec![String::new()];
+    between.extend(gaps.iter().map(|g| g.to_string()));
+    between.extend(gaps.iter().flat_map(|a| gaps.iter().map(move |b| format!("{a}{b}"))));
+    between.extend(['-', '–', '—', '.', '_'].iter().map(|c| c.to_string()));
+    let mut all: Vec<String> = between.iter().flat_map(|b| [format!("open{b}ai"), format!("chat{b}gpt")]).collect();
+    all.push("gpt".into());
+    all.iter().map(|w| w.chars().collect()).collect()
+});
+/// The first `[` of `text` that nothing closes.
+fn first_unclosed(text: &str) -> Option<usize> {
+    let mut open: Vec<usize> = Vec::new();
+    for (i, c) in text.char_indices() {
+        match c { '[' => open.push(i), ']' => { open.pop(); } _ => {} }
+    }
+    open.first().copied()
+}
+/// Where the words that must still wait begin. A bracket not yet closed waits with all after it: its close may yet
+/// take it, and what it holds, out from between the halves of a name. Before it, the longest ending that may yet be
+/// the start of a name waits, in each of the ways a name is read (`named_in`): so however far apart the halves stand
+/// in the words, the first is never sent before the second is seen. Each way of reading only grows at its end as the
+/// words come, so what was sent before a name began can never become part of one.
+fn hold_from(all: &str) -> usize {
+    let mut hold = first_unclosed(all).unwrap_or(all.len());
+    let closed = &all[..hold];
+    let longest = SPELT.iter().map(Vec::len).max().unwrap_or(0);
+    for keep in [vec![true; closed.len()], outside(closed), unmarked(closed)] {
+        let (left, at) = view(closed, &keep);
+        let left: Vec<char> = left.chars().collect();
+        if let Some(i) = (left.len().saturating_sub(longest)..left.len()).find(|&i| SPELT.iter().any(|w| w.starts_with(&left[i..]))) { hold = hold.min(at[i]) }
+    }
+    hold
+}
+pub(crate) fn names_another(text: &str) -> bool { named_in(text, true) }
+/// What Ask says of itself in place of an answer that named another.
+pub(crate) fn own_line() -> String { branded("I am Ask, the assistant of {app}, made by {owner}.") }
 impl Filter {
-    pub(crate) fn new(supplied: HashSet<i64>) -> Filter { Filter { supplied, held: String::new() } }
-    pub(crate) fn push(&mut self, t: &str) -> String {
+    pub(crate) fn new(supplied: HashSet<i64>) -> Filter { Filter { supplied, held: String::new(), tail: String::new(), named: false } }
+    /// The model's asterisks go first (`unstarred`): nothing after reads them, the guard least of all.
+    pub(crate) fn push(&mut self, t: &str) -> String { let words = self.ids(&unstarred(t)); self.unnamed(words, false) }
+    /// `words` after the words held back, less the words now held back (`hold_from`); nothing once a name has come.
+    /// A name at the very end of what has come is one only when the words have ended: the next letter may make it
+    /// another word.
+    fn unnamed(&mut self, words: String, ended: bool) -> String {
+        if self.named { return String::new() }
+        let all = std::mem::take(&mut self.tail) + &words;
+        if named_in(&all, ended) { self.named = true; return String::new() }
+        if ended { return all }
+        let cut = hold_from(&all);
+        self.tail = all[cut..].to_string();
+        all[..cut].to_string()
+    }
+    fn ids(&mut self, t: &str) -> String {
         let mut out = String::new();
         for c in t.chars() {
             if self.held.is_empty() {
@@ -237,7 +421,7 @@ impl Filter {
         out
     }
     /// What is still held when the words end: a bracket of ids never closed is dropped, any other is words.
-    pub(crate) fn finish(&mut self) -> String { let held = std::mem::take(&mut self.held); if ids_so_far(&held) { String::new() } else { held } }
+    pub(crate) fn finish(&mut self) -> String { let held = std::mem::take(&mut self.held); let last = if ids_so_far(&held) { String::new() } else { held }; self.unnamed(last, true) }
     fn resolve(&mut self) -> String {
         let held = std::mem::take(&mut self.held);
         match ids_in(&held[1..held.len() - 1]) {
@@ -249,18 +433,26 @@ impl Filter {
         }
     }
 }
+/// `text` without its asterisks. They are the model's markdown, written though it is asked for plain prose, and the
+/// app draws none, so the reader would be shown them as they are; and a name may stand between them ("Open **AI**"),
+/// which the reader reads straight through. They go as the words come, before the guard, the citations or the
+/// sentences read anything: what is judged is what is shown.
+fn unstarred(text: &str) -> std::borrow::Cow<'_, str> { if text.contains('*') { text.replace('*', "").into() } else { text.into() } }
 fn cleaned(text: &str, supplied: &HashSet<i64>) -> String {
+    let text = &unstarred(text);
+    if names_another(text) { return own_line() }
     let mut f = Filter::new(supplied.clone());
     let mut out = f.push(text);
     out.push_str(&f.finish());
-    out
+    // a name that showed only once a citation no tool supplied was taken out from between its halves
+    if f.named { own_line() } else { out }
 }
 
 /// A sentence of a finished answer and the ids it rests on (shared/assistantTools.ts Sentence).
 #[derive(Serialize, Debug, PartialEq)]
 pub(crate) struct Sentence { pub(crate) text: String, pub(crate) ids: Vec<i64>, pub(crate) supported: bool }
 
-/// `text` (already `cleaned`) in sentences, each with the ids of the brackets in it or straight after its full stop
+/// `text` (already `cleaned`, so without asterisks) in sentences, each with the ids of the brackets in it or straight after its full stop
 /// that the tools `supplied`. When `library`, the answer rests on the library, and a sentence with no id is not
 /// `supported`.
 pub(crate) fn sentences(text: &str, library: bool, supplied: &HashSet<i64>) -> Vec<Sentence> {
@@ -294,11 +486,14 @@ pub(crate) fn sentences(text: &str, library: bool, supplied: &HashSet<i64>) -> V
     static BRACKET: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"\s*\[([0-9 ,;]+)\]").unwrap());
     static SPACE: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"\s+").unwrap());
     static BEFORE_STOP: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"\s+([.,;:!?])(\s|$)").unwrap());
+    // a line's list mark, markdown the model wrote though it is asked for plain prose, which the app does not draw
+    // (its asterisks are gone already, `unstarred`)
+    static MARKDOWN: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"^\s*[-•]\s+").unwrap());
     let mut out: Vec<Sentence> = Vec::new();
     for p in parts {
         let mut ids: Vec<i64> = Vec::new();
         for m in BRACKET.captures_iter(&p) { for id in ids_in(&m[1]).unwrap_or_default() { if supplied.contains(&id) && !ids.contains(&id) { ids.push(id) } } }
-        let words = BEFORE_STOP.replace_all(&SPACE.replace_all(&BRACKET.replace_all(&p, ""), " "), "$1$2").trim().to_string();
+        let words = BEFORE_STOP.replace_all(&SPACE.replace_all(&BRACKET.replace_all(&MARKDOWN.replace_all(&p, ""), ""), " "), "$1$2").trim().to_string();
         if words.is_empty() {
             if let Some(last) = out.last_mut() { for id in ids { if !last.ids.contains(&id) { last.ids.push(id) } } last.supported = !library || !last.ids.is_empty() }
             continue
@@ -348,17 +543,17 @@ async fn server_answer(s: &AppState, tool: ServerTool, args: &Value) -> ApiResul
             let Some(lib) = lib else { return Ok(no_library()) };
             let found = crate::near::nearest(s, &q).await?;
             let (ids, served) = (found.items.iter().map(|(id, _)| *id).collect::<Vec<_>>(), found.served);
-            let m = lib.clone();
-            json!({ "paragraphs": lib.db(move |c| { let mut out = Vec::new(); for id in ids { if let Some(p) = m.paragraph(c, id, served, PARA_CHARS)? { out.push(p) } } Ok(out) }).await? })
+            let (m, chars) = (lib.clone(), s.chat.para_chars);
+            json!({ "paragraphs": lib.db(move |c| { let mut out = Vec::new(); for id in ids { if let Some(p) = m.paragraph(c, id, served, chars)? { out.push(p) } } Ok(out) }).await? })
         }
         ServerTool::MinistryOnVerse => {
             let r = match need("reference").map(|r| crate::refparse::parse_ref(&r)) { Ok(Some(r)) => r, Ok(None) => return Ok(json!({ "error": "not a verse of the Bible; give one, as John 3:16" })), Err(e) => return Ok(e) };
             let Some(v) = r.v1.filter(|v| (1..1000).contains(v)) else { return Ok(json!({ "error": "give one verse, as John 3:16" })) };
             let Some(lib) = lib else { return Ok(no_library()) };
             let served = s.served().await;
-            let m = lib.clone();
+            let (m, chars) = (lib.clone(), s.chat.para_chars);
             let verse = r.book * 1_000_000 + r.chapter * 1000 + v;
-            json!({ "paragraphs": lib.db(move |c| { let mut out = Vec::new(); for id in m.on_verse(c, verse, served, ON_VERSE)? { if let Some(p) = m.paragraph(c, id, served, PARA_CHARS)? { out.push(p) } } Ok(out) }).await? })
+            json!({ "paragraphs": lib.db(move |c| { let mut out = Vec::new(); for id in m.on_verse(c, verse, served, ON_VERSE)? { if let Some(p) = m.paragraph(c, id, served, chars)? { out.push(p) } } Ok(out) }).await? })
         }
         ServerTool::ReadParagraph => {
             let Some(id) = args["id"].as_i64() else { return Ok(json!({ "error": "id is missing" })) };
@@ -373,7 +568,20 @@ async fn server_answer(s: &AppState, tool: ServerTool, args: &Value) -> ApiResul
             let ed = s.edition().await;
             let verses = s.db(move |c| Ok(crate::bible::get_range(c, &crate::edition::tables(c, ed), r.book, r.chapter, v1, v2)?)).await?;
             if verses.is_empty() { return Ok(json!({ "error": "the Bible has no such verse" })) }
-            json!({ "reference": args["reference"], "verses": verses.into_iter().map(|v| json!({ "verse": v.verse, "text": v.text })).collect::<Vec<_>>() })
+            // the book and chapter as numbers too: the app reads which verses were given from them (lib/askRefs.ts)
+            json!({ "reference": args["reference"], "book": r.book, "chapter": r.chapter, "verses": verses.into_iter().map(|v| json!({ "verse": v.verse, "text": v.text })).collect::<Vec<_>>() })
+        }
+        ServerTool::SearchBible => {
+            let q: String = match need("query") { Ok(q) => q.chars().take(QUERY_CHARS).collect(), Err(e) => return Ok(e) };
+            let scope = match text("scope").map(|sc| bible_scope(&sc)) { None => "all".to_string(), Some(Some(sc)) => sc, Some(None) => return Ok(json!({ "error": "scope is OT, NT, one book's name, or books by their number, as 43, 40-43 or 23-39,66" })) };
+            // the edition's text, as read_verses reads it: the search the Search tab runs (search.rs), its first FOUND
+            let ed = s.edition().await;
+            let found = s.db(move |c| Ok(crate::search::search(c, &crate::edition::tables(c, ed), &q, FOUND as i64, 0, &scope, None)?)).await?;
+            let verses: Vec<Value> = found.hits.into_iter().take(FOUND).filter_map(|h| {
+                let reference = crate::refparse::format_ref(&crate::refparse::Ref { book: h.book, chapter: h.chapter, v1: Some(h.verse), v2: None })?;
+                Some(json!({ "reference": reference, "book": h.book, "chapter": h.chapter, "verse": h.verse, "text": h.text }))
+            }).collect();
+            json!({ "total": found.total, "verses": verses })
         }
         ServerTool::LookUpWord => {
             let w = match need("word") { Ok(w) => w, Err(e) => return Ok(e) };
@@ -398,15 +606,28 @@ pub(crate) async fn authors(s: &AppState) -> String {
     }
 }
 fn no_library() -> Value { json!({ "error": "the ministry library is not on this server" }) }
+/// search_bible's `scope` as the search route takes it (search.rs `scope_ranges`): "OT", "NT", books by number ("43",
+/// "40-43", "23-39,66"), and, since a model names a book sooner than it numbers one, one book's name ("Romans").
+/// None for anything else: the route would search every book, and the model is told instead.
+fn bible_scope(scope: &str) -> Option<String> {
+    let t = scope.trim();
+    match t.to_uppercase().as_str() {
+        "ALL" => return Some("all".into()),
+        "OT" | "NT" => return Some(t.to_uppercase()),
+        _ => {}
+    }
+    if crate::search::scope_ranges(t).is_some() { return Some(t.to_string()) }
+    crate::refparse::bare_book(t).map(|b| b.n.to_string())
+}
 
 /// The brand's own words in the prompt and the guide (docs/BRAND.md, shared/brand.json), so that neither text names
-/// them itself: `{app}` is the app's name, `{noun}` and `{nouns}` what a reader calls an outline, one and many, and
+/// them itself: `{app}` is the app's name, `{owner}` who makes it, `{noun}` and `{nouns}` what a reader calls an outline, one and many, and
 /// `{Noun}` and `{Nouns}` the same with a capital.
 fn branded(text: &str) -> String {
     let b = crate::brand::get();
     let cap = |s: &str| { let mut c = s.chars(); c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default() };
     let one = b.noun.a.split_once(' ').map_or("", |(_, one)| one);
-    text.replace("{app}", &b.name).replace("{Nouns}", &cap(&b.noun.many)).replace("{Noun}", &cap(one)).replace("{nouns}", &b.noun.many).replace("{noun}", one)
+    text.replace("{app}", &b.name).replace("{owner}", &b.owner_short).replace("{Nouns}", &cap(&b.noun.many)).replace("{Noun}", &cap(one)).replace("{nouns}", &b.noun.many).replace("{noun}", one)
 }
 
 /// A section of docs/GUIDE.md: its `## ` heading and what follows, the markers for the tests left out.
@@ -446,6 +667,8 @@ enum Reply { Text(String), Calls(Option<String>, Vec<Call>) }
 fn request(cfg: &Config, messages: Vec<Value>) -> Value {
     let mut body = json!({ "model": cfg.model, "messages": messages, "tools": &*TOOL_DEFS, "stream": true, "stream_options": { "include_usage": true } });
     if let Some(e) = &cfg.effort { body["reasoning_effort"] = json!(e) }
+    // the operator's own fields last (`extra_fields`), and never in the place of one of the server's
+    for (k, v) in cfg.extra.iter().filter(|(k, _)| !OWN_FIELDS.contains(&k.as_str())) { body[k.as_str()] = v.clone() }
     body
 }
 fn too_large(body: &Value) -> bool { serde_json::to_vec(body).map_or(true, |b| b.len() > REQUEST_BYTES) }
@@ -453,7 +676,7 @@ async fn complete(cfg: &Config, body: Value, filter: &mut Filter, tx: &Sender<Ev
     let key = cfg.key.as_deref().ok_or_else(|| "no BEREAN_CHAT_KEY".to_string())?;
     // a host takes the OpenAI path; Google's compatible endpoint has its own, given whole
     let endpoint = if cfg.url.ends_with("/chat/completions") { cfg.url.clone() } else { format!("{}/v1/chat/completions", cfg.url) };
-    let res = reqwest::Client::new().post(endpoint).bearer_auth(key).timeout(TIMEOUT).json(&body).send().await;
+    let res = crate::http_client().post(endpoint).bearer_auth(key).timeout(TIMEOUT).json(&body).send().await;
     let mut res = match res { Ok(r) => r, Err(e) => { log(cfg, 0, &Usage::default()); return Err(e.to_string()) } };
     let status = res.status();
     if !status.is_success() {
@@ -474,6 +697,9 @@ async fn complete(cfg: &Config, body: Value, filter: &mut Filter, tx: &Sender<Ev
     };
     log(cfg, status.as_u16(), &read.usage);
     ended?;
+    // a connection is kept for the next call (`crate::http_client`) only when its reply was read to the end, and after
+    // `[DONE]` there is only the end to read; a provider that sends more is waited for no longer than `DRAIN`
+    if read.done { let _ = tokio::time::timeout(DRAIN, async { while let Ok(Some(_)) = res.chunk().await {} }).await; }
     if read.said() > ANSWER_CHARS && !read.calls.is_empty() { return Err(format!("calls past {ANSWER_CHARS} bytes")) }
     let tail = filter.finish();
     if !tail.is_empty() { let _ = tx.send(event("text", json!({ "t": tail }))).await; }
@@ -595,7 +821,8 @@ async fn run(s: AppState, uid: i64, mut msgs: Vec<Msg>, mut used: usize, tx: Sen
         match reply {
             Reply::Text(text) => {
                 let text = cleaned(&text, &ids);
-                let library = since.iter().any(|t| t.paragraphs());
+                // the line that stands for an answer naming another is Ask's own, not a claim about the library
+                let library = since.iter().any(|t| t.paragraphs()) && text != own_line();
                 let answer = Msg::Assistant { content: Some(text.clone()), tool_calls: Vec::new() };
                 say("message", json!(answer)).await;
                 say("answer", json!({ "sentences": sentences(&text, library, &ids) })).await;
@@ -603,7 +830,8 @@ async fn run(s: AppState, uid: i64, mut msgs: Vec<Msg>, mut used: usize, tx: Sen
                 break
             }
             Reply::Calls(text, calls) => {
-                let asked = Msg::Assistant { content: text.map(|t| cleaned(&t, &ids)), tool_calls: calls.clone() };
+                // words beside a call that name another are left out: the answer to come says what there is to say
+                let asked = Msg::Assistant { content: text.filter(|t| !names_another(t)).map(|t| cleaned(&t, &ids)), tool_calls: calls.clone() };
                 msgs.push(asked.clone());
                 if !say("message", json!(asked)).await { break }
                 // a change is the reader's only when the model asked for it before any text that is not the app's own came back
@@ -615,6 +843,8 @@ async fn run(s: AppState, uid: i64, mut msgs: Vec<Msg>, mut used: usize, tx: Sen
                         _ if k >= CALLS_AT_ONCE => json!({ "error": format!("too many tools at once: at most {CALLS_AT_ONCE} a reply") }),
                         None => { tracing::warn!("assistant: the model called {:?}, which is not in the table", c.function.name); json!({ "error": format!("there is no tool {}", c.function.name) }) }
                         Some(r) if r.runs == Side::Server => match (ServerTool::of(&r.name), serde_json::from_str::<Value>(if c.function.arguments.trim().is_empty() { "{}" } else { &c.function.arguments })) {
+                            // counted as each result comes back, so calls made together in one reply are bounded too
+                            (Some(tool), _) if tool.paragraphs() && readings(&msgs) >= READINGS => json!({ "limit": ENOUGH }),
                             (Some(tool), Ok(args)) => run_server(&s, tool, &args).await,
                             (Some(_), Err(_)) => json!({ "error": "the arguments are not JSON" }),
                             (None, _) => json!({ "error": format!("there is no tool {}", r.name) }),
@@ -637,6 +867,9 @@ async fn run(s: AppState, uid: i64, mut msgs: Vec<Msg>, mut used: usize, tx: Sen
     }
 }
 const REFUSED: &str = "Refused: a change is made only when the reader asks for it in their own message, before anything is read from the library, the Bible or the dictionary. Tell the reader what you would change, and that they can ask for it in a new message.";
+/// What a library tool is answered once the reader's message has had its `READINGS`: nothing is read, no paragraph is
+/// given and no id supplied. It is no failure, and the reader is told of none: the model answers from what it has.
+const ENOUGH: &str = "Not read: the library is read twice at most for one message of the reader's, and it has been. Call no library tool again for this message. Answer the reader now from the paragraphs you were given; if they do not answer the question, or answer only part of it, say so plainly in one sentence about the library, and never speak of paragraphs or of your search.";
 
 // ---------- what is handed to the app ----------
 
@@ -685,27 +918,37 @@ fn checked(cfg: &Config, uid: i64, msgs: &[Msg], token: &str) -> Option<usize> {
 // ---------- the caps ----------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Cap { Account, Day }
+enum Cap { Account, Day, Fresh }
 /// One of the account's messages and one of the day's, taken together in one statement before the first model call
 /// of a reader message, so that messages in flight together cannot pass a cap, and a message whose calls fail is still
-/// counted: None when taken, else the cap that was full. Row `who` 0 is the day's.
+/// counted: None when taken, else the cap that was full. Row `who` 0 is the day's. An account of under a day takes
+/// one of the messages such accounts have together as well (row `who` -1, `FRESH`), in the same statement; an account
+/// of a day or more is not held by that count.
 async fn take_message(s: &AppState, uid: i64) -> ApiResult<Option<Cap>> {
-    let (today, daily, each) = (crate::activity::day_key(time::OffsetDateTime::now_utc().date()), s.chat.daily, s.chat.each);
+    let (today, daily, each, fresh) = (crate::activity::day_key(time::OffsetDateTime::now_utc().date()), s.chat.daily, s.chat.each, s.chat.fresh);
     s.db(move |c| {
-        let took = c.execute("INSERT INTO assistant_messages (day, who, n) SELECT ?1, who, 1 FROM (SELECT ?2 AS who UNION ALL SELECT 0)
+        let took = c.execute("WITH f (fresh) AS (SELECT coalesce((SELECT created_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 day') FROM users WHERE id = ?2), 0))
+            INSERT INTO assistant_messages (day, who, n) SELECT ?1, who, 1 FROM (SELECT ?2 AS who UNION ALL SELECT 0 UNION ALL SELECT -1 FROM f WHERE fresh)
             WHERE coalesce((SELECT n FROM assistant_messages WHERE day = ?1 AND who = 0), 0) < ?3
               AND coalesce((SELECT n FROM assistant_messages WHERE day = ?1 AND who = ?2), 0) < ?4
-            ON CONFLICT (day, who) DO UPDATE SET n = n + 1", rusqlite::params![today, uid, daily, each])?;
-        if took == 2 { return Ok(None) }
-        let day: i64 = c.query_row("SELECT coalesce((SELECT n FROM assistant_messages WHERE day = ?1 AND who = 0), 0)", [&today], |r| r.get(0))?;
-        Ok(Some(if day >= daily { Cap::Day } else { Cap::Account }))
+              AND ((SELECT NOT fresh FROM f) OR coalesce((SELECT n FROM assistant_messages WHERE day = ?1 AND who = -1), 0) < ?5)
+            ON CONFLICT (day, who) DO UPDATE SET n = n + 1", rusqlite::params![today, uid, daily, each, fresh])?;
+        if took > 0 { return Ok(None) }
+        let n = |who: i64| c.query_row("SELECT coalesce((SELECT n FROM assistant_messages WHERE day = ?1 AND who = ?2), 0)", rusqlite::params![today, who], |r| r.get::<_, i64>(0));
+        Ok(Some(if n(0)? >= daily { Cap::Day } else if n(uid)? >= each { Cap::Account } else { Cap::Fresh }))
     }).await
 }
 /// HTTP 429 with the cap that was full and when the day turns (shared/assistantTools.ts CapReached).
 fn cap_reached(s: &AppState, cap: Cap) -> Response {
     let tomorrow = time::OffsetDateTime::now_utc().date().next_day().map(|d| d.midnight().assume_utc());
     let resets_at = tomorrow.and_then(|t| t.format(&time::format_description::well_known::Rfc3339).ok()).unwrap_or_default();
-    let (error, cap) = match cap { Cap::Account => (format!("Ask answers {} messages a day for an account", s.chat.each), "account"), Cap::Day => ("Ask has answered all it can today".to_string(), "day") };
+    // an app of 2.0.0 knows two caps, and says of `day` that Ask has answered all it can for today: true of an account
+    // of under a day too
+    let (error, cap) = match cap {
+        Cap::Account => (format!("Ask answers {} messages a day for an account", s.chat.each), "account"),
+        Cap::Day => ("Ask has answered all it can today".to_string(), "day"),
+        Cap::Fresh => ("Ask has answered all it can today for accounts made in the last day".to_string(), "day"),
+    };
     (StatusCode::TOO_MANY_REQUESTS, Json(json!({ "error": error, "cap": cap, "resets_at": resets_at }))).into_response()
 }
 

@@ -18,7 +18,8 @@ tap() {
   set -- $b
   [ -n "${4:-}" ] && adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
-service() { adb shell dumpsys activity services $PKG | grep -A40 AudioControlsService | grep -o 'isForeground=[a-z]*' | head -1 | cut -d= -f2; }
+# the media service: the app's own library service since Android Auto (modules/media-library), expo-audio's before it
+service() { adb shell dumpsys activity services $PKG | grep -A40 -E 'LibraryService|AudioControlsService' | grep -o 'isForeground=[a-z]*' | head -1 | cut -d= -f2; }
 
 if [ -n "${1:-}" ]; then
   adb install -r "$1" | tail -1

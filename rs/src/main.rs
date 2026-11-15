@@ -19,6 +19,16 @@ pub struct AppState { pub pool: DbPool, /** data/ministry.db, read-only; None wh
     /** what orders the library's paragraphs by meaning (near.rs), from the environment */ pub near: std::sync::Arc<near::Config>,
     /** the model Ask talks to (assistant.rs), from the environment */ pub chat: std::sync::Arc<assistant::Config> }
 
+/// The HTTP client of the calls to the models (assistant.rs `complete`, expand.rs `message`, near.rs `embed`): one for
+/// the process, made at its first use, so that a call goes over a connection an earlier call to the same host left
+/// open (reqwest keeps an idle one 90 seconds) where each call used to make a client, and with it a connection and
+/// its TLS handshake, of its own. It is the client each call made, `reqwest::Client::new()`, and sets no timeout: each
+/// call still sets its own on its request.
+pub(crate) fn http_client() -> &'static reqwest::Client {
+    static CLIENT: once_cell::sync::Lazy<reqwest::Client> = once_cell::sync::Lazy::new(reqwest::Client::new);
+    &CLIENT
+}
+
 impl AppState {
     /// Runs `f` on the blocking pool with a pooled connection. rusqlite is synchronous, and on a 2-vCPU host a
     /// slow query (search, Strong's) or a full pool on a runtime worker stalls every other request.

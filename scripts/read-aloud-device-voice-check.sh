@@ -37,7 +37,8 @@ john3
 tap "Read aloud" || { echo "FAIL: no Read aloud on John 3"; exit 1; }
 shown 'content-desc="Listening settings"' || { echo "FAIL: no player bar"; exit 1; }
 tap "Listening settings"
-shown 'content-desc="Use the device voice"' || { echo "FAIL: no Listening sheet"; exit 1; }
+# the sheet is longer than the screen: the switch is under its fold
+shown 'text="Pause between verses"' || { echo "FAIL: no Listening sheet"; exit 1; }
 adb shell input swipe 540 2000 540 1000 500; sleep 2
 voiceOn || { tap "Use the device voice" Switch; sleep 2; }
 voiceOn || { echo "FAIL: could not turn the device voice on"; exit 1; }
@@ -55,6 +56,8 @@ from=$(verse)
 adb shell input keyevent 3
 adb shell am start -W -a android.settings.SETTINGS >/dev/null; sleep 2
 adb shell input keyevent 3
+# one service keeps the reading going, with one notification: its media controls
+services=$(adb shell dumpsys activity services $PKG | grep -B30 'isForeground=true' | grep -o 'ServiceRecord{[^}]*}' | sed 's/.*\///; s/ .*//; s/}//' | sort -u | tr '\n' ' ')
 states=""
 for _ in $(seq 1 30); do
   sleep 3
@@ -71,5 +74,7 @@ echo "$states" | grep -q cch && { echo "FAIL: Android cached the app while it re
 echo "$states" | grep -q frozen && { echo "FAIL: Android froze the app while it read"; fail=1; } || echo "ok: never frozen"
 [ -n "$from" ] && [ -n "$to" ] && [ "$to" -ge $(( from + 5 )) ] && echo "ok: the reading went on off screen" \
   || { echo "FAIL: the reading did not go on off screen"; fail=1; }
+[ "$(echo $services | wc -w)" -eq 1 ] && echo "ok: one foreground service while it read ($services)" \
+  || { echo "FAIL: not one foreground service while it read: $services"; fail=1; }
 tap "Stop reading"
 exit $fail

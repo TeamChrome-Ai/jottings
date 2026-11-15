@@ -14,12 +14,13 @@ import { inCubic, inOutCubic, join, keys, linear, tween, type Keys, type Track }
 /** Scene 1: a question typed into the library search, and the other wordings that rise under it, each with the
  *  paragraphs it finds (components/SearchExpansion.tsx, in its order). The library is in English, so the question and
  *  its wordings are shown as they are in every language; a verse is named as the reader's Bible names it. */
-// a real search of the library on 2026-11-14: the question, and the count each wording found that day
+// a real search of the library: the question, and the count each wording finds in the library released with 2.0
+// (counted on the live site on 2026-11-15, J. Taylor Sr. in it)
 export const ASK = {
   question: 'how can I be sure I am saved',
-  verses: [{ book: 62, chapter: 5, verse: 13, total: 33 }, { book: 43, chapter: 5, verse: 24, total: 71 }],
+  verses: [{ book: 62, chapter: 5, verse: 13, total: 35 }, { book: 43, chapter: 5, verse: 24, total: 73 }],
   phrases: [{ words: 'assurance of salvation', total: 33 }, { words: 'the witness of the Spirit', total: 60 }],
-  related: [{ words: 'the new birth', total: 299 }],
+  related: [{ words: 'the new birth', total: 308 }],
 } as const
 
 /** Scene 2: an answer to that question, a sentence at a time, each with its numbered marker; `opens` is the sentence

@@ -118,16 +118,23 @@ pub async fn expand(State(s): State<AppState>, Query(q): Query<ExpandQ>) -> ApiR
 /// new, and the edition it was counted in: `ok` with the lists (empty for a question too short or too long, never
 /// asked); `off` without a key or a library with its words; `busy` when the day's model calls are taken or the model
 /// gave no answer to keep. The edition is read once the model has answered: a call can outlast edition::TTL.
-pub(crate) async fn expansion(s: &AppState, asked: Option<&str>, kept: String) -> ApiResult<(Expansion, Served)> {
+pub(crate) async fn expansion(s: &AppState, asked: Option<&str>, kept: String) -> ApiResult<(Expansion, Served)> { expansion_asking(s, asked, kept, || {}).await }
+/// `expansion`, which calls `asking` when the question is new: once it has taken its place among the day's calls and
+/// before it asks the model. What is made beside the model's call (near.rs, the question's embedding) starts there, so
+/// the expansion's call is counted first, and nothing is made beside a question that asks no model.
+pub(crate) async fn expansion_asking(s: &AppState, asked: Option<&str>, kept: String, asking: impl FnOnce() + Send) -> ApiResult<(Expansion, Served)> {
     let Some(asked) = asked else { return Ok(unanswered(s, kept, Asked::Ok).await) };
     let Some(m) = s.ministry.clone().filter(|m| m.fts && s.expand.key.is_some()) else { return Ok(unanswered(s, kept, Asked::Off).await) };
     let raw = match kept_answer(s, &kept).await? {
         Some(raw) => raw,
         None if !take_call(s).await? => return Ok(unanswered(s, kept, Asked::Busy).await),
-        None => match ask(&s.expand, asked).await {
-            Ok((text, raw)) => { keep(s, &kept, &text).await?; raw }
-            Err(why) => { tracing::warn!("search expansion: nothing to keep: {why}"); return Ok(unanswered(s, kept, Asked::Busy).await) }
-        },
+        None => {
+            asking();
+            match ask(&s.expand, asked).await {
+                Ok((text, raw)) => { keep(s, &kept, &text).await?; raw }
+                Err(why) => { tracing::warn!("search expansion: nothing to keep: {why}"); return Ok(unanswered(s, kept, Asked::Busy).await) }
+            }
+        }
     };
     let served = s.served().await;
     Ok((m.clone().db(move |c| count(c, &m, kept, &raw, served)).await?, served))
@@ -169,7 +176,7 @@ pub(crate) struct Usage { pub input: i64, pub output: i64 }
 pub(crate) async fn message(cfg: &Config, system: &str, user: &str) -> Result<(String, Usage), String> {
     let key = cfg.key.as_deref().ok_or_else(|| "no BEREAN_AI_KEY".to_string())?;
     let body = json!({ "model": cfg.model, "max_tokens": MAX_TOKENS, "system": system, "output_config": { "effort": "low" }, "messages": [{ "role": "user", "content": user }] });
-    let res = reqwest::Client::new().post(format!("{}/v1/messages", cfg.url))
+    let res = crate::http_client().post(format!("{}/v1/messages", cfg.url))
         .header("x-api-key", key).header("anthropic-version", "2023-06-01").header("content-type", "application/json")
         .timeout(TIMEOUT).json(&body).send().await.map_err(|e| e.to_string())?;
     let status = res.status();

@@ -1,15 +1,17 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { AppState, Platform } from 'react-native'
 import { clearPreloadedSource, createAudioPlayer, preload, setAudioModeAsync, type AudioPlayer } from 'expo-audio'
 import { mediaArt } from '../lib/mediaArt'
 import * as Speech from 'expo-speech'
 import type { Verse } from '@shared/types'
-import { book as bookMeta, fetchChapter, warmChapter } from '../lib/bible'
+import { book as bookMeta, fetchChapter, nextChapter, warmChapter } from '../lib/bible'
+import { pathForReadAloud, peekPathNextAfter } from '../lib/paths'
+import { mediaLibrary } from '../lib/mediaLibrary'
 import { keepClock } from '../lib/readAloudClock'
 import { note, noteStill, watchReading } from '../lib/readAloudLog'
 import { place } from '../lib/readAloudLogCore'
 import { chapterAudioUrl, fetchMarks, numberAudioUrl, PAUSE_MS, positionAt, type ChapterMarks } from '../lib/tts'
-import { usePrefsStore } from './prefs'
+import { prefsStore } from './prefs'
 import { BRAND } from '@shared/brand'
 import { peekLang, t } from '@shared/i18n'
 import { formatRef } from '@shared/ref'
@@ -32,11 +34,15 @@ const speechLanguage = (): string | undefined => {
  * Every start, stop or jump bumps `run`; a loop or tick that finds a newer token exits without touching the
  * players, because the newer run owns them. (A stale tick pausing the player after a jump was how "skip" kept
  * playing the old verse.)
+ *
+ * The player is one engine for the app, outside the screens: a car can ask for a chapter with the app not open
+ * (lib/car.ts), and the screens, when they are there, show the same reading (PlayerProvider).
  */
 export type PlayerStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'error'
 export interface Spoken { book: number; chapter: number; v: number; off: number | null }
-interface PlayerState { status: PlayerStatus; spoken: Spoken | null; source: 'recording' | 'device' | null; error: string | null; book: number; chapter: number }
-interface PlayerCtx extends PlayerState {
+type Chapter = { book: number; chapter: number }
+export interface PlayerState { status: PlayerStatus; spoken: Spoken | null; source: 'recording' | 'device' | null; error: string | null; book: number; chapter: number }
+interface Player {
   /** Start reading a chapter from a verse (1 = the top, heading included). The same start again while it loads is ignored. */
   /** `cue`: load and show the bar paused at that verse, without a sound until Play (the guided tour). */
   /** `heading: false`: a passage out of a jotting is read without the chapter's spoken heading, even from verse 1. */
@@ -48,8 +54,9 @@ interface PlayerCtx extends PlayerState {
   stop: () => void
   next: () => void
   prev: () => void
-  /** Fires when a chapter finishes; the reader decides whether to move on. */
-  onEnded: (cb: ((book: number, chapter: number) => void) | null) => void
+  /** Fires when a finished chapter hands over to the next one (the path's next portion while the chapter is on the
+   *  path, else the Bible's next chapter), which the player has already started. Returns the unsubscribe. */
+  onNextChapter: (cb: (from: Chapter, to: Chapter) => void) => () => void
   /** Fires each time the voice finishes a verse, read out to its last word (a skip or a stop is not finishing it):
    *  what the read-through rule counts as heard (lib/readCredit.ts). Returns the unsubscribe. */
   onVerseHeard: (cb: (book: number, chapter: number, v: number) => void) => () => void
@@ -57,11 +64,30 @@ interface PlayerCtx extends PlayerState {
   marksOf: (book: number, chapter: number) => ChapterMarks | null
   /** Fetch the chapter that comes next while this one is read, so it starts on a drive with no signal too. */
   warm: (book: number, chapter: number) => void
+}
+interface PlayerCtx extends PlayerState, Player {
   /** Height of the docked player bar (0 when hidden), so other bottom bars can sit above it. */
   barHeight: number
   setBarHeight: (h: number) => void
 }
+export interface PlayerEngine extends Player {
+  getState: () => PlayerState
+  /** Every change, as it is made: what the screens draw. */
+  subscribe: (fn: () => void) => () => void
+  /** The changes of one turn, once they are all made: a chapter's end followed at once by the next one's start is
+   *  one change, and never a stop. What the phone's media session is told. Returns the unsubscribe. */
+  onSettled: (fn: (s: PlayerState) => void) => () => void
+  /** The reading is asked for from outside the screens (a car): it goes on when they go, until it is stopped. */
+  heldOutside: () => void
+  isHeldOutside: () => boolean
+  /** The screens are gone (the app was swiped away): a reading they started ends with them. */
+  screensGone: () => void
+}
 const Ctx = createContext<PlayerCtx | null>(null)
+/** A value kept between calls, as a component keeps one in a ref. */
+const ref = <T,>(current: T) => ({ current })
+/** Android: read-aloud has one media session for the app, the library's (modules/media-library), told by lib/car.ts. */
+const OWN_SESSION = mediaLibrary !== null
 
 const POLL_MS = 80
 const STOPPED = 'stopped'
@@ -101,29 +127,43 @@ function marksFor(voice: string, book: number, chapter: number): Promise<Chapter
 /** What is being read: the chapter, its verses, the recording's marks (null = the device voice), and the place in it. */
 type Current = { book: number; chapter: number; verses: Verse[]; marks: ChapterMarks | null; index: number; heading: boolean; stopAfter: number | null }
 
-export function PlayerProvider({ children }: { children: ReactNode }) {
-  // read at call time, so a pref change never re-renders the provider
-  const prefs = usePrefsStore()
-  const [state, setState] = useState<PlayerState>({ status: 'idle', spoken: null, source: null, error: null, book: 0, chapter: 0 })
-  const [barHeight, setBarHeight] = useState(0)
-  const player = useRef<AudioPlayer | null>(null)
-  const numbers = useRef<AudioPlayer | null>(null)
+function createEngine(): PlayerEngine {
+  const prefs = prefsStore
+  let state: PlayerState = { status: 'idle', spoken: null, source: null, error: null, book: 0, chapter: 0 }
+  /** The state the last turn ended in, and whether this turn's end is already waited for. */
+  let settled = state, settling = false
+  const listeners = new Set<() => void>()
+  const settledCbs = new Set<(s: PlayerState) => void>()
+  const setState = (next: PlayerState | ((s: PlayerState) => PlayerState)) => {
+    const to = typeof next === 'function' ? next(state) : next
+    if (to === state) return
+    state = to
+    listeners.forEach(fn => fn())
+    if (!settling) { settling = true; void Promise.resolve().then(settle) }
+  }
+  /** The newest sound's own media session is given up: expo-audio makes one for every sound, and Android would show
+   *  two sessions for one reading. */
+  const sound = () => { const p = createAudioPlayer(null, { updateInterval: POLL_MS }); mediaLibrary?.own(p); return p }
+  const outside = ref(false)
+  const player = ref<AudioPlayer | null>(null)
+  const numbers = ref<AudioPlayer | null>(null)
   /** The player holds the lock screen's session, from the reading's first chapter until Stop. */
-  const onLockScreen = useRef(false)
-  const run = useRef(0)                       // bumps on every start/stop/jump so stale loops exit
-  const loading = useRef<{ key: string; token: number } | null>(null) // the start() fetching (chapter, verse, options, its run), to swallow repeated taps
-  const endedCb = useRef<((b: number, c: number) => void) | null>(null)
-  const paused = useRef(false)
+  const onLockScreen = ref(false)
+  const run = ref(0)                       // bumps on every start/stop/jump so stale loops exit
+  const loading = ref<{ key: string; token: number } | null>(null) // the start() fetching (chapter, verse, options, its run), to swallow repeated taps
+  const nextCbs = ref(new Set<(from: Chapter, to: Chapter) => void>())
+  const startRef = ref<(book: number, chapter: number) => void>(() => {})
+  const paused = ref(false)
   /** A recorded reading on a sound of its own, in its run: a spoken number, the clip a Play resumes (none while it
    *  waits to be said), or a clause the device voice reads (none: it says the clause again by itself). The chapter's
    *  recording waits where it is. */
-  const aside = useRef<{ token: number; clip: AudioPlayer | null } | null>(null)
+  const aside = ref<{ token: number; clip: AudioPlayer | null } | null>(null)
   /** Started with `cue`: loaded and paused; Play starts the reading loop rather than resuming it. */
-  const cued = useRef(false)
-  const current = useRef<Current>({ book: 0, chapter: 0, verses: [], marks: null, index: 0, heading: false, stopAfter: null })
-  const heardCbs = useRef(new Set<(book: number, chapter: number, v: number) => void>())
+  const cued = ref(false)
+  const current = ref<Current>({ book: 0, chapter: 0, verses: [], marks: null, index: 0, heading: false, stopAfter: null })
+  const heardCbs = ref(new Set<(book: number, chapter: number, v: number) => void>())
   const heard = (book: number, chapter: number, v: number) => heardCbs.current.forEach(cb => cb(book, chapter, v))
-  const status = useRef<PlayerStatus>('idle')
+  const status = ref<PlayerStatus>('idle')
   /** "Psalm 118:12", the verse being read, for the read-aloud log. */
   const where = (c: Current = current.current) => {
     if (!c.book) return undefined
@@ -137,18 +177,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return { w: where(), d: `${voice} · app ${AppState.currentState}`, playing: status.current === 'playing' }
   }
 
-  useEffect(() => {
-    setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: 'doNotMix' }).catch(() => {})
-    return () => { player.current?.remove(); numbers.current?.remove() }
-  }, [])
-  // a reading keeps the app's timers running with the screen off (lib/readAloudClock.ts), and its log (lib/readAloudLog.ts)
-  useEffect(() => {
-    const reading = state.status === 'loading' || state.status === 'playing' || state.status === 'paused'
-    keepClock(reading, state.source === 'device' ? formatRef({ book: state.book, chapter: state.chapter }) : undefined)
-    if (state.status !== status.current) note('status', state.status)
-    status.current = state.status
-    watchReading(reading, describe)
-  }, [state.status, state.source, state.book, state.chapter])  // eslint-disable-line react-hooks/exhaustive-deps
+  setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: 'doNotMix' }).catch(() => {})
+  const settle = () => {
+    settling = false
+    const was = settled
+    settled = state
+    // a reading keeps the app's timers running with the screen off (lib/readAloudClock.ts), and its log (lib/readAloudLog.ts)
+    if (state.status !== was.status || state.source !== was.source || state.book !== was.book || state.chapter !== was.chapter) {
+      const reading = state.status === 'loading' || state.status === 'playing' || state.status === 'paused'
+      keepClock(reading)
+      if (state.status !== status.current) note('status', state.status)
+      status.current = state.status
+      watchReading(reading, describe)
+    }
+    settledCbs.forEach(fn => fn(state))
+  }
 
   const alive = (token: number) => { if (run.current !== token) throw new Error(STOPPED) }
   const wait = (ms: number, token: number) => new Promise<void>(res => setTimeout(res, ms)).then(() => alive(token))
@@ -252,7 +295,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   /** One spoken number, a whole clip of its own: no seeking inside a long recording, so it can neither start
    *  early on the previous number nor run on into the next. */
   const playNumber = (n: number, token: number) => new Promise<void>((resolve, reject) => {
-    if (!numbers.current) numbers.current = createAudioPlayer(null, { updateInterval: POLL_MS })
+    if (!numbers.current) numbers.current = sound()
     const p = numbers.current
     p.replace({ uri: numberAudioUrl(prefs.get().ttsVoice, n) })
     p.setPlaybackRate(prefs.get().ttsSpeed, 'high')
@@ -406,7 +449,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   /** The reading loop for one chapter; exits when the chapter ends or the run token changes. */
-  const loop = useCallback(async (token: number) => {
+  const loop = async (token: number) => {
     const c = current.current
     try {
       for (;;) {
@@ -416,19 +459,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
       if (run.current !== token) return
       player.current?.pause()
-      note('end', c.stopAfter !== null ? 'stopped at the selection' : endedCb.current ? undefined : 'no reader to move on', place(c.book, c.chapter))
+      note('end', c.stopAfter !== null ? 'stopped at the selection' : undefined, place(c.book, c.chapter))
       setState(s => ({ ...s, status: 'idle', spoken: null }))
       // a selection that asked to stop here is not the chapter ending: no move to the next chapter
       if (c.stopAfter !== null) { c.stopAfter = null; return }
-      endedCb.current?.(c.book, c.chapter)
+      // the player moves on itself: a reader on screen only follows (reports #28 and #44 ended with none to ask)
+      if (!prefs.get().ttsAutoNext) return note('no-next', 'continue into the next chapter is off')
+      const from = { book: c.book, chapter: c.chapter }
+      const p = peekPathNextAfter(c.book, c.chapter)
+      const to = p ? { book: p.book, chapter: p.chapter } : nextChapter(c.book, c.chapter)
+      if (!to) return note('no-next', 'the end of the path or of the Bible')
+      note('next', undefined, place(to.book, to.chapter))
+      startRef.current(to.book, to.chapter)
+      nextCbs.current.forEach(cb => cb(from, to))
     } catch (e) {
       if ((e as Error).message === STOPPED) return
       note('error', (e as Error).message, where(c))
       setState(s => ({ ...s, status: 'error', error: (e as Error).message, spoken: null }))
     }
-  }, [])
+  }
 
-  const start = useCallback(async (book: number, chapter: number, fromVerse = 1, opts?: { cue?: boolean; stopAfter?: number; heading?: boolean }) => {
+  const start = async (book: number, chapter: number, fromVerse = 1, opts?: { cue?: boolean; stopAfter?: number; heading?: boolean }) => {
     // a second tap while the first is still fetching; a start of that chapter from another verse, or to stop at the
     // end of a selection, wins
     const key = `${book}-${chapter}-${fromVerse}-${opts?.stopAfter}-${opts?.heading !== false}-${!!opts?.cue}`
@@ -439,6 +490,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     cued.current = false
     Speech.stop(); player.current?.pause(); numbers.current?.pause()
     setState({ status: 'loading', spoken: null, source: null, error: null, book, chapter })
+    // the chapter's end goes on into the reader's path, which no screen may have loaded (a car started the app)
+    void pathForReadAloud().catch(() => {})
     const pr = prefs.get()
     note('start', `${pr.ttsDevice ? 'device voice chosen' : pr.ttsVoice} · speed ${pr.ttsSpeed} · pause ${pr.ttsPause} · numbers ${pr.ttsNumbers ? 'on' : 'off'} · next chapter ${pr.ttsAutoNext ? 'on' : 'off'}${opts?.cue ? ' · cued' : ''}`, place(book, chapter, fromVerse))
     try {
@@ -449,14 +502,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         try {
           marks = await marksFor(voice, book, chapter)
           if (run.current !== token) return
-          if (!player.current) player.current = createAudioPlayer(null, { updateInterval: POLL_MS })
+          if (!player.current) player.current = sound()
           await loadAudio(chapterAudioUrl(voice, book, chapter), token)
           if (run.current !== token) return
-          // Android 16 keeps the media service in the foreground only while the session its notification names
-          // is in use. setActiveForLockScreen builds a new session each time and drops the old one, and with it
-          // the foreground: off screen, Android then froze or closed the app mid-chapter (reports #34 and #35).
-          // So the next chapter's title goes to the session the reading already has.
-          if (Platform.OS !== 'web') {
+          // Off Android the sound carries the lock screen's controls itself. setActiveForLockScreen builds a new
+          // session each time and drops the old one (on Android 16 that dropped the media service from the
+          // foreground mid-chapter: reports #34 and #35), so the next chapter's title goes to the session the
+          // reading already has.
+          if (Platform.OS !== 'web' && !OWN_SESSION) {
             const shown = { title: formatRef({ book, chapter }), artist: `${BRAND.name} · Darby`, artworkUrl: await mediaArt() }
             if (onLockScreen.current) player.current.updateLockScreenMetadata(shown)
             else { player.current.setActiveForLockScreen(true, shown); onLockScreen.current = true }
@@ -474,9 +527,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     } catch (e) { if (run.current === token) { note('error', (e as Error).message, place(book, chapter)); setState(s => ({ ...s, status: 'error', error: (e as Error).message })) } }
     // a load stopped and started again under the same key is not this one's to release
     finally { if (loading.current?.token === token) loading.current = null }
-  }, [loop])
+  }
+  startRef.current = start
 
-  const stop = useCallback(() => {
+  const stop = () => {
     if (status.current !== 'idle') note('stop', undefined, where())
     run.current++
     // the load still out ends with this run: the same Listen again is a new start, not its repeat
@@ -484,12 +538,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     paused.current = false
     cued.current = false
     player.current?.pause(); numbers.current?.pause(); Speech.stop()
-    if (Platform.OS !== 'web') player.current?.clearLockScreenControls()
+    if (Platform.OS !== 'web' && !OWN_SESSION) player.current?.clearLockScreenControls()
     onLockScreen.current = false
+    outside.current = false
     setState(s => ({ ...s, status: 'idle', spoken: null }))
-  }, [])
+  }
 
-  const toggle = useCallback(() => {
+  const toggle = () => {
     if (state.status === 'playing') {
       note('pause', undefined, where())
       paused.current = true
@@ -509,10 +564,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       else { const token = ++run.current; loop(token) }
       setState(s => ({ ...s, status: 'playing' }))
     }
-  }, [state.status, loop])
+  }
 
   /** Restart the loop at verse index `target` of the current chapter (none such: nothing happens). */
-  const jumpTo = useCallback((target: number) => {
+  const jumpTo = (target: number) => {
     const c = current.current
     if (target < 0 || target >= (c.marks ? c.marks.verses.length : c.verses.length)) return
     const token = ++run.current
@@ -523,35 +578,63 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     note('jump', undefined, where())
     setState(s => ({ ...s, status: 'playing' }))
     loop(token)
-  }, [loop])
+  }
 
-  const jump = useCallback((delta: number) => {
+  const jump = (delta: number) => {
     const c = current.current
     // while a chapter loads, the chapter in hand is still the one before it (or none): a jump would read that one
     // and end the load
     if (state.status !== 'playing' && state.status !== 'paused') return
     const n = c.marks ? c.marks.verses.length : c.verses.length
     jumpTo(Math.min(n - 1, Math.max(0, c.index + delta)))
-  }, [state.status, jumpTo])
+  }
 
-  const seekVerse = useCallback((book: number, chapter: number, v: number, opts?: { stopAfter?: number }) => {
+  const seekVerse = (book: number, chapter: number, v: number, opts?: { stopAfter?: number }) => {
     const c = current.current
     const active = state.status === 'playing' || state.status === 'paused'
     if (!active || c.book !== book || c.chapter !== chapter) { start(book, chapter, v, { stopAfter: opts?.stopAfter }); return }
     const list = c.marks ? c.marks.verses.map(m => m.v) : c.verses.map(x => x.v)
     const i = list.findIndex(x => x >= v)
     if (i >= 0) { jumpTo(i); current.current.stopAfter = opts?.stopAfter ?? null }
-  }, [state.status, jumpTo, start])
+  }
 
-  const onVerseHeard = useCallback((cb: (book: number, chapter: number, v: number) => void) => { heardCbs.current.add(cb); return () => { heardCbs.current.delete(cb) } }, [])
-  const marksOf = useCallback((book: number, chapter: number) => { const c = current.current; return c.book === book && c.chapter === chapter ? c.marks : null }, [])
-  const warm = useCallback((book: number, chapter: number) => {
+  const onVerseHeard = (cb: (book: number, chapter: number, v: number) => void) => { heardCbs.current.add(cb); return () => { heardCbs.current.delete(cb) } }
+  const onNextChapter = (cb: (from: Chapter, to: Chapter) => void) => { nextCbs.current.add(cb); return () => { nextCbs.current.delete(cb) } }
+  const marksOf = (book: number, chapter: number) => { const c = current.current; return c.book === book && c.chapter === chapter ? c.marks : null }
+  const warm = (book: number, chapter: number) => {
     warmChapter(book, chapter)
     if (deviceOnly(prefs.get().ttsDevice)) return
     const voice = prefs.get().ttsVoice
     marksFor(voice, book, chapter).then(() => fetchWhole(chapterAudioUrl(voice, book, chapter)), () => {})
-  }, [])
-  const value = useMemo<PlayerCtx>(() => ({ ...state, start, seekVerse, toggle, stop, next: () => jump(1), prev: () => jump(-1), onEnded: cb => { endedCb.current = cb }, onVerseHeard, marksOf, warm, barHeight, setBarHeight }), [state, start, seekVerse, toggle, stop, jump, onVerseHeard, marksOf, warm, barHeight])
+  }
+  const screensGone = () => {
+    if (outside.current) return
+    stop()
+    player.current?.remove(); numbers.current?.remove()
+    player.current = null; numbers.current = null
+  }
+  return {
+    getState: () => state,
+    subscribe: fn => { listeners.add(fn); return () => { listeners.delete(fn) } },
+    onSettled: fn => { settledCbs.add(fn); return () => { settledCbs.delete(fn) } },
+    heldOutside: () => { outside.current = true },
+    isHeldOutside: () => outside.current,
+    screensGone,
+    start, seekVerse, toggle, stop, next: () => jump(1), prev: () => jump(-1), onNextChapter, onVerseHeard, marksOf, warm,
+  }
+}
+
+let engine: PlayerEngine | null = null
+/** The app's one player, made when first asked for. */
+export const playerEngine = (): PlayerEngine => (engine ??= createEngine())
+
+/** The player for the screens: its state as they draw it, and the bar's height, which is theirs alone. */
+export function PlayerProvider({ children }: { children: ReactNode }) {
+  const e = playerEngine()
+  const state = useSyncExternalStore(e.subscribe, e.getState, e.getState)
+  const [barHeight, setBarHeight] = useState(0)
+  useEffect(() => e.screensGone, [e])
+  const value = useMemo<PlayerCtx>(() => ({ ...state, start: e.start, seekVerse: e.seekVerse, toggle: e.toggle, stop: e.stop, next: e.next, prev: e.prev, onNextChapter: e.onNextChapter, onVerseHeard: e.onVerseHeard, marksOf: e.marksOf, warm: e.warm, barHeight, setBarHeight }), [state, barHeight, e])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

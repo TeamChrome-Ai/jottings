@@ -1,4 +1,5 @@
 import { BOOKS, findBook, findBookFuzzy, peekNamesLang, type BookMeta } from './books.js'
+import type { NamesLang } from './bookNames.js'
 import { englishNumber, ownNumber, peekShownText, type Own } from './texts.js'
 import { VERSE_COUNTS } from './verseCounts.js'
 
@@ -138,9 +139,9 @@ export interface RefSpan { start: number; end: number; ref: Ref }
  *   "Ex 3:14,15" (each verse its own link), and with `ctx` (the chapter the text sits in) "ch. 5:25",
  *   "ver. 15", "vers. 13,14,25". Every span is a tappable range; lists yield one span per item.
  */
-export function scanRefs(text: string, ctxIn?: RefContext, opts: { english?: boolean } = {}): RefSpan[] {
+export function scanRefs(text: string, ctxIn?: RefContext, opts: { english?: boolean; /** written for this reader (their book names, a German comma) but numbered as the English Bible is: what Ask writes, from English sources */ englishNumbers?: boolean } = {}): RefSpan[] {
   // text by or for a reader of another Bible is in its numbering ("Psaume 51:3", German "Joh 3,16"): read in it, kept in English
-  const convert = !opts.english && peekShownText() !== 'en'
+  const convert = !opts.english && !opts.englishNumbers && peekShownText() !== 'en'
   const ctx = ctxIn && convert ? { book: ctxIn.book, chapter: ownNumber(ctxIn.book, ctxIn.chapter, 1).c } : ctxIn
   const comma = !opts.english && (peekShownText() === 'de' || peekNamesLang() === 'de')
   const spans = scanOwn(text, ctx, convert ? 1 : 0, comma ? SCAN_DE : convert || peekNamesLang() !== 'en' ? SCAN_INTL : SCAN_EN, comma)
@@ -168,6 +169,43 @@ function crossTail(text: string, start: number, end: number, v1: number, v2: num
   if (m[2] === ',' && (!comma || (v2 >= v1 && v2 <= verseCount(book, chapter)))) return end
   if (m[3] && /^\s+\p{Lu}/u.test(text.slice(end + m[0].length))) return end
   return end + m[0].length
+}
+
+/**
+ * The words that take a number of their own, by language: before a figure 1 to 3 and a numbered book the figure is
+ * theirs ("Chapter 3 John 1:1" is John 1:1), where after any other capitalised word it is the book's ("See 1 John
+ * 4:9", "In 2 Samuel 7"). `words` count as written in full, and not with a stop after them, which ended a sentence
+ * ("…of the chapter. 1 John 4:9 says"); `short` forms count with their stop or without; `stopped` ones only with it,
+ * being words of their own without ("No", French "Par", "Sec", Dutch "Ver").
+ *
+ * The English rests on the app's texts (the footnotes, the ministry, the guide), where chapter, verse, volume, page,
+ * part, hymn, section, book, number and paragraph are the words followed by a number of their own, and none of them,
+ * capitalised, stands before a figure and a numbered book. "Note" is left out on purpose: the footnotes write "see
+ * Note 1 Sam 2:8" and "see Note. 1Cor 4:1" for the note at that verse (fifteen times), and never number a note before
+ * a book. French and German rest on those Bibles' texts as far as they go ("Chapitre", "Kap.", "Vers"); Italian, Dutch
+ * and Swedish have no text in the app and rest on the languages' own words. English counts in every language, since
+ * the notes and the ministry are English whatever the app speaks; another language's words only when it is the app's
+ * or the Bible's, so that Swedish "Del" and Dutch "Les" are not taken for numbering words in French or Italian.
+ */
+const OWN_NUMBER: Record<NamesLang, { words: string; short: string; stopped: string }> = {
+  en: { words: 'chapter chapters verse verses page pages part parts section sections volume volumes book books number numbers question questions lesson lessons hymn hymns paragraph paragraphs', short: 'chap chaps ch chs vol vols vv vs vss pt pts pp bk para sect ques', stopped: 'no nos ver vers sec secs par' },
+  fr: { words: 'chapitre chapitres verset versets page pages partie parties section sections tome tomes volume volumes livre livres numéro numéros question questions leçon leçons cantique cantiques paragraphe paragraphes', short: 'chap ch vol', stopped: 'no vers' },
+  de: { words: 'kapitel vers verse seite seiten teil teile abschnitt abschnitte band bände buch bücher nummer nummern frage fragen lektion lektionen lied lieder absatz absätze', short: 'kap', stopped: 'bd nr abschn' },
+  it: { words: 'capitolo capitoli versetto versetti pagina pagine parte parti sezione sezioni volume volumi libro libri numero domanda domande lezione lezioni inno inni paragrafo paragrafi', short: 'cap capp vol', stopped: 'pag vers' },
+  nl: { words: 'hoofdstuk hoofdstukken vers verzen pagina bladzijde bladzijden deel delen sectie secties afdeling band boek boeken nummer nummers vraag vragen les lessen lied liederen paragraaf', short: 'hfdst hfst blz', stopped: 'nr dl' },
+  sv: { words: 'kapitel kapitlet vers verser versen sida sidan sidor del delar avsnitt band volym bok böcker nummer fråga frågor lektion lektioner sång stycke', short: 'kap', stopped: 'sid nr' },
+}
+const OWN_NUMBER_SETS = Object.fromEntries(Object.entries(OWN_NUMBER).map(([l, o]) => [l, { words: new Set(o.words.split(' ')), short: new Set(o.short.split(' ')), stopped: new Set(o.stopped.split(' ')) }])) as Record<NamesLang, { words: Set<string>; short: Set<string>; stopped: Set<string> }>
+/** Whether `written`, the capitalised word before a figure ("Chapter", "Vol.", "Kapitel"), takes the figure as its own
+ *  number, in English or in the language the app or the Bible shown is in. */
+function ownsItsFigure(written: string): boolean {
+  const stop = written.endsWith('.')
+  const word = (stop ? written.slice(0, -1) : written).toLocaleLowerCase()
+  for (const l of ['en', peekNamesLang(), peekShownText()] as const) {
+    const o = OWN_NUMBER_SETS[l]
+    if (o.short.has(word) || (stop ? o.stopped : o.words).has(word)) return true
+  }
+  return false
 }
 
 /** scanRefs in the text's own numbering, with `slack` more chapters than the English has (French Joel has four). */
@@ -199,7 +237,14 @@ function scanOwn(text: string, ctx: RefContext | undefined, slack: number, patte
       let name = m[1], start = m.index
       let book = findBook(name)
       if (!book && /\s/.test(name)) { const last = name.split(/\s+/).pop()!; book = findBook(last); if (book) start = m.index + m[0].indexOf(last) }
-      if (!book) { cur = null; continue }
+      if (!book) {
+        cur = null
+        // a capitalised word and a lone figure 1 to 3 that are no book: the figure opens the name of the book that
+        // follows ("See 1" of "See 1 John 4:9"), so the scan goes on from the figure; unless the word takes a number of
+        // its own ("Chapter 3" of "Chapter 3 John 1:1"), when it goes on after the figure as for any other match
+        if (m[3] === undefined && /^[1-3]$/.test(m[2]) && !ownsItsFigure(name.split(/\s+/).pop()!)) re.lastIndex = m.index + m[0].length - 1
+        continue
+      }
       let chapter = parseInt(m[2], 10)
       let v1 = m[3] ? parseInt(m[3], 10) : undefined
       const v2 = m[4] ? parseInt(m[4], 10) : undefined

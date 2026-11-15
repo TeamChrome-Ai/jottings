@@ -20,6 +20,20 @@ const secure = {
   del: (k: string) => Platform.OS === 'web' ? AsyncStorage.removeItem(k) : SecureStore.deleteItemAsync(k),
 }
 
+/**
+ * Who the device is signed in as, for code that runs with no screen mounted (read aloud started by a car): the
+ * account's id, undefined signed out. The provider is not there to hand the stored token to the API, so it is handed
+ * here when the API has none; with the provider mounted this changes nothing.
+ */
+export async function storedSession(): Promise<number | undefined> {
+  try {
+    const [t, u] = await Promise.all([secure.get(TOKEN_KEY), AsyncStorage.getItem(USER_KEY)])
+    if (!t || !u) return undefined
+    if (!getToken()) setToken(t)
+    return (JSON.parse(u) as User).id
+  } catch { return undefined }
+}
+
 interface AuthCtx {
   user: User | null; ready: boolean
   login: (handle: string, password: string) => Promise<void>

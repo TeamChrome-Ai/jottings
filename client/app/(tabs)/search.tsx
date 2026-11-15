@@ -2,12 +2,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Animated, Easing, Text, TextInput, View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { BOOKS, findBookFuzzy } from '@shared/books'
-import { strongsCode } from '@shared/concordance'
-import { bareBook, formatRef, parseRef } from '@shared/ref'
+import { formatRef } from '@shared/ref'
 import type { SearchHit, SearchOrder, SearchResponse } from '@shared/types'
 import { get, isNetworkError } from '../../src/lib/api'
 import { offlineKeys, readLocalChapter } from '../../src/lib/bible'
 import { searchLocal, warmLocalSearch } from '../../src/lib/localSearch'
+import { readField } from '../../src/lib/searchField'
+import { useAssistantOn } from '../../src/lib/assistant'
 import { useInks } from '../../src/hooks/useTheme'
 import { useReadingFont } from '../../src/hooks/useReadingFont'
 import { Button, Card, Chip, Enter, ErrorText, H, ListRow, Row, Screen, Segmented, T, Tap, TYPE } from '../../src/components/ui'
@@ -18,6 +19,7 @@ import BookGroupCard from '../../src/components/BookGroupCard'
 import OwnOutlineMatches from '../../src/components/OwnOutlineMatches'
 import WordFootnotes from '../../src/components/WordFootnotes'
 import RecentSearches from '../../src/components/RecentSearches'
+import AskBubble, { ASK_BUBBLE_H } from '../../src/components/AskBubble'
 import Icon from '../../src/components/Icon'
 import { dropRecent, loadRecent, pushRecent, saveRecent } from '../../src/lib/recentSearches'
 import { inScopeRanges, splitScope } from '@shared/bookGroups'
@@ -39,7 +41,8 @@ type Shown = { hits: SearchHit[]; total: number; offline: boolean; took: number;
  * only a name the text never uses ("jn") opens the book. Text queries run on the device when the whole text is here (native, or web with
  * every chapter stored), else go to the API, or scan the stored chapters when it is unreachable. Word results come in
  * Bible order for one word or a quoted phrase and best match first for several words (shared/search.ts defaultOrder);
- * the order control under the scope shows which and lets the reader pick, for the session.
+ * the order control under the scope shows which and lets the reader pick, for the session. While the server has Ask on,
+ * its bubble floats over the foot of the screen (AskBubble) and carries the field's words into Ask as a draft.
  */
 export default function Search() {
   const router = useRouter()
@@ -52,6 +55,7 @@ export default function Search() {
   const [res, setRes] = useState<Shown & { gen: number; first: boolean } | null>(null)
   const [slow, setSlow] = useState(false)
   const reduce = useReduceMotion()
+  const askOn = useAssistantOn()
   /**
    * Each result set gets a generation and the list is keyed by it. The first set after an empty screen staggers in; a
    * set replacing one on screen is up in the same frame and fades in as one block (the old one stays until then), so
@@ -116,17 +120,17 @@ export default function Search() {
     const query = (override ?? q).trim()
     if (!query) { settle(); return }
     remember(query)
-    const code = strongsCode(query)
-    if (code) { setWord({ code, word: '', label: code }); settle(); return }
+    // what the field holds (lib/searchField.ts), which the Ask bubble reads too
+    const typed = readField(query)
+    if (typed.kind === 'strongs') { setWord({ code: typed.code, word: '', label: typed.code }); settle(); return }
     // "jn 3:16", "1 cor 13" open; a book's name alone ("song", "1 kings") is searched as a word below
-    const ref = parseRef(query)
-    const bookOnly = bareBook(query)
-    if (ref && !bookOnly) { openRef(ref.book, ref.chapter, ref.v1, ref.v2); settle(); return }
+    if (typed.kind === 'ref' && !typed.near) { openRef(typed.ref.book, typed.ref.chapter, typed.ref.v1, typed.ref.v2); settle(); return }
     // "Jhon 3:16": a reference with a misspelt book still opens; a bare misspelt name ("Pslams") is offered, not assumed
     setSuggest(null)
-    if (bookOnly) { /* a real name: nothing to guess */ }
-    else if (/\d/.test(query)) { const near = parseRef(query, { fuzzy: true }); if (near) { openRef(near.book, near.chapter, near.v1, near.v2); settle(); return } }
-    else { const near = findBookFuzzy(query); if (near) setSuggest(near.name) }
+    if (typed.kind === 'ref') { openRef(typed.ref.book, typed.ref.chapter, typed.ref.v1, typed.ref.v2); settle(); return }
+    const bookOnly = typed.kind === 'words' ? typed.book : undefined
+    // a real name leaves nothing to guess, and a number that made no reference is no book's name
+    if (!bookOnly && !/\d/.test(query)) { const near = findBookFuzzy(query); if (near) setSuggest(near.name) }
     // "love in the gospels", "comfort in Isaiah": the words, searched in those books only
     const within = splitScope(query)
     const words = within?.query ?? query
@@ -205,6 +209,8 @@ export default function Search() {
         : tn(res.total, '{n} verse · {ms} ms', '{n} verses · {ms} ms', { n: res.total.toLocaleString(), ms: res.took }))
     : ''
   return (
+    // the bubble is pinned over the screen's foot, outside its scroll
+    <View style={{ flex: 1 }}>
     <Screen safeTop>
       <H>{t('Search')}</H>
       <Row ref={tourRef('search-field')}>
@@ -234,9 +240,12 @@ export default function Search() {
       {res && !busy ? <WordFootnotes word={res.query} rows={3} scope={res.scope} onOpen={r => openRef(r.book, r.chapter, r.v1)} onAll={w => setWord({ code: '', word: w })} /> : null}
       {res && !busy ? <OwnOutlineMatches query={res.query} /> : null}
       {list}
-      <View style={{ height: 24 }} />
+      {/* under the last row: with Ask's bubble there, room for the row to be scrolled clear of it */}
+      <View style={{ height: askOn ? ASK_BUBBLE_H : 24 }} />
       <WordSheet target={word} onClose={() => setWord(null)} />
     </Screen>
+    <AskBubble field={q} />
+    </View>
   )
 }
 

@@ -13,6 +13,7 @@ import { N_, t } from '@shared/i18n'
 import { cachedGet, getApiBase, getToken, loadApiBase } from './api'
 import { deviceId } from './device'
 import { APP_TOOLS, undo, type ActionContext, type Change } from './assistantActions'
+import { withVerses } from './askRefs'
 
 /** What the screen shows, in order. */
 export type Shown =
@@ -28,10 +29,20 @@ export interface Conversation { messages: ChatMessage[]; shown: Shown[]; places:
 export interface Live { asking: boolean; words: string; draft: string | null }
 
 const KEY = 'berean_assistant'
-/** Reader messages the screen keeps, and those whose messages are kept and posted: the eight the server shows the model
- *  (rs/src/assistant.rs HISTORY). */
+/** Reader messages the screen keeps, and those whose messages are kept and posted: up to SENT_MOST, the most the server
+ *  shows the model (rs/src/assistant.rs HISTORY), cut back to SENT when one more comes. The window moves in steps, not
+ *  at every message: between two cuts each post begins with all of the post before it, which the model's provider keeps
+ *  in its cache and reads at a tenth of the price. SENT_BYTES is the most the messages may be, every result as its
+ *  stand-in, while more than SENT are kept: past it the window is SENT again, as it was before the steps, so a
+ *  conversation of long answers is no sooner too long for the server. A request to the model is 96 KB at most: the
+ *  server's prompt and tools are 13 KB of it and a message's two readings of the library up to 15 KB each, which
+ *  leaves 53 KB for the conversation. */
 const KEPT = 30
 const SENT = 8
+const SENT_MOST = 12
+const SENT_BYTES = 40_000
+/** The bytes of `s` in UTF-8. */
+const bytes = (s: string) => { let n = 0; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); n += c < 0x80 ? 1 : c < 0x800 || (c >= 0xd800 && c < 0xe000) ? 2 : 3 } return n }
 const EMPTY: Conversation = { messages: [], shown: [], places: {} }
 
 let conv: Conversation = EMPTY
@@ -61,15 +72,20 @@ export function standIn(name: string | undefined, content: string): string {
   }
   return JSON.stringify(ids.length ? { paragraphs: ids.map(id => ({ id })) } : { done: true })
 }
-/** The conversation in the form the server keeps, which is the form kept on the device and the one posted: the last SENT
- *  reader messages with what followed each, every tool's result before the latest reader message as its stand-in, the
- *  last KEPT reader messages on the screen, and the places of the paragraphs either still names. */
+/** The conversation in the form the server keeps, which is the form kept on the device and the one posted: the reader
+ *  messages of the window (up to SENT_MOST, the last SENT once there are more or they are more than SENT_BYTES) with
+ *  what followed each, every tool's result before the latest reader message as its stand-in, the last KEPT reader
+ *  messages on the screen, and the places of the paragraphs either still names. */
 export function trimmed(c: Conversation): Conversation {
   const readers = c.messages.flatMap((m, i) => (m.role === 'user' ? [i] : []))
-  const from = readers.length > SENT ? readers[readers.length - SENT] : 0
   const latest = readers[readers.length - 1] ?? 0
   const names = new Map(c.messages.flatMap(m => (m.role === 'assistant' ? m.tool_calls ?? [] : [])).map(call => [call.id, call.function.name]))
-  const messages = c.messages.slice(from).map((m, i) => (m.role === 'tool' && i + from < latest ? { ...m, content: standIn(names.get(m.tool_call_id), m.content) } : m))
+  const all = c.messages.map((m, i) => (m.role === 'tool' && i < latest ? { ...m, content: standIn(names.get(m.tool_call_id), m.content) } : m))
+  // measured with the latest message's results as stand-ins too, as the next post has them: what is kept while a turn
+  // runs is then the window the turn was posted with
+  const posted = () => bytes(JSON.stringify(c.messages.map(m => (m.role === 'tool' ? { ...m, content: standIn(names.get(m.tool_call_id), m.content) } : m))))
+  const cut = readers.length > SENT_MOST || (readers.length > SENT && posted() > SENT_BYTES)
+  const messages = cut ? all.slice(readers[readers.length - SENT]) : all
   const shownReaders = c.shown.flatMap((s, i) => (s.kind === 'reader' ? [i] : []))
   const shownFrom = shownReaders.length > KEPT ? shownReaders[shownReaders.length - KEPT] : 0
   const shown = c.shown.slice(shownFrom)
@@ -111,6 +127,10 @@ export function setActionHost(h: typeof host) { host = h }
 export const placeOf = (c: Conversation, id: number): ParagraphRef | undefined => c.places[String(id)]
 /** The words of an answer as they stream, its citations left for the finished answer. */
 export const streamed = (words: string) => words.replace(/\s*\[[\d,; ]*\]?$/, '').replace(/\s*\[[\d,; ]+\]/g, '')
+  // a line's list mark, markdown the model wrote though it is asked for plain prose (the answer's sentences come
+  // without it too, rs/src/assistant.rs `sentences`). Nothing else is taken out here: the server takes the model's
+  // asterisks out before it reads the words for a name, and the app must not join what the server judged apart
+  .replace(/^[ \t]*[-•][ \t]+/gm, '')
 
 const TOO_LONG = N_('This conversation is too long for Ask. Start a new conversation to go on.')
 
@@ -208,7 +228,9 @@ async function post(req: TurnRequest, signal: AbortSignal, who: number | null): 
         const found = m.role === 'tool' ? Object.fromEntries(placesIn(m.content).map(p => [String(p.id), p])) : {}
         keep({ ...conv, messages: [...conv.messages, m], places: { ...conv.places, ...found } })
         if ((v as ChatMessage).role === 'assistant' && (v as { tool_calls?: unknown[] }).tool_calls?.length) setLive({ words: '' })
-      } else if (name === 'answer') { note({ kind: 'answer', sentences: v.sentences }); setLive({ words: '' }) }
+      // a sentence that gives a verse the Bible tools supplied for this message rests on it: settled here, while the
+      // tools' results are still whole (lib/askRefs.ts)
+      } else if (name === 'answer') { note({ kind: 'answer', sentences: withVerses(v.sentences, conv.messages) }); setLive({ words: '' }) }
       else if (name === 'pending') pending = v
       else if (name === 'error') note({ kind: 'error', text: v.too_long ? t(TOO_LONG) : t('Ask could not answer just now. Try again in a moment.') })
     }

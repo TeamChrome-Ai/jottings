@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { AppState } from 'react-native'
-import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { DARK_DEFAULT, LIGHT_DEFAULT, isThemeId, migrateThemeId, type ThemeId } from '../theme'
 import { customIdOf, migrateFontPrefs, setCustomFonts, type CustomFont, type CustomFontKey } from '../lib/customFonts'
 import { clampSpeed } from '../lib/motionSpeed'
@@ -125,20 +125,32 @@ function createStore(): PrefsStore & { hydrate: (stored: Prefs | null) => void; 
   }
 }
 
-export function PrefsProvider({ children }: { children: ReactNode }) {
-  const [store] = useState(createStore)
-  useEffect(() => {
+/** One store for the app: the screens read it through the provider, and read-aloud reads it with no screen mounted (a
+ *  car that starts a chapter with the app not open, lib/car.ts). */
+const store = createStore()
+export const prefsStore: PrefsStore = store
+let loading: Promise<void> | null = null
+/** Reads the stored preferences into the store, once. */
+export function loadPrefs(): Promise<void> {
+  loading ??= (async () => {
     let stored: Prefs | null = null
-    AsyncStorage.multiGet([KEY, POSITION_KEY]).then(([[, raw], [, pos]]) => {
+    try {
+      const [[, raw], [, pos]] = await AsyncStorage.multiGet([KEY, POSITION_KEY])
       if (raw) { try { stored = { ...DEFAULTS, ...migrate(JSON.parse(raw)) } } catch { /* corrupt prefs: defaults */ } }
       // no settings saved but a place in the text: someone who has read here before the welcome existed
       else if (pos) stored = { ...DEFAULTS, onboarded: true, toured: true }
-    }).finally(() => store.hydrate(stored))
-  }, [store])
+    } catch { /* storage that cannot be read: defaults */ }
+    store.hydrate(stored)
+  })()
+  return loading
+}
+
+export function PrefsProvider({ children }: { children: ReactNode }) {
+  useEffect(() => { void loadPrefs() }, [])
   useEffect(() => {
     const sub = AppState.addEventListener('change', s => { if (s !== 'active') store.flush() })
     return () => { sub.remove(); store.flush() }
-  }, [store])
+  }, [])
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>
 }
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))

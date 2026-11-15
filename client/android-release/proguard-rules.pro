@@ -80,3 +80,11 @@
 -keepclassmembers class * extends androidx.room.RoomDatabase {
     <init>();
 }
+
+# --- expo-audio's own media session, found by name (modules/media-library, MediaLibraryModule.kt "own") --------------
+# expo-audio gives every sound a media session in an internal property; the app's media library releases it through
+# the property's getter, looked up by name, so that one reading shows one session. Renamed or inlined away, nothing
+# would be released and nothing would fail: Android would list two sessions (scripts/android-auto-check.sh counts).
+-keepclassmembers class expo.modules.audio.AudioPlayer {
+    *** getMediaSession*();
+}

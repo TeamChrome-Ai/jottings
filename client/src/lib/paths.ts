@@ -18,7 +18,7 @@ import {
 import { t } from '@shared/i18n'
 import { cachedGet, del, getToken, put } from './api'
 import { loadCompanionIndex } from './companion'
-import { useAuth } from '../store/auth'
+import { storedSession, useAuth } from '../store/auth'
 import { onEditionChange, pathOffered, shownPathId } from './editionCore'
 import { useEdition } from './edition'
 import { deviceMarks, onMarksChange, peekMarks, refreshMarks } from './readMarks'
@@ -152,6 +152,20 @@ function load(uid: number | undefined): Promise<void> {
   return loading
 }
 const errText = (e: unknown) => (e instanceof Error ? e.message : t('Something went wrong'))
+
+/**
+ * The path for read aloud, which can be started with no screen mounted (a car asks for a chapter with the app not
+ * open) and then has no hook to load it: called at each start, it loads the path of whoever the device is signed in
+ * as (the account's, or the one kept on the device signed out) unless a screen has already, and asks an account
+ * again when the last asking failed. The reading never waits for it. A chapter that ends before the answer is in,
+ * or with the server out of reach (a car with no signal), goes on in the Bible's order, as it does on the phone when
+ * the app was opened with no connection; the next chapter's start asks again.
+ */
+export async function pathForReadAloud(): Promise<void> {
+  const uid = await storedSession()
+  if (snap.uid !== uid || snap.account === undefined) return load(uid)
+  if (snap.error && uid !== undefined) return refreshPath()
+}
 
 /**
  * Re-reads the account's path and marks without clearing what is shown (Home and the Paths screen on focus). The card
@@ -293,18 +307,9 @@ export function usePath(): PathView {
 /** The reader's day as YYYY-MM-DD (the target date is one of these). */
 export const dayOf = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-/**
- * The next portion without a hook, for read aloud's continue-into-next and the reader's next turn: what the last load
- * knows (null while nothing has loaded, without a path, or when the path is finished). `after` names the chapter
- * about to be left: while the reader is on a path chapter the portion after it is meant, whether or not it is read.
- */
-export function peekNextPortion(after?: { book: number; chapter: number }): Portion | null {
-  const acc = snap.account
-  if (!acc?.path) return null
-  const set_ = readSet(acc)
-  if (after) set_.add(chapterKey(after.book, after.chapter))
-  return nextPortion(shown(acc.path), set_, snap.indexes)?.portion ?? null
-}
+/** `usePathHere(book, chapter).next` without a hook, from what the last load knows: read aloud goes on into it with no
+ *  reader on screen. */
+export const peekPathNextAfter = (book: number, chapter: number): Portion | null => pathHereOf(snap.account, snap.indexes, book, chapter).next
 /** The path as last loaded, without a hook (null without one or before the first load). */
 export const peekPath = (): PathState | null => shown(snap.account?.path ?? null)
 /** Called on every change of the path store (a load, a change, a credit on this device); returns the unsubscribe. */
@@ -324,14 +329,14 @@ export function usePathHere(book: number, chapter: number): PathHere {
   const edition = useEdition()
   useMarks()
   useEffect(() => { void load(uid) }, [uid])
-  return useMemo(() => {
-    const acc = s.uid === uid ? s.account : undefined
-    const p = shown(acc?.path)
-    if (!p) return OFF_PATH
-    const portion = portionOf(p, book, chapter, s.indexes)
-    if (!portion) return OFF_PATH
-    return { onPath: true, portion, next: nextOnPath(p, readSet(acc), book, chapter, s.indexes) }
-  }, [s, uid, book, chapter, edition])  // eslint-disable-line react-hooks/exhaustive-deps
+  return useMemo(() => pathHereOf(s.uid === uid ? s.account : undefined, s.indexes, book, chapter), [s, uid, book, chapter, edition])  // eslint-disable-line react-hooks/exhaustive-deps
+}
+function pathHereOf(acc: PathAccount | undefined, indexes: Snapshot['indexes'], book: number, chapter: number): PathHere {
+  const p = shown(acc?.path)
+  if (!p) return OFF_PATH
+  const portion = portionOf(p, book, chapter, indexes)
+  if (!portion) return OFF_PATH
+  return { onPath: true, portion, next: nextOnPath(p, readSet(acc), book, chapter, indexes) }
 }
 
 /**

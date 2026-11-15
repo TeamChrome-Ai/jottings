@@ -91,11 +91,11 @@ describe('the words', () => {
   it('keeps {version} in the Settings line of every language', () => {
     for (const l of LANGS) expect(catalogue(l)['The three scenes of version {version}']).toContain('{version}')
   })
-  it('shows a real search of the library, as it answered on 2026-11-14: nothing in scene 1 is made up', () => {
+  it('shows a real search of the library, as the library released with 2.0 answers: nothing in scene 1 is made up', () => {
     expect(ASK.question).toBe('how can I be sure I am saved')
-    expect(ASK.verses).toEqual([{ book: 62, chapter: 5, verse: 13, total: 33 }, { book: 43, chapter: 5, verse: 24, total: 71 }])
+    expect(ASK.verses).toEqual([{ book: 62, chapter: 5, verse: 13, total: 35 }, { book: 43, chapter: 5, verse: 24, total: 73 }])
     expect(ASK.phrases).toEqual([{ words: 'assurance of salvation', total: 33 }, { words: 'the witness of the Spirit', total: 60 }])
-    expect(ASK.related).toEqual([{ words: 'the new birth', total: 299 }])
+    expect(ASK.related).toEqual([{ words: 'the new birth', total: 308 }])
   })
   it.each(LANGS)('leaves the question, its wordings and the answer in English in %s: the library is in English', l => {
     const c = catalogue(l)

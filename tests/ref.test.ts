@@ -56,6 +56,83 @@ describe('formatRef / scanRefs', () => {
     expect(refs.map(r => [r.ref.book, r.ref.chapter, r.ref.v1, r.ref.v2])).toEqual([[43, 3, 16, undefined], [62, 4, 9, 10], [19, 23, undefined, undefined], [1, 1, undefined, undefined]])
   })
   const flat = (s: string, ctx?: { book: number; chapter: number }) => scanRefs(s, ctx).map(r => `${s.slice(r.start, r.end)}=${r.ref.book}.${r.ref.chapter}${r.ref.v1 !== undefined ? ':' + r.ref.v1 : ''}${r.ref.v2 !== undefined ? '-' + r.ref.v2 : ''}`)
+  it('reads a numbered book after a capitalised word as that book, not as the one without the figure', () => {
+    // "See 1" is no book; the figure belongs to the name after it
+    expect(flat('See 1 John 4:9, where it is said.')).toEqual(['1 John 4:9=62.4:9'])
+    expect(flat('Compare 1 John 4:9 with John 4:9.')).toEqual(['1 John 4:9=62.4:9', 'John 4:9=43.4:9'])
+    expect(flat('Read 1 Cor 13, then 2 Tim. 3:16; In 2 Peter 1:21 also.')).toEqual(['1 Cor 13=46.13', '2 Tim. 3:16=55.3:16', '2 Peter 1:21=61.1:21'])
+    // a capitalised word and a figure with no book after them are still nothing
+    expect(flat('Step 2 is next. Chapter 3 opens. Never 5 of them.')).toEqual([])
+  })
+  it('a word that takes a number of its own keeps its figure: the book after it is the one without a figure', () => {
+    expect(flat('Chapter 3 John 1:1')).toEqual(['John 1:1=43.1:1'])
+    expect(flat('Chapter 2 John 10')).toEqual(['John 10=43.10'])
+    expect(flat('See Chapter 3 John 1:1 there.')).toEqual(['John 1:1=43.1:1'])
+    expect(flat('Verse 2 Peter saw')).toEqual([])
+    for (const word of ['Chapters', 'Verse', 'Verses', 'Page', 'Part', 'Section', 'Volume', 'Book', 'Question', 'Lesson', 'Hymn', 'Paragraph', 'Chap.', 'Ch.', 'Ver.', 'Vol.', 'No.', 'Sect.', 'Pt.']) {
+      expect(flat(`${word} 3 John 2:1`), word).toEqual(['John 2:1=43.2:1'])
+    }
+    // a word that is itself a book keeps its figure as it always did, and the book after it is linked too. "Number"
+    // is one: the scanner reads the opening of a book's name as the book, so "Number 3" is Numbers 3 as it was before
+    expect(flat('Psalm 1 John 3:16')).toEqual(['Psalm 1=19.1', 'John 3:16=43.3:16'])
+    expect(flat('Number 3 John 2:1')).toEqual(['Number 3=4.3', 'John 2:1=43.2:1'])
+  })
+  it('any other capitalised word gives a figure 1 to 3 to the numbered book that follows', () => {
+    expect(flat('See 1 John 4:9')).toEqual(['1 John 4:9=62.4:9'])
+    expect(flat('Read 1 Cor 13')).toEqual(['1 Cor 13=46.13'])
+    expect(flat('In 2 Samuel 7')).toEqual(['2 Samuel 7=10.7'])
+    expect(flat('Compare 1 Peter 1:3')).toEqual(['1 Peter 1:3=60.1:3'])
+    expect(flat('And 2 Tim. 3:16 says, See Also 3 John 4.')).toEqual(['2 Tim. 3:16=55.3:16', '3 John 4=64.1:4'])
+  })
+  it('“Note” gives its figure to the book, as the footnotes write it (“see Note 1 Sam 2:8”: the note at 1 Samuel 2:8)', () => {
+    expect(flat("Or 'earth:' see Note 1 Sam 2:8 and Matt 5:5.")).toEqual(['1 Sam 2:8=9.2:8', 'Matt 5:5=40.5:5'])
+    expect(flat('Diakonos: see Note. 1Cor 4:1.')).toEqual(['1Cor 4:1=46.4:1'])
+    expect(flat('[understanding]: see Note 1Cor 1:5.')).toEqual(['1Cor 1:5=46.1:5'])
+    expect(flat('Note 3 John 1')).toEqual(['3 John 1=64.1:1'])
+  })
+  it('a full word with a stop after it ended a sentence, and an abbreviation without its stop is a word like any other', () => {
+    expect(flat('That closes the Chapter. 1 John 4:9 goes on.')).toEqual(['1 John 4:9=62.4:9'])
+    expect(flat('So ends the first Part. 1 Tim. 3 follows.')).toEqual(['1 Tim. 3=54.3'])
+    // French "Par" is "by", not the short form of paragraph
+    setNamesLang('fr'); setShownText('fr')
+    expect(flat('Par 1 Jean 4:9 nous le savons.')).toEqual(['1 Jean 4:9=62.4:9'])
+  })
+  it('a figure 4 to 9, or of more than one digit, is never given to the book', () => {
+    expect(flat('See 4 John 1:1')).toEqual(['John 1:1=43.1:1'])
+    expect(flat('Read 9 John 2:1, And 12 John 3:16, Compare 21 John 4:1, Then 30 John 5:1')).toEqual(['John 2:1=43.2:1', 'John 3:16=43.3:16', 'John 4:1=43.4:1', 'John 5:1=43.5:1'])
+    expect(flat('Chapter 9 John 1:1')).toEqual(['John 1:1=43.1:1'])
+  })
+  it('reads the same in German, French, Italian, Dutch and Swedish: the language’s own words for chapter and verse keep their figure', () => {
+    setNamesLang('de'); setShownText('de')
+    expect(flat('Kapitel 3. Johannes 1,1')).toEqual(['Johannes 1,1=43.1:1'])
+    expect(flat('Kapitel 3 Johannes 1,1')).toEqual(['Johannes 1,1=43.1:1'])
+    expect(flat('Vers 2 Johannes 3,16 und Kap. 1 Johannes 4,9')).toEqual(['Johannes 3,16=43.3:16', 'Johannes 4,9=43.4:9'])
+    expect(flat('Siehe 1. Johannes 4,9')).toEqual(['1. Johannes 4,9=62.4:9'])
+    // as the German footnotes write it
+    expect(flat('Vergl. 1. Mose 3,15; Vergl. 2. Kor 5,17')).toEqual(['1. Mose 3,15=1.3:15', '2. Kor 5,17=47.5:17'])
+    setNamesLang('fr'); setShownText('fr')
+    expect(flat('Chapitre 3 Jean 1:1')).toEqual(['Jean 1:1=43.1:1'])
+    expect(flat('Verset 2 Jean 3:16')).toEqual(['Jean 3:16=43.3:16'])
+    expect(flat('Voir 1 Jean 4:9')).toEqual(['1 Jean 4:9=62.4:9'])
+    setShownText('en')
+    setNamesLang('it')
+    expect(flat('Capitolo 3 Giovanni 1:1; Vedi 1 Giovanni 4:9')).toEqual(['Giovanni 1:1=43.1:1', '1 Giovanni 4:9=62.4:9'])
+    setNamesLang('nl')
+    expect(flat('Hoofdstuk 3 Johannes 1:1; Zie 1 Johannes 4:9')).toEqual(['Johannes 1:1=43.1:1', '1 Johannes 4:9=62.4:9'])
+    setNamesLang('sv')
+    expect(flat('Kapitel 3 Johannes 1:1; Jämför 1 Johannes 4:9')).toEqual(['Johannes 1:1=43.1:1', '1 Johannes 4:9=62.4:9'])
+    // English words still keep their figure whatever language the app is in: the texts are English
+    expect(flat('Chapter 3 Johannes 1:1')).toEqual(['Johannes 1:1=43.1:1'])
+  })
+  it('still ends on a long string of such words', () => {
+    // each word is looked up as a book once or twice and the scan moves on: 100,000 characters in well under the
+    // five seconds a test may take (about a second on a two-core box)
+    const t0 = Date.now()
+    expect(flat('See 1 '.repeat(5000) + 'John 4:9')).toEqual(['1 John 4:9=62.4:9'])
+    expect(flat('Chapter 3 '.repeat(5000) + 'John 1:1')).toEqual(['John 1:1=43.1:1'])
+    expect(flat('See 1 Chapter 2 Then 3 '.repeat(2000))).toEqual([])
+    expect(Date.now() - t0).toBeLessThan(4000)
+  })
   it('carries the book into bare chapter.verse continuations (Darby note style)', () => {
     expect(flat("see Gen 9:26 and 24.7. Other names: see Ex 3:14,15; Isa 40:28.")).toEqual(['Gen 9:26=1.9:26', '24.7=1.24:7', 'Ex 3:14=2.3:14', '15=2.3:15', 'Isa 40:28=23.40:28'])
     expect(flat("Lit. 'bondmen:' so chs. 6:12; 7.8; 8.14; and elsewhere.", { book: 2, chapter: 21 })).toEqual(['chs. 6:12=2.6:12', '7.8=2.7:8', '8.14=2.8:14'])

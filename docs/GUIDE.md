@@ -44,7 +44,9 @@ The voice, speed and pauses are in Settings, Listening. Ask can start and stop r
 <!-- route: /search -->
 
 Search, on the tab bar, finds verses. A reference such as Rom 8:28 opens the chapter; words find every verse with them,
-in the whole Bible or one Testament. To search the ministry, open Ministry from Home and search there.
+in the whole Bible or one Testament. To search the ministry, open Ministry from Home and search there. While Ask is
+available, a bubble marked Ask at the bottom right of Search opens it, with the words in the search field written in
+its box for you to send.
 
 ## Stats
 <!-- route: /stats -->
@@ -81,12 +83,16 @@ answers questions from this library, each sentence with the paragraphs it rests 
 ## Ask
 <!-- route: /ask -->
 
-Ask answers a question about the Bible from the ministry library, with the paragraphs each sentence rests on; tap one
-to open it. It also answers questions about the app, opens chapters and screens, changes settings, reads aloud, adds
-bookmarks and highlights, and drafts feedback for you to send. Every change it makes shows a line with Undo. Open it
-from Home or Ministry. It needs an account, and answers a limited number of messages a day. What you write is sent to
-the AI model's provider; New conversation clears the conversation from the device. Ask cannot sign you out, delete your
-account or data, or do anything about another person.
+Ask answers a question about the Bible from the ministry library. A small number after a sentence is the paragraph it
+rests on, and the sources are listed under the answer by author and work: tap a number or a source to open it. A
+sentence with no source in the library is marked "no source". It also answers questions about the app, opens chapters
+and screens, changes settings, reads aloud, adds bookmarks and highlights, and drafts feedback for you to send. It can
+search the Bible for where something is said, and a reference in its answer, such as John 3:16, is a link: tap it to
+open the verse. Going back returns to the conversation. Every change it makes shows a line with Undo. Write in the box
+at the bottom of the screen and tap Send; Stop ends an answer on its way. Open it from Home, Ministry or the bubble on
+Search. It needs an account, and answers a limited number of messages a day. What you write is sent to the AI model's
+provider. New conversation, at the top of the screen, clears the conversation from the device. Ask cannot sign you
+out, delete your account or data, or do anything about another person.
 
 ## Dictionary and concordance
 <!-- route: /dictionary -->

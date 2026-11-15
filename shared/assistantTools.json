@@ -1,7 +1,7 @@
 [
   {
     "name": "search_library",
-    "description": "The ten paragraphs of the ministry library nearest a question in meaning, each with its id, author, work, section and text. Use it for every question about the Bible, doctrine or the Christian life.",
+    "description": "The ten paragraphs of the ministry library nearest a question in meaning, each with its id, author, work, section and text. Use it for every question about the Bible, doctrine or the Christian life. Call it once for one message of the reader's, and a second time only if their question has two distinct subjects.",
     "input": { "type": "object", "properties": { "question": { "type": "string", "description": "The reader's question, in plain words." } }, "required": ["question"], "additionalProperties": false },
     "runs": "server",
     "changes": false
@@ -24,6 +24,13 @@
     "name": "read_verses",
     "description": "Bible verses in J. N. Darby's translation: one verse, a range within a chapter, or a whole chapter.",
     "input": { "type": "object", "properties": { "reference": { "type": "string", "description": "As John 3:16, Romans 8:28-39 or Psalm 23." } }, "required": ["reference"], "additionalProperties": false },
+    "runs": "server",
+    "changes": false
+  },
+  {
+    "name": "search_bible",
+    "description": "Finds where the Bible says something: the verses of J. N. Darby's translation that hold the words given, at most ten of them, each with its reference and its text, and the total found. Every bare word must be in the verse; a phrase in quotes is matched as it is written. One word or one phrase comes in the Bible's order, several words best match first.",
+    "input": { "type": "object", "properties": { "query": { "type": "string", "description": "Words of the text, as shepherd or faith hope love, or a phrase in quotes, as \"the grace of God\".", "maxLength": 200 }, "scope": { "type": "string", "description": "Where to search: OT, NT, one book by its name, as Romans, or books by their number in the Bible, as 40-43 for the Gospels. Left out, the whole Bible." } }, "required": ["query"], "additionalProperties": false },
     "runs": "server",
     "changes": false
   },
@@ -85,7 +92,7 @@
   },
   {
     "name": "change_settings",
-    "description": "Change one or more of the reader's settings. Only the fields named change; a value outside its range is refused and the result says the range. Light themes: paper (the default), sepia, linen, sand, mint, sky, rose, lavender, olive. Dark: slate (the default), midnight, forest, wine, nord, plum, graphite, ocean. True black: black, black-ember, black-jade, black-ice, black-rose, black-gold, black-lilac, black-white. system follows the device between themeLight and themeDark.",
+    "description": "Change one or more of the reader's settings. Only the fields named change; a value outside its range is refused and the result says the range. themeLight lists the light themes (paper the default) and themeDark the dark ones (slate the default; those named black are true black). system follows the device between themeLight and themeDark.",
     "input": {
       "type": "object",
       "properties": {

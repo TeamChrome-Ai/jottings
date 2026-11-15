@@ -29,13 +29,19 @@ const ok = (label, cond) => { console.log(`${cond ? 'ok  ' : 'FAIL'} ${label}`);
 
 // ---------- the stand-in ----------
 
+/** A tool's result as the model is shown it: JSON, or a library result's plain lines (`[id] author, work, section`,
+ *  the text under it, a blank line between two) read back as its paragraphs. */
+function shown(content) {
+  try { return JSON.parse(content) } catch {}
+  return { paragraphs: content.split('\n\n').map(block => /^\[(\d+)\] ([^\n]*)\n([\s\S]+)$/.exec(block)).filter(Boolean).map(([, id, from, text]) => ({ id: Number(id), from, text })) }
+}
 /** What the stand-in model does for a conversation: calls to tools, or words. */
 function script(messages) {
   const u = messages.map(m => m.role).lastIndexOf('user')
   const asked = messages[u].content
   const after = messages.slice(u + 1)
   const step = after.filter(m => m.role === 'assistant').length
-  const results = after.filter(m => m.role === 'tool').map(m => { try { return JSON.parse(m.content) } catch { return {} } })
+  const results = after.filter(m => m.role === 'tool').map(m => shown(m.content))
   const last = results[results.length - 1] ?? {}
   const call = (name, args) => ({ calls: [[name, args]] })
   const text = t => ({ text: t })
@@ -192,14 +198,23 @@ const fits = async (page, lane) => { const w = await page.evaluate(() => documen
   const before = await chatCalls()
   await send(page, 'What did JND say about grace?')
   const calls = (await (await fetch(`${STUB}/calls`)).json()).slice(before)
-  const found = JSON.parse(calls[1]?.messages.findLast(m => m.role === 'tool')?.content ?? '{}').paragraphs ?? []
-  ok(`answer: search_library gave paragraphs with id, author, work, section and text (${found.length})`, found.length > 1 && found.every(p => p.id && p.author && p.work?.title && typeof p.section === 'string' && p.text))
-  const links = page.getByRole('link', { name: /^Open / }).filter({ visible: true })
-  ok(`answer: each supplied id is a citation that names its author and work (${await links.count()}: ${await links.first().getAttribute('aria-label')})`, (await links.count()) === 3)
+  const result = calls[1]?.messages.findLast(m => m.role === 'tool')?.content ?? ''
+  const read = shown(result).paragraphs ?? []
+  ok(`answer: the model was shown search_library's paragraphs as plain lines, each with its id, where it is from and its text (${read.length}: ${result.split('\n')[0]})`, !result.startsWith('{') && read.length > 1 && read.every(p => p.id && p.from.split(', ').length >= 2 && p.text))
+  const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('berean_assistant') ?? '{}'))
+  const found = JSON.parse(kept.messages?.findLast(m => m.role === 'tool')?.content ?? '{}').paragraphs ?? []
+  ok(`answer: the app keeps them as JSON with id, author, work, section and text, the same paragraphs (${found.length})`, found.length > 1 && found.every(p => p.id && p.author && p.work?.title && typeof p.section === 'string' && p.text) && found.map(p => p.id).join() === read.map(p => p.id).join())
+  // the numbers after the sentences, and the list of the answer's sources under it (scripts/ask-ui-check.mjs reads both closely)
+  const links = page.getByTestId('ask-cite').filter({ visible: true })
+  const named = await links.evaluateAll(els => els.every(e => e.getAttribute('role') === 'link' && /^Open \S.*, \S/.test(e.getAttribute('aria-label') ?? '')))
+  ok(`answer: each supplied id is a number after its sentence, a link that names its author and work (${(await links.allTextContents()).join(' ')}: ${await links.first().getAttribute('aria-label').catch(() => null)})`, (await links.allTextContents()).join(' ') === '¹ ² ¹' && named)
+  const sources = page.getByTestId('ask-source').filter({ visible: true })
+  ok(`answer: its two paragraphs are listed under it, each once, by author and work (${(await sources.allInnerTexts()).map(t => t.replace(/\s+/g, ' ')).join(' | ')})`, (await sources.count()) === 2 && (await page.getByRole('link', { name: /^Open / }).filter({ visible: true }).count()) === 5)
   ok('answer: the id no tool supplied is nowhere on the screen', !(await page.content()).includes('999999999'))
-  const muted = await page.evaluate(() => { const el = [...document.querySelectorAll('span, div')].find(e => e.textContent === ' It never fails.' || e.textContent === 'It never fails.'); return el ? getComputedStyle(el).color : null })
-  const plain = await page.evaluate(() => { const el = [...document.querySelectorAll('span, div')].find(e => e.textContent?.startsWith('Darby writes that grace reigns') && e.children.length > 0); return el ? getComputedStyle(el).color : null })
-  ok(`answer: the sentence the false id was taken from is muted (${muted} against ${plain})`, !!muted && !!plain && muted !== plain)
+  const inkOf = starts => page.evaluate(t => { const el = [...document.querySelectorAll('span, div')].find(e => e.textContent.trim().startsWith(t) && e.textContent.trim().length < t.length + 40); return el ? getComputedStyle(el).color : null }, starts)
+  const [bare, plain] = [await inkOf('It never fails.'), await inkOf('Grace brings salvation')]
+  const marks = page.getByTestId('ask-no-source').filter({ visible: true })
+  ok(`answer: the sentence the false id was taken from is marked “no source” (${(await marks.allTextContents()).join()}), in the ink of the others (${bare}, as ${plain})`, (await marks.count()) === 1 && (await marks.first().textContent()).replace(/\s+/g, ' ').trim() === 'no source' && !!bare && bare === plain)
   await fits(page, 'answer')
   await shot(page, 'answer')
   await links.first().click()
@@ -307,18 +322,21 @@ const fits = async (page, lane) => { const w = await page.evaluate(() => documen
 }
 
 {
-  for (let k = 1; k <= 30; k++) {
+  // the account's messages a day, as the server says them (75 since 2.0.1)
+  const { each } = await (await fetch(`${on.root}/api/assistant`)).json()
+  ok(`lane 9: an account has 75 messages a day (${each})`, each === 75)
+  for (let k = 1; k <= each; k++) {
     const r = await fetch(`${on.root}/api/assistant/turn`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${capped.token}` }, body: JSON.stringify({ messages: [{ role: 'user', content: `hello ${k}` }] }) })
     await r.text()
     if (r.status !== 200) { ok(`lane 9: message ${k} answered (${r.status})`, false); break }
   }
   const before = await chatCalls()
   const page = await open(on.root, '/ask', capped)
-  await send(page, 'hello 31')
-  const r = await fetch(`${on.root}/api/assistant/turn`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${capped.token}` }, body: JSON.stringify({ messages: [{ role: 'user', content: 'hello 32' }] }) })
+  await send(page, `hello ${each + 1}`)
+  const r = await fetch(`${on.root}/api/assistant/turn`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${capped.token}` }, body: JSON.stringify({ messages: [{ role: 'user', content: `hello ${each + 2}` }] }) })
   const body = await r.json()
   const tomorrow = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() + 1)).toISOString().replace('.000Z', 'Z')
-  ok(`lane 9: the 31st is refused with the time of the reset (${r.status} ${body.cap} ${body.resets_at})`, r.status === 429 && body.cap === 'account' && body.resets_at === tomorrow)
+  ok(`lane 9: the message after the account's last is refused with the time of the reset (${r.status} ${body.cap} ${body.resets_at})`, r.status === 429 && body.cap === 'account' && body.resets_at === tomorrow)
   ok('lane 9: … which the screen shows', await page.getByText(/^That is all of today’s questions for your account\. Ask answers again at /).filter({ visible: true }).count().then(n => n === 1))
   ok(`lane 9: … and no model call is made (${await chatCalls() - before})`, (await chatCalls()) === before)
   await shot(page, 'cap')
@@ -355,7 +373,7 @@ const log = readFileSync(on.log, 'utf8').split('\n')
 const lines = log.filter(l => l.includes('chat call'))
 ok(`every model call is logged as a chat call with its tokens (${lines.length} lines, ${await chatCalls()} calls)`, lines.length === (await chatCalls()) && lines.every(l => /prompt_tokens=2400 cached_tokens=1920 completion_tokens=80/.test(l)))
 ok('no chat call line reads as a model call or an embedding call', lines.every(l => !l.includes('model call') && !l.includes('embedding call')))
-ok('the start-up line says Ask is on, and the other server that it is off', log.some(l => l.includes('assistant on: gpt-6.1-terra, at most 2000 reader messages a day and 30 for an account')) && readFileSync(off.log, 'utf8').includes('assistant off: no BEREAN_CHAT_KEY'))
+ok('the start-up line says Ask is on, and the other server that it is off', log.some(l => l.includes('assistant on: gpt-6.1-terra, at most 2000 reader messages a day, 75 for an account and 300 for the accounts of under a day together')) && readFileSync(off.log, 'utf8').includes('assistant off: no BEREAN_CHAT_KEY'))
 ok('every chat call sent the key as a bearer token', (await (await fetch(`${STUB}/calls`)).json()).every(c => c.key === 'Bearer test-chat-key'))
 ok(`no page error (${errors.join(' | ')})`, errors.length === 0)
 await browser.close()
