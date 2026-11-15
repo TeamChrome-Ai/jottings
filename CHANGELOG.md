@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.9, 8 November 2026
+
+The source of the app's 1.3.9 release.
+
 ## 1.3.8, 5 November 2026
 
 The source of the app's 1.3.8 release.

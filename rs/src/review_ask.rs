@@ -15,11 +15,11 @@ use serde_json::{json, Value};
 /// What a committed reader is when the owner names nothing else: chapters credited on 14 days, 30 chapters in all.
 pub const DAYS: i64 = 14;
 pub const CHAPTERS: i64 = 30;
-/// A reader who has read enough in the app (`u` is the users row); :days and :chapters are the ask's. Chapters ticked
-/// by hand (marks.rs) are read elsewhere and say nothing of the app.
+/// A reader who has read enough (`u` is the users row); :days and :chapters are the ask's. Any days count, not only
+/// days in a row, and a chapter ticked by hand (marks.rs) counts on its day as a reading in the app does.
 const COMMITTED: &str = "u.disabled = 0 AND u.is_admin = 0
-  AND (SELECT count(DISTINCT p.date) FROM page_credits p WHERE p.user_id = u.id AND p.ticked = 0) >= :days
-  AND (SELECT count(*) FROM page_credits p WHERE p.user_id = u.id AND p.ticked = 0) >= :chapters";
+  AND (SELECT count(DISTINCT p.date) FROM page_credits p WHERE p.user_id = u.id) >= :days
+  AND (SELECT count(*) FROM page_credits p WHERE p.user_id = u.id) >= :chapters";
 
 struct Ask { id: i64, days: i64, chapters: i64, only: Option<i64> }
 fn running(conn: &Connection) -> rusqlite::Result<Option<Ask>> {
@@ -171,6 +171,24 @@ mod tests {
         assert!(v["ask"].is_i64(), "{v}");
         let (_, v) = call(&app, "GET", "/review-ask", Some(&new_t), Value::Null).await;
         assert!(v["ask"].is_null(), "a reader who has not read enough is not asked: {v}");
+    }
+
+    #[tokio::test]
+    async fn chapters_ticked_by_hand_count_and_the_days_need_not_run_together() {
+        let (app, pool) = app();
+        let (t, t_t) = user(&pool, "ticker");
+        {
+            // 3 chapters ticked on each of 14 days, every third day: 42 chapters, never two days in a row
+            let c = pool.get().unwrap();
+            for d in 0..14 {
+                let date: String = c.query_row("SELECT date('now', ?1)", params![format!("-{} days", d * 3)], |r| r.get(0)).unwrap();
+                for ch in 0..3 { c.execute("INSERT INTO page_credits (user_id, book, chapter, date, dwell_seconds, ticked) VALUES (?1, 1, ?2, ?3, 0, 1)", params![t, d * 3 + ch + 1, date]).unwrap(); }
+            }
+        }
+        assert_eq!(committed_count(&pool.get().unwrap(), DAYS, CHAPTERS).unwrap(), 1);
+        start(&pool.get().unwrap(), &[]).unwrap();
+        let (_, v) = call(&app, "GET", "/review-ask", Some(&t_t), Value::Null).await;
+        assert!(v["ask"].is_i64(), "{v}");
     }
 
     #[tokio::test]
