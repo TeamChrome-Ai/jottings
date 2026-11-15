@@ -267,14 +267,16 @@ pub(crate) async fn webhook(text: &str) {
     let _ = reqwest::Client::new().post(url).timeout(std::time::Duration::from_secs(10)).json(&json!({ "text": text, "content": text })).send().await;
 }
 
-/// Hide (or unhide) the reported content. For a user report, hides everything they wrote.
+/// Hide (or unhide) the reported content. For a user report, hides everything they wrote, and unhides only what no
+/// other report holds (bans::unhide).
 fn hide_target(conn: &Connection, kind: &str, author_or_id: i64, report_id: i64, hidden: bool) -> rusqlite::Result<()> {
     let h = hidden as i64;
     let target_id: i64 = conn.query_row("SELECT target_id FROM reports WHERE id=?1", params![report_id], |r| r.get(0))?;
     match kind {
         "post" => { conn.execute("UPDATE group_posts SET hidden=?1 WHERE id=?2", params![h, target_id])?; }
         "outline" => { conn.execute("UPDATE outlines SET hidden=?1 WHERE id=?2", params![h, target_id])?; }
-        _ => { conn.execute("UPDATE group_posts SET hidden=?1 WHERE user_id=?2", params![h, author_or_id])?; conn.execute("UPDATE outlines SET hidden=?1 WHERE user_id=?2", params![h, author_or_id])?; }
+        _ if hidden => { conn.execute("UPDATE group_posts SET hidden=1 WHERE user_id=?1", params![author_or_id])?; conn.execute("UPDATE outlines SET hidden=1 WHERE user_id=?1", params![author_or_id])?; }
+        _ => crate::bans::unhide(conn, author_or_id, report_id)?,
     }
     Ok(())
 }
@@ -550,6 +552,30 @@ mod tests {
         assert_eq!((hidden(&pool, p), disabled(&pool, ben_id)), (0, 0));
         let (_, q) = call(&app, "GET", "/admin/reports", Some(&admin), Value::Null).await;
         assert_eq!((q[0]["kind"].as_str(), q[0]["status"].as_str()), (Some("user"), Some("escalated")));
+    }
+
+    /// `other_category`: one no judge may ban for.
+    #[tokio::test]
+    async fn allowing_a_report_on_an_account_shows_again_only_what_no_other_report_holds() {
+        let f = flow("second_strike");
+        let (app, pool, anna, ben_id, ben, slug) = setup().await;
+        let held = post(&app, &ben, &slug, "Chapter one of a book I did not write, pasted whole").await;
+        let other = post(&app, &ben, &slug, "Good reading in Romans 8").await;
+        let oid = call(&app, "POST", "/outlines", Some(&ben), json!({ "title": "Pasted" })).await.1["id"].as_i64().unwrap();
+        for (kind, id) in [("post", held), ("outline", oid)] {
+            assert_eq!(call(&app, "POST", "/reports", Some(&anna), json!({ "kind": kind, "id": id, "reason": "copyright" })).await.1["status"], "hidden");
+        }
+        // a judge hides everything ben wrote on a report of his account, and the admin allows that report
+        assert_eq!(call(&app, "POST", "/reports", Some(&anna), json!({ "kind": "user", "id": ben_id, "reason": crate::testkit::report_reason() })).await.0, 200);
+        assert_eq!(judge_all(&app, json!({ "verdict": "hide", "category": s(&f, "other_category"), "reason": "x", "confidence": 0.8 })).await, ["hide"]);
+        assert_eq!((hidden(&pool, held), hidden(&pool, other)), (1, 1));
+        let (admin_id, admin) = user(&pool, "admin");
+        pool.get().unwrap().execute("UPDATE users SET is_admin=1 WHERE id=?1", params![admin_id]).unwrap();
+        let rid: i64 = pool.get().unwrap().query_row("SELECT id FROM reports WHERE kind='user'", [], |r| r.get(0)).unwrap();
+        assert_eq!(call(&app, "POST", &format!("/admin/reports/{rid}"), Some(&admin), json!({ "action": "allow" })).await.0, 200);
+        // the copyright notices, still open, keep theirs hidden
+        let outline_hidden: i64 = pool.get().unwrap().query_row("SELECT hidden FROM outlines WHERE id=?1", params![oid], |r| r.get(0)).unwrap();
+        assert_eq!((hidden(&pool, held), hidden(&pool, other), outline_hidden), (1, 0, 1));
     }
 
     /// `handle`: a handle the rules refuse. `display_refused` and `display_taken`: a display name they refuse and one

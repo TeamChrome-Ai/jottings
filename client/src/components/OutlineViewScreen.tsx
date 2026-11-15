@@ -2,6 +2,7 @@ import { shareText } from '../lib/share'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { View } from 'react-native'
 import { Stack, useRouter } from 'expo-router'
+import { ApiError } from '../lib/api'
 import { forkOutline } from '../lib/library'
 import type { ReportTarget } from '../lib/moderation'
 import { copyText, fmtDateLong, isLocalOutline, loadErrorText, shareUrl, siteOrigin, useOutlineLoad, useVerseTexts, verseKeys, visibilityLabel } from '../lib/outlines'
@@ -71,7 +72,7 @@ export default function OutlineViewScreen({ id, code }: { id?: string; code?: st
     try {
       const f = await forkOutline(o)
       router.push({ pathname: '/outlines/[id]/edit', params: { id: String(f.id) } })
-    } catch (e) { setErr(e instanceof Error ? e.message : t('Could not make a copy')) } finally { setForking(false) }
+    } catch (e) { setErr(e instanceof ApiError ? loadErrorText(e) : e instanceof Error ? e.message : t('Could not make a copy')) } finally { setForking(false) }
   }
   const share = async () => {
     const r = await shareText({ title: o.title, message: o.title, url: link })

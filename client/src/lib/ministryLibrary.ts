@@ -12,7 +12,7 @@ import { N_, t } from '@shared/i18n'
 const loaders = createMinistryLoaders({ library: storedLibrary, contents: readContents, section: readSection }, id => authorShown(id))
 export const { loadLibrary, peekLibrary, loadContents, peekContents, loadSection, peekSection, searchSections, searchText } = loaders
 export type { TextAnswer } from './ministryCore'
-// another edition: the list and the searches are asked again (one edition's answers never stand for the other's)
+// another edition: the list, the works and the searches are asked again (one edition's answers never stand for the other's)
 onEditionChange(() => loaders.reset())
 /** What to say when a work cannot be had; on the phone, the way to keep it. */
 export const libraryUnavailable = offlineSupported ? N_('This needs a connection to the server. Or download the author under Settings → Offline.') : companionUnavailable

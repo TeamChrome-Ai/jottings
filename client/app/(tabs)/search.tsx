@@ -59,6 +59,8 @@ export default function Search() {
    */
   const gen = useRef(0)
   const shown = useRef(false)
+  // each run takes a number; a slower search that finishes later must not paint over this one
+  const runGen = useRef(0)
   const listOut = useRef(new Animated.Value(1)).current
   const showRes = (r: Shown) => {
     const first = !shown.current || !r.hits.length
@@ -79,6 +81,10 @@ export default function Search() {
   /** Clearing the field sweeps the results away quickly instead of blinking them out. */
   const clearResults = () => {
     setErr('')
+    // the search still running took the number before this, so its hits do not land under the empty field
+    runGen.current++
+    setBusy(false)
+    setSlow(false)
     if (!res) return
     if (reduce) { dropRes(); return }
     Animated.timing(listOut, { toValue: 0, duration: 140, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(({ finished }) => { if (finished) dropRes() })
@@ -98,8 +104,6 @@ export default function Search() {
   const [suggest, setSuggest] = useState<string | null>(null)
   const [word, setWord] = useState<WordTarget | null>(null)
   const runRef = useRef<(query?: string) => void>(() => {})
-  // each run takes a number; a slower search that finishes later must not paint over this one
-  const runGen = useRef(0)
   useEffect(() => { const t = setTimeout(warmLocalSearch, 300); return () => clearTimeout(t) }, [])
   useEffect(() => {
     const pq = typeof params.q === 'string' ? params.q : ''

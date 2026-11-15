@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Platform } from 'react-native'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { User } from '@shared/types'
-import { get, post, setToken, setUnauthorizedHandler } from '../lib/api'
+import { get, getToken, post, setToken, setUnauthorizedHandler } from '../lib/api'
 import { sendMarks } from '../lib/readMarks'
 import { setReadingWith } from './readingWith'
 
@@ -67,7 +67,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (u) setUser(JSON.parse(u) as User)
         // refresh the profile when reachable; a 401 here triggers the sign-out handler
         // an unchanged profile keeps the stored object: every effect keyed on `user` would otherwise refire (refetch, beat) at startup
-        get<{ user: User }>('/me').then(r => { if (!cancelled) { setUser(prev => (prev && JSON.stringify(prev) === JSON.stringify(r.user) ? prev : r.user)); AsyncStorage.setItem(USER_KEY, JSON.stringify(r.user)).catch(() => {}) } }).catch(() => {})
+        // a reply after a sign-out or another sign-in is the old session's (the provider never unmounts)
+        get<{ user: User }>('/me').then(r => { if (!cancelled && getToken() === t) { setUser(prev => (prev && JSON.stringify(prev) === JSON.stringify(r.user) ? prev : r.user)); AsyncStorage.setItem(USER_KEY, JSON.stringify(r.user)).catch(() => {}) } }).catch(() => {})
       } finally { if (!cancelled) setReady(true) }
     })()
     return () => { cancelled = true }

@@ -37,7 +37,7 @@ export type PlayerStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'error'
 export interface Spoken { book: number; chapter: number; v: number; off: number | null }
 interface PlayerState { status: PlayerStatus; spoken: Spoken | null; source: 'recording' | 'device' | null; error: string | null; book: number; chapter: number }
 interface PlayerCtx extends PlayerState {
-  /** Start reading a chapter from a verse (1 = the top, heading included). Ignored while the same chapter loads. */
+  /** Start reading a chapter from a verse (1 = the top, heading included). The same start again while it loads is ignored. */
   /** `cue`: load and show the bar paused at that verse, without a sound until Play (the guided tour). */
   /** `heading: false`: a passage out of a jotting is read without the chapter's spoken heading, even from verse 1. */
   start: (book: number, chapter: number, fromVerse?: number, opts?: { cue?: boolean; stopAfter?: number; heading?: boolean }) => void
@@ -111,7 +111,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   /** The player holds the lock screen's session, from the reading's first chapter until Stop. */
   const onLockScreen = useRef(false)
   const run = useRef(0)                       // bumps on every start/stop/jump so stale loops exit
-  const loading = useRef<string | null>(null) // "book-chapter" while start() fetches, to swallow repeated taps
+  const loading = useRef<{ key: string; token: number } | null>(null) // the start() fetching (chapter, verse, options, its run), to swallow repeated taps
   const endedCb = useRef<((b: number, c: number) => void) | null>(null)
   const paused = useRef(false)
   /** A recorded reading on a sound of its own, in its run: a spoken number, the clip a Play resumes (none while it
@@ -429,10 +429,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const start = useCallback(async (book: number, chapter: number, fromVerse = 1, opts?: { cue?: boolean; stopAfter?: number; heading?: boolean }) => {
-    const key = `${book}-${chapter}`
-    if (loading.current === key) return          // a second tap while the first is still fetching
-    loading.current = key
+    // a second tap while the first is still fetching; a start of that chapter from another verse, or to stop at the
+    // end of a selection, wins
+    const key = `${book}-${chapter}-${fromVerse}-${opts?.stopAfter}-${opts?.heading !== false}-${!!opts?.cue}`
+    if (loading.current?.key === key) return
     const token = ++run.current
+    loading.current = { key, token }
     paused.current = false
     cued.current = false
     Speech.stop(); player.current?.pause(); numbers.current?.pause()
@@ -470,12 +472,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setState(s => ({ ...s, status: 'playing', source: marks ? 'recording' : 'device' }))
       loop(token)
     } catch (e) { if (run.current === token) { note('error', (e as Error).message, place(book, chapter)); setState(s => ({ ...s, status: 'error', error: (e as Error).message })) } }
-    finally { if (loading.current === key) loading.current = null }
+    // a load stopped and started again under the same key is not this one's to release
+    finally { if (loading.current?.token === token) loading.current = null }
   }, [loop])
 
   const stop = useCallback(() => {
     if (status.current !== 'idle') note('stop', undefined, where())
     run.current++
+    // the load still out ends with this run: the same Listen again is a new start, not its repeat
+    loading.current = null
     paused.current = false
     cued.current = false
     player.current?.pause(); numbers.current?.pause(); Speech.stop()
@@ -506,9 +511,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, [state.status, loop])
 
-  /** Restart the loop at verse index `target` of the current chapter. */
+  /** Restart the loop at verse index `target` of the current chapter (none such: nothing happens). */
   const jumpTo = useCallback((target: number) => {
     const c = current.current
+    if (target < 0 || target >= (c.marks ? c.marks.verses.length : c.verses.length)) return
     const token = ++run.current
     paused.current = false
     cued.current = false
@@ -521,7 +527,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const jump = useCallback((delta: number) => {
     const c = current.current
-    if (state.status === 'idle' || state.status === 'error') return
+    // while a chapter loads, the chapter in hand is still the one before it (or none): a jump would read that one
+    // and end the load
+    if (state.status !== 'playing' && state.status !== 'paused') return
     const n = c.marks ? c.marks.verses.length : c.verses.length
     jumpTo(Math.min(n - 1, Math.max(0, c.index + delta)))
   }, [state.status, jumpTo])

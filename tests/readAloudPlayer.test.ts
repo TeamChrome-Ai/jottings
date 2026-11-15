@@ -226,6 +226,115 @@ describe('a chapter left while it loads', () => {
     expect(fx.downloads).not.toContain('chapter/adam/1/1')   // nor is the chapter left fetched
   })
 
+  it('Next on the first listen does nothing, and the chapter plays from its top', async () => {
+    recorded(19, 117, 2)
+    const down = fx.later()
+    fx.slowAudio.set('chapter/adam/19/117', down)
+    player().start(19, 117)
+    await adv(500)
+    player().next()                                       // nothing is being read yet
+    await adv(500)
+    expect(player().status).toBe('loading')
+    down.release()
+    await adv(100)
+    const rec = fx.clips[0]
+    expect(player().status).toBe('playing')
+    expect(rec.src).toBe('chapter/adam/19/117')
+    expect(rec.playing).toBe(true)
+    expect(rec.currentTime).toBeLessThan(0.5)
+  })
+
+  it('Previous does not go back to a verse of the chapter left, and the chapter loading plays', async () => {
+    recorded(43, 3); recorded(1, 1)
+    player().start(43, 3)
+    await adv(5000)                                       // John 3:2
+    const rec = fx.clips[0]
+    const down = fx.later()
+    fx.slowAudio.set('chapter/adam/1/1', down)
+    player().start(1, 1)
+    await adv(500)
+    player().prev()
+    await adv(500)
+    expect(player().status).toBe('loading')
+    expect(rec.playing).toBe(false)                       // John 3:1 is not heard
+    down.release()
+    await adv(100)
+    expect(player().book).toBe(1)
+    expect(rec.src).toBe('chapter/adam/1/1')
+    expect(rec.playing).toBe(true)
+    expect(rec.currentTime).toBeLessThan(0.5)
+  })
+
+  it('Listen on a verse selection while the same chapter loads from its top reads the selection and stops at its end', async () => {
+    recorded(43, 3)
+    const ended: string[] = []
+    player().onEnded((b, c) => ended.push(`${b}:${c}`))
+    const down = fx.later()
+    fx.slowAudio.set('chapter/adam/43/3', down)
+    player().start(43, 3)                                 // Listen: the chapter from its top
+    await adv(500)
+    player().seekVerse(43, 3, 2, { stopAfter: 2 })        // the selection's Listen: verse 2, stopping at its end
+    await adv(500)
+    down.release()
+    await adv(100)
+    const rec = fx.clips[0]
+    expect(player().spoken?.v).toBe(2)
+    expect(rec.currentTime).toBeGreaterThanOrEqual(4)
+    expect(rec.currentTime).toBeLessThan(4.5)
+    await until(() => player().status === 'idle')
+    expect(rec.currentTime).toBeLessThan(8.1)             // verse 3 is not read
+    expect(ended).toEqual([])
+  })
+
+  it('a stop at the end of a selection asked while the same chapter loads from that verse is kept', async () => {
+    recorded(43, 3)
+    const down = fx.later()
+    fx.slowAudio.set('chapter/adam/43/3', down)
+    player().start(43, 3)
+    await adv(500)
+    player().seekVerse(43, 3, 1, { stopAfter: 1 })
+    await adv(500)
+    down.release()
+    const rec = fx.clips[0]
+    await until(() => player().status === 'idle')
+    expect(rec.currentTime).toBeLessThan(4.1)
+  })
+
+  it('a second Listen on the chapter loading, the same, is one tap: the wait for its recording does not begin again', async () => {
+    recorded(43, 3)
+    fx.slowAudio.set('chapter/adam/43/3', fx.later())   // never down: after 6 s Listen streams it
+    player().start(43, 3)
+    await adv(3000)
+    player().start(43, 3)
+    await adv(3100)
+    expect(player().status).toBe('playing')
+    expect(fx.clips[0].playing).toBe(true)
+  })
+
+  it('Listen again after a Stop while the chapter loaded starts it, though the first load is still out', async () => {
+    recorded(43, 3)
+    fx.slowAudio.set('chapter/adam/43/3', fx.later())
+    player().start(43, 3)
+    await adv(2000)
+    player().stop()
+    player().start(43, 3)
+    await adv(7000)
+    expect(player().status).toBe('playing')
+  })
+
+  it('a third Listen while the one after a Stop loads is still one tap, once the stopped load has given up', async () => {
+    recorded(43, 3)
+    fx.slowAudio.set('chapter/adam/43/3', fx.later())
+    player().start(43, 3)
+    await adv(2000)
+    player().stop()
+    player().start(43, 3)
+    await adv(4500)                                       // the stopped load's wait has run out
+    player().start(43, 3)
+    await adv(1700)
+    expect(player().status).toBe('playing')
+  })
+
   it('does not take the player from the chapter started after it, when another voice chosen in the sheet comes down later', async () => {
     recorded(43, 3); recorded(43, 4)
     player().start(43, 3)

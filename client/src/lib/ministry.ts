@@ -24,8 +24,10 @@ export const ministryUnavailable = offlineSupported ? N_('This needs a connectio
 const chapters = new Map<string, ReadonlySet<number>>()
 const pending = new Map<string, Promise<ReadonlySet<number> | null>>()
 const lists = new Map<string, MinistryRefs>()
+/** Edition (or cleanse) changes so far: an answer asked for before one is neither kept nor shared. */
+let changes = 0
 // another edition: what was held is asked again
-onEditionChange(() => { chapters.clear(); lists.clear() })
+onEditionChange(() => { chapters.clear(); lists.clear(); changes++ })
 
 /** The stored authors whose packs carry the index, with their rows for the chapter; `all` when every enabled author is there. */
 async function storedRows(book: number, chapter: number, only?: string) {
@@ -45,7 +47,9 @@ export function ministryVerses(book: number, chapter: number): Promise<ReadonlyS
   const k = `${book}.${chapter}`
   const hit = chapters.get(k)
   if (hit) return Promise.resolve(hit)
-  let p = pending.get(k)
+  const asked = changes
+  const inFlight = `${asked}:${k}`
+  let p = pending.get(inFlight)
   if (!p) {
     p = (async () => {
       const { have, all } = await storedRows(book, chapter)
@@ -53,39 +57,41 @@ export function ministryVerses(book: number, chapter: number): Promise<ReadonlyS
       // a chapter's row from one does not offer Ministry on every verse of it
       const fromPhone = () => {
         const set = versesOfRows(have.map(h => peekCleanse() ? cleanseRows(h.rows ?? [], h.author) : h.rows), VERSE_COUNTS[book - 1]?.[chapter - 1] ?? 0)
-        chapters.set(k, set)
+        if (asked === changes) chapters.set(k, set)
         return set as ReadonlySet<number>
       }
       if (all) return fromPhone()
       try {
         const r = await get<{ verses: number[] }>(`/ministry/chapter/${book}/${chapter}`)
-        const set = new Set(r.verses); chapters.set(k, set); return set as ReadonlySet<number>
+        const set = new Set(r.verses); if (asked === changes) chapters.set(k, set); return set as ReadonlySet<number>
       } catch { return have.length ? fromPhone() : null }
-    })().finally(() => pending.delete(k))
-    pending.set(k, p)
+    })().finally(() => pending.delete(inFlight))
+    pending.set(inFlight, p)
   }
   return p
 }
 
-/** In flight by path: the reader asks for a selection's list quietly before the sheet opens, and the sheet shares it. */
+/** In flight by path: the reader asks for a selection's list quietly before the sheet opens, and the sheet shares it
+ *  (not across an edition change). */
 const refsInFlight = new Map<string, Promise<MinistryRefs | null>>()
 export function loadMinistryRefs(book: number, chapter: number, verses: readonly number[], ask: RefsAsk = {}): Promise<MinistryRefs | null> {
-  const path = refsPath(book, chapter, verses, ask)
-  let p = refsInFlight.get(path)
+  const inFlight = `${changes}:${refsPath(book, chapter, verses, ask)}`
+  let p = refsInFlight.get(inFlight)
   if (!p) {
-    p = fetchMinistryRefs(book, chapter, verses, ask).finally(() => refsInFlight.delete(path))
-    refsInFlight.set(path, p)
+    p = fetchMinistryRefs(book, chapter, verses, ask).finally(() => refsInFlight.delete(inFlight))
+    refsInFlight.set(inFlight, p)
   }
   return p
 }
 async function fetchMinistryRefs(book: number, chapter: number, verses: readonly number[], ask: RefsAsk): Promise<MinistryRefs | null> {
+  const asked = changes
   const { author, page = 1, q } = ask
   if (author && !authorShown(author)) return null
   const path = refsPath(book, chapter, verses, ask)
   const hit = lists.get(path)
   if (hit) return hit
   const { have, all } = q ? { have: [], all: false } : await storedRows(book, chapter, author)
-  const fromPhone = async () => { const r = await refsFromStored(book, chapter, verses, have, readSectionRaw, author, page, peekCleanse()); lists.set(path, r); return r }
+  const fromPhone = async () => { const r = await refsFromStored(book, chapter, verses, have, readSectionRaw, author, page, peekCleanse()); if (asked === changes) lists.set(path, r); return r }
   if (all) return fromPhone()
   try {
     const r = await get<MinistryRefs>(path)
@@ -93,7 +99,7 @@ async function fetchMinistryRefs(book: number, chapter: number, verses: readonly
     if (q && r.q === undefined) return null
     // an answer from before the server switched edition can still name an author it now leaves out
     const v = { ...r, groups: (r.groups ?? []).filter(g => authorShown(g.author)) }
-    lists.set(path, v)
+    if (asked === changes) lists.set(path, v)
     return v
   } catch { return have.length ? fromPhone() : null }
 }

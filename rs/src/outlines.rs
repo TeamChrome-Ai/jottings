@@ -189,10 +189,13 @@ async fn put_items(State(s): State<AppState>, AuthUser(u): AuthUser, Path(id): P
     if let Some(o2) = load(&conn, id)? { if o2.visibility != "private" { crate::moderation::auto_scan(&conn, "outline", id)?; } }
     Ok(Json(load(&conn, id)?.unwrap()))
 }
-async fn fork(State(s): State<AppState>, AuthUser(u): AuthUser, Path(id): Path<i64>) -> ApiResult<Json<Outline>> {
+#[derive(Deserialize)] struct ForkIn { code: Option<String> }
+/// The owner copies their own by id; anyone else only with its share code, as the link gave it.
+async fn fork(State(s): State<AppState>, AuthUser(u): AuthUser, Path(id): Path<i64>, Json(b): Json<ForkIn>) -> ApiResult<Json<Outline>> {
     let mut conn = s.pool.get()?;
     let Some(o) = load(&conn, id)? else { return Err(ApiError::not_found("not found")) };
-    if !can_read(&o, Some(u.id), true) { return Err(ApiError::not_found("not found")); }
+    let via_code = b.code.is_some() && b.code == o.share_code;
+    if !can_read(&o, Some(u.id), via_code) { return Err(ApiError::not_found("not found")); }
     let tx = conn.transaction()?;
     tx.execute("INSERT INTO outlines (user_id, title, description, visibility, share_code, print_style, forked_from) VALUES (?1,?2,?3,'private',?4,?5,?6)", params![u.id, o.title, o.description, random_token(10), o.print_style, o.id])?;
     let nid = tx.last_insert_rowid();
@@ -287,6 +290,31 @@ mod tests {
         // hidden by moderation: not even by link
         pool.get().unwrap().execute("UPDATE outlines SET hidden=1 WHERE user_id=?1", rusqlite::params![anna_id]).unwrap();
         assert_eq!(call(&app, "GET", &format!("/outlines/shared/{code}"), Some(&ben), NULL).await.0, 403);
+    }
+
+    #[tokio::test]
+    async fn the_owner_copies_by_id_and_anyone_else_only_with_the_link() {
+        let (app, pool) = app();
+        let (_, anna) = user(&pool, "anna");
+        let (_, ben) = user(&pool, "ben");
+        let id = outline(&app, &anna, "Love in John", "God so loved").await;
+        call(&app, "PATCH", &format!("/outlines/{id}"), Some(&anna), json!({ "visibility": "link" })).await;
+        let code = call(&app, "GET", &format!("/outlines/{id}"), Some(&anna), NULL).await.1["share_code"].as_str().unwrap().to_string();
+        let fork = format!("/outlines/{id}/fork");
+        let (st, o) = call(&app, "POST", &fork, Some(&anna), json!({})).await;
+        assert_eq!((st, o["forked_from"].as_i64()), (200, Some(id)), "the owner, by id");
+        // by its number alone, or with a code that is not its own, someone else's is not there
+        for body in [json!({}), json!({ "code": null }), json!({ "code": "wrong" })] {
+            assert_eq!(call(&app, "POST", &fork, Some(&ben), body.clone()).await.0, 404, "{body}");
+        }
+        let (st, o) = call(&app, "POST", &fork, Some(&ben), json!({ "code": code })).await;
+        assert_eq!((st, o["title"].as_str(), o["visibility"].as_str(), o["items"].as_array().map(|i| i.len())), (200, Some("Love in John"), Some("private"), Some(2)));
+        // made private, or hidden by moderation: not even with the code
+        call(&app, "PATCH", &format!("/outlines/{id}"), Some(&anna), json!({ "visibility": "private" })).await;
+        assert_eq!(call(&app, "POST", &fork, Some(&ben), json!({ "code": code })).await.0, 404);
+        call(&app, "PATCH", &format!("/outlines/{id}"), Some(&anna), json!({ "visibility": "link" })).await;
+        pool.get().unwrap().execute("UPDATE outlines SET hidden=1 WHERE id=?1", rusqlite::params![id]).unwrap();
+        assert_eq!(call(&app, "POST", &fork, Some(&ben), json!({ "code": code })).await.0, 404);
     }
 
     #[tokio::test]

@@ -461,6 +461,8 @@ const VerseSpan = memo(function VerseSpan({ verse: v, book, chapter, fontSize, f
     const before = (k: number) => (notesAt.get(k) ?? []).filter(n => !isLettered(n)).map(marker)
     const after = (k: number) => (notesAt.get(k) ?? []).filter(isLettered).map(marker)
     const out: ReactNode[] = after(0)
+    // an opening letter with no joiner glues to the first word ("aif"); the native search then misses it
+    if (out.length && v.t) out.push('\u2060')
     if (v.t === '') {
       out.push(<InkText key="omitted" ink="muted" style={italicFace}>{t('[omitted]')}</InkText>)
     } else {

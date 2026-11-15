@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Linking, Platform, Text, View } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 import type { Stats } from '@shared/types'
@@ -33,6 +33,7 @@ import { signInPromptBelowLibrary } from '../../src/lib/jot'
 import { pathTitle } from '@shared/paths'
 import { countWords } from '../../src/lib/pathWords'
 import { useEdition } from '../../src/lib/edition'
+import { useText } from '../../src/lib/text'
 import { authorShown, hasChronology } from '../../src/lib/editionCore'
 import { authorNames, enabledAuthors } from '@shared/ministry'
 import { BRAND, NOUN } from '@shared/brand'
@@ -47,6 +48,7 @@ import { policyPath } from '../../src/lib/credits'
 export default function Home() {
   const router = useRouter()
   const edition = useEdition()
+  const bible = useText()
   const { user, ready } = useAuth()
   const font = usePref('font'), reduce = usePref('reduceMotion')
   const c = useInks()
@@ -59,6 +61,8 @@ export default function Home() {
   const [readAny, setReadAny] = useState<boolean | null>(null)
 
   const uid = user?.id
+  const uidRef = useRef(uid)
+  uidRef.current = uid
   useFocusEffect(useCallback(() => {
     if (!ready) return
     let cancelled = false
@@ -76,17 +80,29 @@ export default function Home() {
     return () => { cancelled = true }
   }, [ready, uid]))
 
-  // an invite arriving while Home is open shows on the Friends card at once
-  useEffect(() => onInviteNews(() => { if (uid) loadFriends().then(setFriends).catch(() => {}) }), [uid])
+  // an invite arriving while Home is open shows on the Friends card at once. A slower list, or one asked for
+  // the account you have since left, does not paint over this one.
+  useEffect(() => {
+    let gen = 0
+    return onInviteNews(() => {
+      const asked = uidRef.current
+      if (!asked) return
+      const mine = ++gen
+      loadFriends().then(f => { if (mine === gen && uidRef.current === asked) setFriends(f) }).catch(() => {})
+    })
+  }, [uid])
   useEffect(() => { if (friends) noteInvitesShown(friends.incoming) }, [friends])
 
   useEffect(() => {
+    let cancelled = false
     const ref = votdFor()
     fetchChapter(ref.book, ref.chapter).then(ch => {
+      if (cancelled) return
       const text = presentVotd(ch.verses.filter(v => v.v >= ref.v1 && v.v <= (ref.v2 ?? ref.v1)).map(v => v.t.trim()).join(' '))
       setVotd({ ref, text })
     }).catch(() => {})
-  }, [])
+    return () => { cancelled = true }
+  }, [edition, bible])
 
   const open = (r: { book: number; chapter: number; verse?: number }) => router.push({ pathname: '/read/[book]/[chapter]', params: { book: String(r.book), chapter: String(r.chapter), v: r.verse ? String(r.verse) : '' } })
   const readerName = usePref('readerName')

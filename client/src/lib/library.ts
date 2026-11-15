@@ -77,9 +77,10 @@ export async function deleteOutline(outlineId: number): Promise<void> {
   else await del(`/outlines/${id}`)
 }
 
-/** Signed in, the server copies the outline; signed out, the copy is made on this device from what is on screen. */
+/** Signed in, the server copies the outline (someone else's only with the share code it was opened by); signed out,
+ *  the copy is made on this device from what is on screen. */
 export async function forkOutline(o: Outline): Promise<Outline> {
-  if (signedIn()) return post<Outline>(`/outlines/${o.id}/fork`)
+  if (signedIn()) return post<Outline>(`/outlines/${o.id}/fork`, { code: o.share_code })
   const items = (o.items ?? []).map(({ id: _id, outline_id: _oid, position: _pos, ...rest }) => rest)
   return createLocalOutline({ title: o.title, description: o.description, print_style: o.print_style }, items)
 }

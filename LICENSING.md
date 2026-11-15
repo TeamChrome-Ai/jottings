@@ -84,6 +84,7 @@ release can still only be used under the AGPL.
 | 1.3.9 | 8 November 2026 | 8 November 2027 |
 | 1.3.10 | 12 November 2026 | 12 November 2027 |
 | 1.3.11 | 13 November 2026 | 13 November 2027 |
+| 1.3.12 | 13 November 2026 | 13 November 2027 |
 
 ## 6. What these licenses do not cover
 

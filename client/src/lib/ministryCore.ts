@@ -48,7 +48,8 @@ const statusOf = (e: unknown) => (e as { status?: unknown } | null)?.status
 
 /**
  * `shown`: whether the edition shows an author (editionCore.ts authorShown); one it leaves out is in no list and has no
- * contents or section, whatever is held for it. `reset` drops the list and the searches (another edition's answers).
+ * contents or section, whatever is held for it. `reset` drops everything held (another edition's answers); an answer
+ * asked for before it is neither kept nor shared.
  */
 export function createMinistryLoaders(store: OfflineStore | null, shown: (author: string) => boolean = () => true) {
   let library: Library | null = null
@@ -59,12 +60,13 @@ export function createMinistryLoaders(store: OfflineStore | null, shown: (author
   let textUnsupported = false
   let resets = 0
   const inflight = new Map<string, Promise<unknown>>()
-  /** One request per key at a time: a page and its neighbour asking together share it. */
+  /** One request per key at a time: a page and its neighbour asking together share it, never across a reset. */
   const once = <T,>(key: string, run: () => Promise<T>): Promise<T> => {
-    const hit = inflight.get(key) as Promise<T> | undefined
+    const k = `${resets}:${key}`
+    const hit = inflight.get(k) as Promise<T> | undefined
     if (hit) return hit
-    const p = run().finally(() => inflight.delete(key))
-    inflight.set(key, p)
+    const p = run().finally(() => inflight.delete(k))
+    inflight.set(k, p)
     return p
   }
   const offline = async <T,>(read: (s: OfflineStore) => Promise<T | null>): Promise<T | null> => {
@@ -83,11 +85,12 @@ export function createMinistryLoaders(store: OfflineStore | null, shown: (author
 
   function loadLibrary(): Promise<Library> {
     if (library) return Promise.resolve(visible(library))
+    const asked = resets
     return once('library', async () => {
       const kept = await offline(s => s.library())
       try {
         const l = await get<Library>('/ministry', kept ? { timeoutMs: LIBRARY_TIMEOUT_MS } : undefined)
-        if (l && Array.isArray(l.authors)) { library = l; return visible(l) }
+        if (l && Array.isArray(l.authors)) { if (asked === resets) library = l; return visible(l) }
       } catch { /* the phone's copy, else the companion's */ }
       if (kept && Array.isArray(kept.authors) && kept.authors.length) return visible(kept)
       const indexes = await Promise.all(COMPANION.filter(shown).map(a => loadCompanionIndex(a)))
@@ -100,6 +103,7 @@ export function createMinistryLoaders(store: OfflineStore | null, shown: (author
     const k = `${author}/${work}`
     const hit = contents.get(k)
     if (hit) return Promise.resolve(hit)
+    const asked = resets
     return once(`c:${k}`, async () => {
       let c: WorkContents | null = await offline(s => s.contents(author, work))
       if (!c) {
@@ -109,7 +113,7 @@ export function createMinistryLoaders(store: OfflineStore | null, shown: (author
       if (!c) {
         try { c = await get<WorkContents>(`/ministry/${encodeURIComponent(author)}/${encodeURIComponent(work)}`) } catch { return null }
       }
-      if (c && Array.isArray(c.sections)) { contents.set(k, c); return c }
+      if (c && Array.isArray(c.sections)) { if (asked === resets) contents.set(k, c); return c }
       return null
     })
   }
@@ -119,6 +123,7 @@ export function createMinistryLoaders(store: OfflineStore | null, shown: (author
     const k = `${author}/${work}/${n}`
     const hit = sections.get(k)
     if (hit) return Promise.resolve(hit)
+    const asked = resets
     return once(`s:${k}`, async () => {
       let s: MinistrySection | null = await offline(st => st.section(author, work, n))
       if (!s) {
@@ -127,7 +132,7 @@ export function createMinistryLoaders(store: OfflineStore | null, shown: (author
           try { s = (await get<MinistryReading>(`/ministry/${encodeURIComponent(author)}/${encodeURIComponent(work)}/${n}`)).section } catch { return null }
         }
       }
-      if (s && typeof s.text === 'string') { sections.set(k, s); return s }
+      if (s && typeof s.text === 'string') { if (asked === resets) sections.set(k, s); return s }
       return null
     })
   }
@@ -138,11 +143,12 @@ export function createMinistryLoaders(store: OfflineStore | null, shown: (author
     if (!q) return Promise.resolve([])
     const hit = searches.get(q)
     if (hit) return Promise.resolve(hit.filter(h => shown(h.author)))
+    const asked = resets
     return once(`q:${q}`, async () => {
       try {
         const r = await get<SectionSearch>(`/ministry/search?q=${encodeURIComponent(q)}`)
         const hits = Array.isArray(r?.hits) ? r.hits : []
-        searches.set(q, hits)
+        if (asked === resets) searches.set(q, hits)
         return hits.filter(h => shown(h.author))
       } catch { return [] }
     })
@@ -156,7 +162,7 @@ export function createMinistryLoaders(store: OfflineStore | null, shown: (author
     const hit = texts.get(k)
     if (hit) return Promise.resolve(hit)
     const asked = resets
-    return once(`x:${asked}:${k}`, async (): Promise<TextAnswer> => {
+    return once(`x:${k}`, async (): Promise<TextAnswer> => {
       try {
         const r = await get<unknown>(`/ministry/text?q=${encodeURIComponent(q)}${page > 1 ? `&page=${page}` : ''}${author ? `&author=${encodeURIComponent(author)}` : ''}`)
         if (!isTextSearch(r)) return { kind: 'unavailable' }
@@ -180,6 +186,6 @@ export function createMinistryLoaders(store: OfflineStore | null, shown: (author
     peekContents: (author: string, work: string) => (shown(author) ? contents.get(`${author}/${work}`) : undefined),
     loadSection,
     peekSection: (author: string, work: string, n: number) => (shown(author) ? sections.get(`${author}/${work}/${n}`) : undefined),
-    reset: () => { library = null; searches.clear(); texts.clear(); resets++ },
+    reset: () => { library = null; contents.clear(); sections.clear(); searches.clear(); texts.clear(); resets++ },
   }
 }

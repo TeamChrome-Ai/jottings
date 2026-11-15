@@ -200,10 +200,14 @@ function scanOwn(text: string, ctx: RefContext | undefined, slack: number, patte
       let book = findBook(name)
       if (!book && /\s/.test(name)) { const last = name.split(/\s+/).pop()!; book = findBook(last); if (book) start = m.index + m[0].indexOf(last) }
       if (!book) { cur = null; continue }
-      const chapter = parseInt(m[2], 10)
+      let chapter = parseInt(m[2], 10)
+      let v1 = m[3] ? parseInt(m[3], 10) : undefined
+      const v2 = m[4] ? parseInt(m[4], 10) : undefined
+      // "Philemon 20", "2John 1": a one-chapter book reads the lone number as the verse
+      if (book.chapters === 1 && v1 === undefined) { v1 = chapter; chapter = 1 }
       if (chapter < 1 || chapter > book.chapters + slack) { cur = null; continue }
       const ref: Ref = { book: book.n, chapter }
-      if (m[3]) { ref.v1 = parseInt(m[3], 10); if (m[4]) ref.v2 = parseInt(m[4], 10) }
+      if (v1 !== undefined) { ref.v1 = v1; if (v2 !== undefined) ref.v2 = v2 }
       cur = { book, chapter }
       push(start, m.index + m[0].length, ref)
     } else if (m[5] !== undefined) {

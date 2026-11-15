@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { votdFor } from '@shared/votd'
 import { accountPathNext } from '../client/src/lib/accountPathNext'
+import { setEditionState } from '../client/src/lib/editionCore'
 import { formatRef } from '@shared/ref'
 import { BOOKS } from '@shared/books'
 import { HAS_TEXTS } from './_texts'
@@ -246,5 +247,15 @@ describe('the background path', () => {
   it('names the first chapter when nothing is read or marked, and stops when the path is finished', () => {
     expect(accountPathNext({ path: gospels, history: [], read: [] })?.next).toEqual({ book: 40, chapter: 1 })
     expect(accountPathNext({ path: null, history: [], read: [[40, 1]] })).toBeNull()
+  })
+  it('walks the Coates path as the Synopsis path while the edition hides Coates, as the app shows it', () => {
+    // Genesis to Nehemiah read: Coates goes on to the Psalms, the Synopsis to Esther
+    const coates = { ...gospels, id: 'coates' as const }
+    const read = BOOKS.slice(0, 16).flatMap(b => Array.from({ length: b.chapters }, (_, i) => [b.n, i + 1] as [number, number]))
+    setEditionState('1890')
+    try {
+      expect(accountPathNext({ path: coates, history: [], read })).toEqual({ path: { ...coates, id: 'synopsis' }, next: { book: 17, chapter: 1 } })
+    } finally { setEditionState('1961') }
+    expect(accountPathNext({ path: coates, history: [], read })).toEqual({ path: coates, next: { book: 19, chapter: 1 } })
   })
 })

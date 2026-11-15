@@ -1,6 +1,7 @@
 import { shareText } from '../../../../src/lib/share'
 import { shareChapter } from '../../../../src/lib/shareChapter'
 import { useEdition } from '../../../../src/lib/edition'
+import { authorShown } from '../../../../src/lib/editionCore'
 import { siteOrigin } from '../../../../src/lib/outlines'
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native'
@@ -249,9 +250,13 @@ function ReadScreenPage() {
   /** The pager's place: the current page's index, the neighbours at ±1. A running count rather than the chapter's
    *  canonical index, so a path's jump (Matthew 8 to Matthew 5 in the life of Christ) turns like any other chapter. */
   const slot = useRef(chapterIndex(bookN, chapterN))
+  /** The account a credit reply belongs to: a late one must not fill the next reader's ticks. */
+  const userIdRef = useRef(user?.id)
+  userIdRef.current = user?.id
 
   // ---- load the chapter and the per-user decorations ----
   useEffect(() => {
+    if (!user) setReadSet(new Set())
     if (!valid) return
     let cancelled = false
     setData(null); setErr(''); setSelected(new Set()); setOpenNotes(new Set()); setHighlights(new Map())
@@ -272,13 +277,20 @@ function ReadScreenPage() {
     landRef.current()
     fetchChapter(bookN, chapterN).then(ch => { if (!cancelled) setData(ch) }).catch(e => { if (!cancelled) setErr((e as Error).message) })
     warmAround(bookN, chapterN)
-    if (user) fetchCredited().then(s => { if (!cancelled) setReadSet(s) }).catch(() => {})
+    const uid = user?.id
+    if (uid) fetchCredited().then(s => { if (!cancelled && userIdRef.current === uid) setReadSet(s) }).catch(() => {})
     return () => { cancelled = true }
-    // params.v is consumed once per chapter, on purpose
+    // params.v is consumed once per chapter, on purpose. The account id, not the profile object: a new picture or
+    // Admin mode replaces `user` and would clear the selection, the open notes and the place the link landed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookN, chapterN, valid, user])
-  // a mark is credited and its undo takes the credit back: once the server has either, the credits are asked for again
-  useEffect(() => (user ? onMarksSent(() => { fetchCredited().then(setReadSet).catch(() => {}) }) : undefined), [user])
+  }, [bookN, chapterN, valid, user?.id])
+  // a mark is credited and its undo takes the credit back: once the server has either, the credits are asked for again.
+  // a reply still on its way after a sign-out is dropped, so it cannot land on the next account
+  useEffect(() => {
+    const uid = user?.id
+    if (!uid) return
+    return onMarksSent(() => { fetchCredited().then(s => { if (userIdRef.current === uid) setReadSet(s) }).catch(() => {}) })
+  }, [user?.id])
 
   // a verse asked for on the chapter already open (Back to the verse from the library, a link to this chapter): land on
   // it and flash it as a new chapter would
@@ -675,6 +687,8 @@ function ReadScreenPage() {
   // the authors going through this chapter (Darby's Synopsis, Coates's Outlines), Darby first; offered only where there is one
   const indexes = useCompanionIndexes()
   const companionAuthors = useMemo(() => valid ? AUTHORS.filter(a => { const i = indexes[a.id]; return !!i && sectionsFor(i, bookN, chapterN).length > 0 }).map(a => a.id) : [], [valid, indexes, bookN, chapterN])
+  // absent while that author's index is still on its way; null once it cannot be had. A chapter link must not open on []
+  const indexesReady = AUTHORS.every(a => !authorShown(a.id) || indexes[a.id] !== undefined)
   const chapterMinistry = companionAuthors.length ? t('Ministry on this chapter') : ''
   const closeMinistry = useCallback(() => setMinistry(m => ({ ...m, open: false })), [])
   // a link with `ministry` (a jotting's "JND on John 3:16") opens the ministry on arrival, at that author: on the
@@ -686,14 +700,16 @@ function ReadScreenPage() {
     const v1 = Number(params.v) || 0, v2 = Math.max(v1, Number(params.v2) || 0)
     const key = `${bookN}.${chapterN}.${v1}.${v2}.${who}`
     if (ministryAsked.current === key) return
-    ministryAsked.current = key
     const author = who === '1' ? undefined : who
     // the chapter's ministry is the companion's (the Synopsis, Coates); another author is found on the chapter's verses
     const verses = !v1 && author && !AUTHORS.some(a => a.id === author) ? Array.from({ length: data.verses.length }, (_, i) => i + 1) : null
-    if (verses) { setMinistry({ open: true, scope: { kind: 'verse', book: bookN, chapter: chapterN, verses, author } }); return }
+    if (verses) { ministryAsked.current = key; setMinistry({ open: true, scope: { kind: 'verse', book: bookN, chapter: chapterN, verses, author } }); return }
+    // no verse: the companion authors start out [], and an empty list is the offline message, asked once
+    if (!v1 && !indexesReady) return
+    ministryAsked.current = key
     setMinistry({ open: true, scope: v1 ? { kind: 'verse', book: bookN, chapter: chapterN, verses: Array.from({ length: v2 - v1 + 1 }, (_, i) => v1 + i), author }
       : { kind: 'chapter', book: bookN, chapter: chapterN, verse: 1, text: data.verses, authors: companionAuthors, author } })
-  }, [params.ministry, params.v, params.v2, data, valid, bookN, chapterN])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [params.ministry, params.v, params.v2, data, valid, bookN, chapterN, indexesReady, companionAuthors])
   const openChapterMinistry = (fromMore: boolean) => {
     const scope: MinistryScope = { kind: 'chapter', book: bookN, chapter: chapterN, verse: selList[0] ?? currentVerse(), text: data?.verses, authors: companionAuthors }
     // from the More sheet: that sheet leaves before this one rises, as one sheet at a time

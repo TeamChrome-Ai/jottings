@@ -152,13 +152,15 @@ async fn patch_me(State(s): State<AppState>, AuthUser(u): AuthUser, Json(b): Jso
     if let Some(patch) = b.settings { let mut cur = u.settings.as_object().cloned().unwrap_or_default(); for (k, v) in patch { cur.insert(k, v); } conn.execute("UPDATE users SET settings=?1 WHERE id=?2", params![Value::Object(cur).to_string(), u.id])?; }
     Ok(Json(json!({ "ok": true })))
 }
-/// Account deletion (Play policy): everything hangs off users(id) with ON DELETE CASCADE except groups.owner_id;
-/// groups the user owns go with the account (their members, events and posts cascade from the group).
+/// Account deletion (Play policy): everything hangs off users(id) with ON DELETE CASCADE except groups.owner_id and
+/// group_events.created_by; groups the user owns go with the account (their members, events and posts cascade from the
+/// group), and an event they made as an admin of someone else's group stays with it, its owner's now.
 async fn delete_me(State(s): State<AppState>, AuthUser(u): AuthUser, Json(b): Json<serde_json::Value>) -> ApiResult<Json<Value>> {
     if b.get("confirm").and_then(|v| v.as_str()) != Some("delete") { return Err(ApiError::bad("send {\"confirm\":\"delete\"}")); }
     let mut conn = s.pool.get()?;
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM groups WHERE owner_id=?1", params![u.id])?;
+    tx.execute("UPDATE group_events SET created_by=(SELECT owner_id FROM groups g WHERE g.id=group_events.group_id) WHERE created_by=?1", params![u.id])?;
     tx.execute("DELETE FROM users WHERE id=?1", params![u.id])?;
     tx.commit()?;
     Ok(Json(json!({ "ok": true, "deleted": true })))
@@ -422,6 +424,24 @@ mod tests {
         assert_eq!(call(&app, "DELETE", "/me", Some(&anna), json!({ "confirm": "delete" })).await.0, 200);
         let left: i64 = pool.get().unwrap().query_row("SELECT count(*) FROM bookmarks WHERE user_id=?1", [id], |r| r.get(0)).unwrap();
         assert_eq!(left, 0);
+    }
+
+    #[tokio::test]
+    async fn an_admin_who_made_an_event_in_a_group_they_do_not_own_can_delete_their_account() {
+        let (app, pool) = app();
+        let (anna_id, anna) = user(&pool, "anna");
+        let (ben_id, ben) = user(&pool, "ben");
+        let (_, g) = call(&app, "POST", "/groups", Some(&anna), json!({ "name": "Psalms" })).await;
+        let slug = g["slug"].as_str().unwrap().to_string();
+        call(&app, "POST", "/groups/join", Some(&ben), json!({ "invite_code": g["invite_code"] })).await;
+        assert_eq!(call(&app, "POST", &format!("/groups/{slug}/members/{ben_id}/role"), Some(&anna), json!({ "role": "admin" })).await.0, 200);
+        let (st, ev) = call(&app, "POST", &format!("/groups/{slug}/events"), Some(&ben), json!({ "name": "Week", "metric": "streak", "starts_at": "2026-09-20", "ends_at": "2026-09-26" })).await;
+        assert_eq!(st, 200);
+        assert_eq!(call(&app, "DELETE", "/me", Some(&ben), json!({ "confirm": "delete" })).await.0, 200);
+        // the event stays with the group, its owner's now
+        let c = pool.get().unwrap();
+        assert_eq!(c.query_row("SELECT count(*) FROM users WHERE id=?1", [ben_id], |r| r.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(c.query_row("SELECT created_by FROM group_events WHERE id=?1", [ev["id"].as_i64().unwrap()], |r| r.get::<_, i64>(0)).unwrap(), anna_id);
     }
 
     #[tokio::test]

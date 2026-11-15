@@ -103,6 +103,16 @@ describe('formatRef / scanRefs', () => {
     expect(flat('Rev. 21:9–22: 5')).toEqual(['Rev. 21:9–22: 5=66.21:9'])
     expect(flat('Gal. 2:19–3: 14')).toEqual(['Gal. 2:19–3: 14=48.2:19'])
   })
+  it('reads a one-chapter book’s lone number as a verse, and a list continues there', () => {
+    // the notes: Matt 15:27, Acts 4:24, Rom 5:13, Eph 5:4, 1 John 2:28, 1 John 3:1
+    expect(flat('see Philemon 20 and Jude 4')).toEqual(['Philemon 20=57.1:20', 'Jude 4=65.1:4'])
+    expect(flat('see Philemon 20, and so it is taken by many.')).toEqual(['Philemon 20=57.1:20'])
+    expect(flat('2Pet 2:1; Jude 4; Rev 6:10.')).toEqual(['2Pet 2:1=61.2:1', 'Jude 4=65.1:4', 'Rev 6:10=66.6:10'])
+    expect(flat('this only in Philem. 18.')).toEqual(['Philem. 18=57.1:18'])
+    expect(flat("see Col 3:18, Philem. 8, 'fitting'")).toEqual(['Col 3:18=51.3:18', 'Philem. 8=57.1:8'])
+    expect(flat('(so 3John 10) sets out')).toEqual(['3John 10=64.1:10'])
+    expect(flat('2John 1,4,13; 3John 4.')).toEqual(['2John 1=63.1:1', '4=63.1:4', '13=63.1:13', '3John 4=64.1:4'])
+  })
 })
 
 afterEach(() => { setNamesLang('en'); setShownText('en') })

@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from 'react'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { View } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 import type { Bookmark } from '@shared/types'
@@ -7,6 +7,7 @@ import { bookmarkKind, bookmarkPlace, bookmarkTitle, groupBookmarks } from '../s
 import { localPosition } from '../src/hooks/usePosition'
 import { fmtDate } from '../src/lib/format'
 import { useAuth } from '../src/store/auth'
+import { useToast } from '../src/store/toast'
 import { useMergeTick } from '../src/hooks/useLocalLibraryMerge'
 import { useInks } from '../src/hooks/useTheme'
 import { Card, Enter, ErrorText, H2, Screen, SPACE, Spinner, T, Tap } from '../src/components/ui'
@@ -32,15 +33,29 @@ export default function Bookmarks() {
     return () => { cancelled = true }
   }, [ready, user, merged]))
   const reduce = useReduceMotion()
+  const toast = useToast()
   const [leaving, setLeaving] = useState<ReadonlySet<number>>(new Set())
-  const drop = (id: number) => { setList(l => (l ?? []).filter(x => x.id !== id)); setLeaving(s => { const n = new Set(s); n.delete(id); return n }) }
+  /** A delete that failed after the row had started to leave: the collapse's onDone must not drop it again. */
+  const failed = useRef(new Set<number>())
+  const drop = (id: number) => {
+    if (failed.current.has(id)) return
+    setList(l => (l ?? []).filter(x => x.id !== id)); setLeaving(s => { const n = new Set(s); n.delete(id); return n })
+  }
   /**
    * The row collapses out first, absorbing the screen's gap so nothing jumps when it leaves the list (instantly under
-   * Reduce animation); the delete request goes out at once either way.
+   * Reduce animation); the delete request goes out at once either way. A failure puts the row back.
    */
   const remove = async (b: Bookmark) => {
+    failed.current.delete(b.id)
     if (reduce) drop(b.id); else setLeaving(s => new Set(s).add(b.id))
-    await removeBookmark(b.id).catch(() => {})
+    try {
+      await removeBookmark(b.id)
+    } catch {
+      failed.current.add(b.id)
+      setLeaving(s => { const n = new Set(s); n.delete(b.id); return n })
+      setList(l => { const cur = l ?? []; return cur.some(x => x.id === b.id) ? cur : [...cur, b] })
+      toast.show(t('Could not remove the bookmark'))
+    }
   }
   /** A verse at the verse, a chapter at its top, a book where you last were in it (else its first chapter). */
   const open = async (b: Bookmark) => {

@@ -80,9 +80,10 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
     await loadApiBase()
     const headers: Record<string, string> = { Accept: 'application/json', ...((rest.headers as Record<string, string>) ?? {}) }
     if (json !== undefined) headers['Content-Type'] = 'application/json'
-    if (token) headers['Authorization'] = `Bearer ${token}`
+    const sent = token
+    if (sent) headers['Authorization'] = `Bearer ${sent}`
     // bans only (lib/device.ts): signed-in and signing-in requests, never a reader without an account
-    if (token || path.startsWith('/auth/')) { const d = await deviceId(); if (d) headers['x-jottings-device'] = d }
+    if (sent || path.startsWith('/auth/')) { const d = await deviceId(); if (d) headers['x-jottings-device'] = d }
     // the server's error messages in the app's language (rs/src/i18n.rs)
     if (peekLang() !== 'en') headers['x-jottings-lang'] = peekLang()
     let res: Response
@@ -96,7 +97,8 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
     if (res.status === 204) return undefined as T
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
-      if (res.status === 401 && token) onUnauthorized?.()
+      // a session signed out or replaced while the request was out is not the one to end
+      if (res.status === 401 && sent && sent === token) onUnauthorized?.()
       throw new ApiError(res.status, (data as { error?: string }).error ?? res.statusText)
     }
     return data as T

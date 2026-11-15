@@ -9,23 +9,28 @@
 import { sectionsFor, type AuthorId, type CompanionIndex, type Reading, type Section, type WorkMeta } from '@shared/companion'
 import { get } from './api'
 import { isStored, readCompanionIndex, readSection } from './offlineMinistry'
-import { authorShown } from './editionCore'
+import { authorShown, onEditionChange } from './editionCore'
 import { N_ } from '@shared/i18n'
 
 const indexes = new Map<AuthorId, Promise<CompanionIndex | null>>()
 const sections = new Map<string, Section>()
 const chapters = new Map<string, Reading[]>()
+/** Edition (or cleanse) changes so far: an answer asked for before one is not kept. */
+let changes = 0
+// another edition: what was held is asked again (the server answers each edition its own)
+onEditionChange(() => { indexes.clear(); sections.clear(); chapters.clear(); changes++ })
 
 /** An author the edition leaves out (editionCore.ts) has nothing: no index, chapter or section, whatever is held. */
 export function loadCompanionIndex(author: AuthorId): Promise<CompanionIndex | null> {
   if (!authorShown(author)) return Promise.resolve(null)
   let p = indexes.get(author)
   if (!p) {
+    const asked = changes
     p = (async () => {
       const kept = await readCompanionIndex(author).catch(() => null)
       if (kept) return kept
       try { const i = await get<{ works: WorkMeta[] }>(`/companion/${author}`); return { author, works: i.works } }
-      catch { indexes.delete(author); return null }
+      catch { if (asked === changes) indexes.delete(author); return null }
     })()
     indexes.set(author, p)
   }
@@ -37,11 +42,12 @@ export async function loadCompanionSection(author: AuthorId, work: string, n: nu
   const k = `${author}/${work}/${n}`
   const hit = sections.get(k)
   if (hit) return hit
+  const asked = changes
   const kept = await readSection(author, work, n).catch(() => null)
-  if (kept) { sections.set(k, kept); return kept }
+  if (kept) { if (asked === changes) sections.set(k, kept); return kept }
   try {
     const r = await get<{ section: Section }>(`/companion/${author}/${encodeURIComponent(work)}/${n}`)
-    sections.set(k, r.section)
+    if (asked === changes) sections.set(k, r.section)
     return r.section
   } catch { return null }
 }
@@ -51,6 +57,7 @@ export async function loadCompanionChapter(author: AuthorId, book: number, chapt
   const k = `${author}/${book}.${chapter}`
   const hit = chapters.get(k)
   if (hit) return hit
+  const asked = changes
   const idx = await loadCompanionIndex(author)
   if (idx && !sectionsFor(idx, book, chapter).length) return []
   // the author on the phone: the index says which sections, the stored works give their text
@@ -59,14 +66,16 @@ export async function loadCompanionChapter(author: AuthorId, book: number, chapt
     const texts = await Promise.all(places.map(p => loadCompanionSection(author, p.work.id, p.n)))
     if (texts.every((t): t is Section => !!t)) {
       const r: Reading[] = places.map((p, i) => ({ ...p, section: texts[i] }))
-      chapters.set(k, r)
+      if (asked === changes) chapters.set(k, r)
       return r
     }
   }
   try {
     const r = await get<Reading[]>(`/companion/${author}/passage/${book}/${chapter}`)
-    for (const p of r) sections.set(`${author}/${p.work.id}/${p.n}`, p.section)
-    chapters.set(k, r)
+    if (asked === changes) {
+      for (const p of r) sections.set(`${author}/${p.work.id}/${p.n}`, p.section)
+      chapters.set(k, r)
+    }
     return r
   } catch { return null }
 }

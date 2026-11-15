@@ -8,6 +8,7 @@ import { notifyAllowed, postInviteNotices } from './inviteNotify'
 import type { IncomingReply } from './inviteNoticePlan'
 import { topUpVerseNotify } from './verseNotify'
 import { readVerseNotify } from './verseNotifyPlan'
+import { loadEdition } from './edition'
 import { ensureStoredLanguage } from '../i18n'
 
 /**
@@ -48,7 +49,8 @@ export async function syncInviteTask(on: boolean) {
 }
 
 export async function backgroundCheck() {
-  await ensureStoredLanguage()
+  // headless, nothing else has read the stored edition: the morning path is the one the app shows
+  await Promise.all([ensureStoredLanguage(), loadEdition()])
   const [[, prefsRaw], [, userRaw]] = await AsyncStorage.multiGet([PREFS_KEY, USER_KEY])
   const prefs = parse(prefsRaw) as { inviteNotify?: unknown; verseNotify?: unknown } | null
   const verseOn = readVerseNotify(prefs?.verseNotify).items.length > 0

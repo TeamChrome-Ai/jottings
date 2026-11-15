@@ -3,6 +3,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { isLettered } from '../shared/footnotes'
+import { WORD_RE_EN } from '../shared/texts'
 import type { Verse } from '../shared/types'
 import { nativeVerseAts } from '../client/src/lib/nativeVerseAt'
 
@@ -57,5 +59,89 @@ describe('native verse positions', () => {
     const hits = nativeVerseAts(joined, verses, { showNumbers: true })
     expect(joined.slice(at(hits, 10), at(hits, 10) + 2)).toBe('10')
     expect(joined.slice(at(hits, 21), at(hits, 21) + 2)).toBe('21')
+  })
+})
+
+// A lettered note at word 0 is drawn before the first word. The other markers are joined to their word with U+2060;
+// 1.3.11 left this one bare, so "a" + "if" is the word "aif" and the search takes a later "if".
+const deut30 = JSON.parse(readFileSync(resolve(__dirname, '../client/public/bible/5/30.json'), 'utf8')) as { verses: Verse[] }
+const jer39 = JSON.parse(readFileSync(resolve(__dirname, '../client/public/bible/24/39.json'), 'utf8')) as { verses: Verse[] }
+const deutRun = deut30.verses.filter(v => v.v >= 9 && v.v <= 11)
+const jerRun = (() => {
+  const out: Verse[] = []
+  for (const v of jer39.verses) {
+    if (out.length && (v.p || v.hd)) break
+    out.push(v)
+  }
+  return out
+})()
+
+/** One verse as VerseSpan draws it with numbers off: lettered notes after the word they explain, symbols in front,
+ *  each of those joined by U+2060, then the verse's trailing space. `leadJoiner` is that joiner on an opening letter. */
+function drawVerse(v: Verse, leadJoiner: boolean): string {
+  const toks: { tok: string; wi: number; word: boolean }[] = []
+  let wi = 0
+  for (const m of v.t.matchAll(new RegExp(WORD_RE_EN.source, WORD_RE_EN.flags))) {
+    if (m[1]) toks.push({ tok: m[1], wi: wi++, word: true })
+    else toks.push({ tok: m[2], wi: -1, word: false })
+  }
+  const at = new Map<number, { marker: string; letter: boolean }[]>()
+  for (const n of v.notes ?? []) {
+    const k = Math.min(n.pos ?? wi, wi)
+    const list = at.get(k) ?? []
+    list.push({ marker: n.marker, letter: isLettered(n) })
+    at.set(k, list)
+  }
+  const marks = (k: number, letter: boolean) => (at.get(k) ?? []).filter(n => n.letter === letter).map(n => n.marker).join('')
+  let s = ''
+  const lead = marks(0, true)
+  if (lead) s += lead + (leadJoiner ? '\u2060' : '')
+  for (const t of toks) {
+    if (!t.word) { s += t.tok; continue }
+    const pre = marks(t.wi, false), post = marks(t.wi + 1, true)
+    if (pre) s += pre + '\u2060'
+    s += t.tok
+    if (post) s += '\u2060' + post
+  }
+  const tail = marks(wi, false)
+  if (tail) s += tail
+  return s + ' '
+}
+
+/** Where each verse's own first word sits in the paragraph, and where the search lands. */
+function placed(verses: readonly Verse[], leadJoiner: boolean): { got: (number | undefined)[]; want: number[] } {
+  const parts = verses.map(v => drawVerse(v, leadJoiner))
+  const joined = parts.join('')
+  const hits = nativeVerseAts(joined, verses, { showNumbers: false })
+  let cursor = 0
+  const want: number[] = []
+  for (let i = 0; i < verses.length; i++) {
+    const lead = (verses[i].notes ?? []).filter(n => n.pos === 0 && isLettered(n)).map(n => n.marker).join('')
+    const where = cursor + (lead ? lead.length + (leadJoiner ? 1 : 0) : 0)
+    const key = verses[i].t.trim().split(/\s+/)[0]
+    expect(joined.slice(where, where + key.length)).toBe(key)
+    want.push(where)
+    cursor += parts[i].length
+  }
+  return { got: verses.map(v => hits.find(h => h.v === v.v)?.at), want }
+}
+
+describe('a lettered note before the first word', () => {
+  it('keeps Deuteronomy 30:9-11 each on its own first word', () => {
+    // 30:10 is "a" then "if thou shalt hearken", and the verse also says "if thou turn"
+    expect(drawVerse(deutRun[1], true).startsWith('a\u2060if thou')).toBe(true)
+    const laid = placed(deutRun, true)
+    expect(laid.got).toEqual(laid.want)
+    // drawn as 1.3.11 drew it, the letter against the word, the same search misses
+    expect(drawVerse(deutRun[1], false).startsWith('aif thou')).toBe(true)
+    expect(placed(deutRun, false).got).not.toEqual(placed(deutRun, false).want)
+  })
+  it('keeps Jeremiah 39, whose first verse opens with note d, each on its own first word', () => {
+    expect(jerRun.map(v => v.v)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    expect(drawVerse(jerRun[0], true).startsWith('d\u2060And')).toBe(true)
+    const laid = placed(jerRun, true)
+    expect(laid.got).toEqual(laid.want)
+    expect(drawVerse(jerRun[0], false).startsWith('dAnd')).toBe(true)
+    expect(placed(jerRun, false).got).not.toEqual(placed(jerRun, false).want)
   })
 })

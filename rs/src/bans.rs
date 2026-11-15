@@ -171,6 +171,10 @@ pub fn nuke(conn: &Connection, uid: i64) -> rusqlite::Result<()> {
 pub fn unnuke(conn: &Connection, uid: i64, report_id: i64) -> rusqlite::Result<()> {
     conn.execute("UPDATE users SET disabled=0, ban_exempt=1 WHERE id=?1 AND id<>0", params![uid])?;
     conn.execute("DELETE FROM ban_marks WHERE user_id=?1", params![uid])?;
+    unhide(conn, uid, report_id)
+}
+/// Show again what `uid` wrote, except what a report other than `report_id` still holds hidden or an admin removed.
+pub fn unhide(conn: &Connection, uid: i64, report_id: i64) -> rusqlite::Result<()> {
     let held = "SELECT target_id FROM reports WHERE kind=?3 AND id<>?2 AND (status='hidden' OR resolution IN ('remove','ban'))";
     conn.execute(&format!("UPDATE group_posts SET hidden=0 WHERE user_id=?1 AND id NOT IN ({held})"), params![uid, report_id, "post"])?;
     conn.execute(&format!("UPDATE outlines SET hidden=0 WHERE user_id=?1 AND id NOT IN ({held})"), params![uid, report_id, "outline"])?;

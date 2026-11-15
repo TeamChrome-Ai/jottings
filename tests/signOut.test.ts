@@ -12,9 +12,13 @@ const h = vi.hoisted(() => ({
     stalled: false,
     /** Every request that reached the server: method, path, and its Authorization header. */
     requests: [] as string[],
+    /** While set, GET /me is answered as the server saw it on arrival, once this settles. */
+    meLate: null as null | Promise<void>,
   },
   /** The provider's context value, as the last render made it. */
-  ctx: null as null | { logout: () => Promise<void> },
+  ctx: null as null | { logout: () => Promise<void>; login: (handle: string, password: string) => Promise<void> },
+  /** The provider's state in the order its hooks ask for it: the reader first. */
+  states: [] as { v: unknown }[],
 }))
 vi.mock('../client/node_modules/@react-native-async-storage/async-storage', () => ({
   default: {
@@ -29,7 +33,11 @@ vi.mock('../client/node_modules/expo-secure-store', () => ({
 vi.mock('../client/node_modules/react-native', () => ({ Platform: { OS: 'android' } }))
 vi.mock('../client/node_modules/react', () => ({
   createContext: () => ({ Provider: 'Provider' }), useContext: () => null,
-  useState: (v: unknown) => [v, () => {}], useCallback: (f: unknown) => f, useRef: (v: unknown) => ({ current: v }),
+  useState: (v: unknown) => {
+    const cell = { v }; h.states.push(cell)
+    return [v, (x: unknown) => { cell.v = typeof x === 'function' ? (x as (p: unknown) => unknown)(cell.v) : x }]
+  },
+  useCallback: (f: unknown) => f, useRef: (v: unknown) => ({ current: v }),
   useMemo: (f: () => unknown) => { const v = f(); h.ctx = v as typeof h.ctx; return v },
   useEffect: (f: () => void) => { f() },
 }))
@@ -46,6 +54,12 @@ vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
   server.requests.push(`${method} ${path} ${auth ?? '-'}`)
   if (server.stalled) return new Promise<Response>((_, fail) => init.signal?.addEventListener('abort', () => fail(Object.assign(new Error('aborted'), { name: 'AbortError' }))))
   const tok = auth?.replace('Bearer ', '') ?? null
+  if (path === '/auth/login') { server.sessions.add('tok2'); return json(200, { user: { id: 8 }, token: 'tok2' }) }
+  if (path === '/me' && server.meLate) {
+    const answer = tok && server.sessions.has(tok) ? json(200, { user: { id: 7 } }) : json(401, { error: 'sign in' })
+    await server.meLate
+    return answer
+  }
   // the logout ends the session it names (rs/src/routes.rs); with none named it ends nothing and still answers ok
   if (path === '/auth/logout') { if (tok) server.sessions.delete(tok); return json(200, { ok: true }) }
   if (!tok || !server.sessions.has(tok)) return json(401, { error: 'sign in' })
@@ -63,6 +77,7 @@ const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(r =>
 /** The app started on a device where reader 7 is signed in with `tok`: the provider restores the session. */
 async function launch() {
   vi.resetModules()
+  h.states.length = 0
   const A = await import('../client/src/lib/api')
   const M = await import('../client/src/lib/readMarks')
   const { AuthProvider } = await import('../client/src/store/auth')
@@ -70,11 +85,13 @@ async function launch() {
   await settle()
   return { A, M, logout: () => h.ctx!.logout() }
 }
+/** The reader the provider holds. */
+const reader = () => h.states[0].v
 const shown = (M: { peekMarks: () => { at: ReadonlyMap<string, string> } }) => [...M.peekMarks().at.keys()].sort()
 
 beforeEach(() => {
   store.clear(); store.set('berean_token', 'tok'); store.set('berean_user', JSON.stringify({ id: 7 }))
-  Object.assign(server, { online: true, stalled: false }); server.sessions.clear(); server.sessions.add('tok')
+  Object.assign(server, { online: true, stalled: false, meLate: null }); server.sessions.clear(); server.sessions.add('tok')
   server.marks.clear(); server.marks.set('43.3', '2026-10-12T12:00:00.000Z'); server.requests.length = 0
   h.ctx = null
 })
@@ -135,5 +152,50 @@ describe('signing out', () => {
     await settle()
     expect(server.requests).toEqual(['DELETE /me/marks/43/3 Bearer tok', 'POST /auth/logout Bearer tok'])
     expect(A.getToken()).toBe(null)
+  })
+})
+
+describe('the profile asked for at start', () => {
+  let answer!: () => void
+  beforeEach(() => { server.meLate = new Promise<void>(r => { answer = r }) })
+
+  it('refreshes the reader while the session it was asked for stands', async () => {
+    store.set('berean_user', JSON.stringify({ id: 7, display_name: 'old' }))
+    await launch()
+    answer(); await settle()
+    expect(reader()).toEqual({ id: 7 })
+    expect(JSON.parse(store.get('berean_user')!)).toEqual({ id: 7 })
+  })
+
+  it('answering after a sign-out and another reader’s sign-in, is neither shown nor kept', async () => {
+    const { A, logout } = await launch()
+    await logout()
+    await h.ctx!.login('ruth', 'pw')
+    expect(A.getToken()).toBe('tok2')
+    answer(); await settle()
+    expect(reader()).toEqual({ id: 8 })
+    expect(JSON.parse(store.get('berean_user')!)).toEqual({ id: 8 })
+  })
+
+  it('answering after a sign-out, leaves nobody signed in on the device', async () => {
+    const { A, logout } = await launch()
+    await logout()
+    answer(); await settle()
+    expect(A.getToken()).toBe(null)
+    expect(reader()).toBe(null)
+    expect(store.has('berean_user')).toBe(false)
+  })
+
+  it('refused for a session that has since been replaced, does not sign the new one out', async () => {
+    server.sessions.clear()   // the session the device kept had ended on the server
+    const { A, logout } = await launch()
+    await logout()
+    await h.ctx!.login('ruth', 'pw')
+    server.requests.length = 0
+    answer(); await settle()
+    expect(server.requests).toEqual([])
+    expect(server.sessions.has('tok2')).toBe(true)
+    expect(A.getToken()).toBe('tok2')
+    expect(reader()).toEqual({ id: 8 })
   })
 })

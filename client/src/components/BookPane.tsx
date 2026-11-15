@@ -63,7 +63,7 @@ export default function BookPane({ book, chapter, readSet, marks = NO_MARKS, onM
           const marked = marks.has(bookmarkKey({ book: bk.n }))
           return (
             <View key={bk.n} onLayout={e => onRow(bk.n, e.nativeEvent.layout.y)}>
-              <Tap onPress={() => setOpen(bk.n)} onLongPress={onMark ? () => onMark({ book: bk.n }) : undefined} scaleTo={0.98} accessibilityRole="button" aria-label={bk.name} aria-selected={current}
+              <Tap onPress={() => { if (pending.current) clearTimeout(pending.current); setPickedCh(null); setOpen(bk.n) }} onLongPress={onMark ? () => onMark({ book: bk.n }) : undefined} scaleTo={0.98} accessibilityRole="button" aria-label={bk.name} aria-selected={current}
                 accessibilityHint={onMark ? marked ? t('Hold to remove the bookmark') : t('Hold to bookmark') : undefined}
                 style={[styles.row, { backgroundColor: shown ? ink.card : 'transparent' }]}>
                 <Text numberOfLines={1} style={[styles.name, { color: current ? c.accent : c.text, fontWeight: current ? '700' : '400' }]}>{bk.name}</Text>
