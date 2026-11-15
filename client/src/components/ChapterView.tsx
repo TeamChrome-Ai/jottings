@@ -8,6 +8,7 @@ import type { Note, Verse } from '@shared/types'
 import type { Ref } from '@shared/ref'
 import type { ChapterData } from '../lib/bible'
 import { book as bookMeta, tokenize, verseId } from '../lib/bible'
+import { nativeVerseAts, verseLabel } from '../lib/nativeVerseAt'
 import { wordIndexAt } from '../lib/tts'
 import { TEXT_FIT, face, fontFamily } from '../theme'
 import { lineFactor } from '../lib/lineHeight'
@@ -74,7 +75,6 @@ interface Props {
 
 /** A verse's own printed chapter and number in a Bible other than the English (the English ones elsewhere). */
 const ownChapter = (v: Verse, c: number) => v.nc ?? c
-export const verseLabel = (v: Verse) => (v.nvTo ? `${v.nv ?? v.v}${v.ncTo ? `–${v.ncTo}:` : '-'}${v.nvTo}` : String(v.nv ?? v.v))
 
 /**
  * Paragraph layout from the `p` / `hd` flags; each verse is a memoised nested Text. Memoised itself: the reading
@@ -333,16 +333,9 @@ const Paragraph = memo(function Paragraph({ index, register, onParaLayout, onVer
     if (y0 === undefined || !lines || !onVerseLayout) return
     const starts: number[] = []; let joined = ''
     for (const l of lines) { starts.push(joined.length); joined += l.text }
-    let from = 0
-    for (const v of rv) {
-      const key = prefs.verseNumbers ? verseLabel(v) : (v.t.trim().split(/\s+/)[0] ?? '')
-      if (!key) continue
-      let idx = joined.indexOf(key, from)
-      while (idx > 0 && prefs.verseNumbers && /\d/.test(joined[idx - 1])) idx = joined.indexOf(key, idx + 1)
-      if (idx < 0) continue
-      let li = 0; for (let i = 0; i < starts.length; i++) if (starts[i] <= idx) li = i
-      onVerseLayout(v.v, index, y0 + lines[li].y)
-      from = idx + key.length
+    for (const hit of nativeVerseAts(joined, rv, { showNumbers: prefs.verseNumbers })) {
+      let li = 0; for (let i = 0; i < starts.length; i++) if (starts[i] <= hit.at) li = i
+      onVerseLayout(hit.v, index, y0 + lines[li].y)
     }
   }, [onVerseLayout, index, prefs.verseNumbers, pair])
   const nativeMeasure = Platform.OS !== 'web' && !!onVerseLayout

@@ -162,7 +162,7 @@ function FlipScreenPage() {
       if (!alive) return
       if (!landingRef.current) {
         const pv = params.v ? parseInt(params.v, 10) : 0
-        if (pv > 1) landingRef.current = { verse: pv }
+        if (pv > 0) landingRef.current = { verse: pv }
         else {
           const p = await loadPosition(!!user)
           if (alive && p.book === bookN && p.chapter === chapterN && p.verse > 1) landingRef.current = { verse: p.verse }

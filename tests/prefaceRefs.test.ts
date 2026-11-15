@@ -32,6 +32,16 @@ describe('scanPrefaceRefs', () => {
     expect(flat('verses such as Ex. 12. 40, 41; Judges 11. 26; 1 Kings 6. 1; which')).toEqual(['Ex. 12. 40=2.12:40', '41=2.12:41', 'Judges 11. 26=7.11:26', '1 Kings 6. 1=11.6:1'])
     expect(flat('(Num. 21. 24-26)')).toEqual(['Num. 21. 24-26=4.21:24-26'])
   })
+  it('links a citation that runs into the next chapter through its last verse, opening at the first', () => {
+    expect(flat('destroyed (2 Kings 9:30-10:28).')).toEqual(['2 Kings 9:30-10:28=12.9:30'])
+    expect(flat('Colossians 1:24-2:5.')).toEqual(['Colossians 1:24-2:5=51.1:24'])
+    expect(flat('John 3. 16 -- 4. 2.')).toEqual(['John 3. 16 -- 4. 2=43.3:16'])
+    const home = (s: string, h: { book: number }) => scanPrefaceRefs(s, h).map(r => `${s.slice(r.start, r.end)}=${r.ref.book}.${r.ref.chapter}${r.ref.v1 !== undefined ? ':' + r.ref.v1 : ''}${r.ref.v2 !== undefined ? '-' + r.ref.v2 : ''}`)
+    expect(home('Chapters 2:14–7:4.', { book: 47 })).toEqual(['Chapters 2:14–7:4=47.2:14'])
+    expect(home('chapter 2:23–3:3, and', { book: 47 })).toEqual(['chapter 2:23–3:3=47.2:23'])
+    // 29–30 is a verse range; the comma keeps 35 a verse of the same chapter
+    expect(home('the plate (ch. 28:29–30,35); and', { book: 2 })).toEqual(['ch. 28:29–30=2.28:29-30', '35=2.28:35'])
+  })
   it('reads ranges and semicolon lists, the book carried into bare chapters', () => {
     expect(flat('old (Gen. 5. 3 -- 29; 7. 11) 1,656')).toEqual(['Gen. 5. 3 -- 29=1.5:3-29', '7. 11=1.7:11'])
     expect(flat('(Gen. 11. 10–25) 222')).toEqual(['Gen. 11. 10–25=1.11:10-25'])

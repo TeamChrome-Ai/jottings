@@ -550,7 +550,8 @@ function ReadScreenPage() {
   const navigate = useCallback((t: Target) => {
     scrollY.current = 0
     scrollRef.current?.scrollTo({ y: 0, animated: false })
-    router.setParams({ book: String(t.book), chapter: String(t.chapter), v: '' })
+    // setParams keeps every param it is not given: the arrival's (the verse, read aloud going on, a ministry link) act once
+    router.setParams({ book: String(t.book), chapter: String(t.chapter), v: '', v2: '', listen: '', ministry: '' })
   }, [router])
   const reduce = prefs.reduceMotion
   const reduceRef = useRef(reduce)
@@ -818,7 +819,7 @@ function ReadScreenPage() {
   return (
     <View style={[styles.fill, styles.row, { backgroundColor: colors.bg }]} onTouchStart={mark}>
       {/* the desktop's book pane: the primary way about the Bible there; the pill still opens the picker sheet */}
-      {desktop ? <BookPane book={bookN} chapter={chapterN} readSet={ticks} marks={marks} onMark={t => { void toggleMark(t) }} onPick={(b, ch) => navigate({ book: b, chapter: ch })} /> : null}
+      {desktop ? <BookPane book={bookN} chapter={chapterN} readSet={ticks} marks={marks} onMark={t => { void toggleMark(t) }} onPick={(b, ch, v) => { if (v) onNavigate({ book: b, chapter: ch, v1: v }); else navigate({ book: b, chapter: ch }) }} /> : null}
       <View style={styles.fill} onLayout={desktop ? e => setColumnW(e.nativeEvent.layout.width) : undefined}>
       <View style={[styles.toolbar, { paddingTop: insets.top + 6, backgroundColor: colors.bar, borderBottomColor: colors.border }]}>
         <View>

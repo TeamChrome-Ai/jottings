@@ -69,9 +69,9 @@ pub fn register(conn: &rusqlite::Connection, handle: &str, display_name: &str, p
     if !crate::scan::name_ok(&handle) || !crate::scan::name_ok(&display) { return Err(ApiError::bad("that name is not allowed; please choose another")); }
     let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default().hash_password(password.as_bytes(), &salt).map_err(|_| ApiError::internal("hash"))?.to_string();
-    // the first account created while no admin exists becomes the site admin (survives a deleted first account)
-    let admins: i64 = conn.query_row("SELECT count(*) FROM users WHERE is_admin=1", [], |r| r.get(0))?;
-    match conn.execute("INSERT INTO users (handle, display_name, password_hash, is_admin) VALUES (?1, ?2, ?3, ?4)", params![handle, display, hash, (admins == 0) as i64]) {
+    // the first account created while no admin exists becomes the site admin (survives a deleted first account).
+    // the count is inside the insert: SQLite runs one writer at a time, so two sign-ups cannot both see zero
+    match conn.execute("INSERT INTO users (handle, display_name, password_hash, is_admin) SELECT ?1, ?2, ?3, (SELECT count(*) FROM users WHERE is_admin=1)=0", params![handle, display, hash]) {
         Ok(_) => Ok(get_user(conn, conn.last_insert_rowid())?.unwrap()),
         Err(rusqlite::Error::SqliteFailure(e, _)) if e.code == rusqlite::ErrorCode::ConstraintViolation => Err(ApiError::new(409, "that handle is taken")),
         Err(e) => Err(e.into()),
@@ -93,18 +93,19 @@ pub struct MaybeUser(pub Option<User>);
 /// Extractor: 401 unless signed in.
 pub struct AuthUser(pub User);
 
-fn token_from_parts(parts: &Parts) -> Option<String> {
-    if let Some(h) = parts.headers.get(http::header::AUTHORIZATION).and_then(|v| v.to_str().ok()) {
+/// Bearer first, then the session cookie. Logout deletes whichever session the other routes would use.
+pub(crate) fn token_from_parts(headers: &http::HeaderMap) -> Option<String> {
+    if let Some(h) = headers.get(http::header::AUTHORIZATION).and_then(|v| v.to_str().ok()) {
         if let Some(t) = h.strip_prefix("Bearer ") { return Some(t.to_string()); }
     }
-    let jar = CookieJar::from_headers(&parts.headers);
+    let jar = CookieJar::from_headers(headers);
     jar.get(COOKIE).map(|c| c.value().to_string())
 }
 
 impl FromRequestParts<crate::AppState> for MaybeUser {
     type Rejection = ApiError;
     async fn from_request_parts(parts: &mut Parts, state: &crate::AppState) -> Result<Self, Self::Rejection> {
-        let Some(token) = token_from_parts(parts) else { return Ok(MaybeUser(None)) };
+        let Some(token) = token_from_parts(&parts.headers) else { return Ok(MaybeUser(None)) };
         let pool: DbPool = state.pool.clone();
         let seen = crate::bans::Seen::of(parts);
         tokio::task::spawn_blocking(move || {
@@ -120,5 +121,34 @@ impl FromRequestParts<crate::AppState> for AuthUser {
     type Rejection = ApiError;
     async fn from_request_parts(parts: &mut Parts, state: &crate::AppState) -> Result<Self, Self::Rejection> {
         match MaybeUser::from_request_parts(parts, state).await?.0 { Some(u) => Ok(AuthUser(u)), None => Err(ApiError::new(401, "sign in required")) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn db() -> crate::db::Conn {
+        let path = std::env::temp_dir().join(format!("berean-test-{}.db", random_token(6)));
+        crate::db::open_pool(path.to_str().unwrap(), None).unwrap().get().unwrap()
+    }
+
+    #[test]
+    fn the_first_password_account_is_the_only_admin() {
+        let c = db();
+        // The count and the insert are one statement. Separate, two connections can both read zero and both insert
+        // an admin. SQLite runs one writer at a time, so one statement cannot interleave. Argon2 finishes before that
+        // window, so driving the race through register is not deterministic; this is the one connection.
+        let anna = register(&c, "anna", "Anna", "password1").unwrap();
+        assert_eq!(anna.is_admin, 1);
+        assert_eq!(register(&c, "ben", "Ben", "password1").unwrap().is_admin, 0);
+        let taken = register(&c, "Anna", "Someone", "password1").unwrap_err();
+        assert_eq!((taken.status, taken.message.as_str()), (409, "that handle is taken"));
+        // the first account was removed as admin: the next one created while none exists is the admin
+        c.execute("UPDATE users SET is_admin=0", []).unwrap();
+        assert_eq!(register(&c, "cara", "Cara", "password1").unwrap().is_admin, 1);
+        assert_eq!(register(&c, "dan", "Dan", "password1").unwrap().is_admin, 0);
+        let n: i64 = c.query_row("SELECT count(*) FROM users WHERE is_admin=1", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
     }
 }

@@ -143,7 +143,7 @@ export function scanRefs(text: string, ctxIn?: RefContext, opts: { english?: boo
   const convert = !opts.english && peekShownText() !== 'en'
   const ctx = ctxIn && convert ? { book: ctxIn.book, chapter: ownNumber(ctxIn.book, ctxIn.chapter, 1).c } : ctxIn
   const comma = !opts.english && (peekShownText() === 'de' || peekNamesLang() === 'de')
-  const spans = scanOwn(text, ctx, convert ? 1 : 0, comma ? SCAN_DE : convert || peekNamesLang() !== 'en' ? SCAN_INTL : SCAN_EN)
+  const spans = scanOwn(text, ctx, convert ? 1 : 0, comma ? SCAN_DE : convert || peekNamesLang() !== 'en' ? SCAN_INTL : SCAN_EN, comma)
   if (!convert) return spans
   return spans.flatMap(s => {
     const r = toEnglish(s.ref)
@@ -157,15 +157,36 @@ const SCAN_EN = /((?:[1-3]\s?)?[A-Z][a-z]+\.?(?:\s(?:of\s)?[A-Z][a-z]+)?)\s?(\d{
 const SCAN_INTL = /((?:[1-3]\s?)?\p{Lu}\p{Ll}+\.?(?:\s(?:of\s)?\p{Lu}\p{Ll}+)?)\s?(\d{1,3})(?:\s?[:.]\s?(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?)?|\b(chs?|vers?s?|vv?)\.?\s?(\d{1,3})(?:\s?[:.]\s?(\d{1,3}))?(?:\s?[-–]\s?(\d{1,3}))?|(\d{1,3})\s?[:.]\s?(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?|(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?/gu
 const SCAN_DE = /((?:[1-3]\.?\s?)?\p{Lu}\p{Ll}+\.?(?:\s\p{Lu}\p{Ll}+)?)\s?(\d{1,3})(?:\s?[:.,]\s?(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?)?|\b(Kap|chs?|vers?s?|vv?)\.?\s?(\d{1,3})(?:\s?[:.,]\s?(\d{1,3}))?(?:\s?[-–]\s?(\d{1,3}))?|(\d{1,3})\s?[:.,]\s?(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?|(\d{1,3})(?:\s?[-–]\s?(\d{1,3}))?/gu
 
+/** Where a dash-number runs on into the next chapter ("9:30-10:28", "9.30-10.28", and a German comma when that number
+ *  cannot be a verse of the chapter). The index after the next chapter's verse, or `end` when the dash is a verse
+ *  range. The next chapter's verse follows the citation's own separator ("13:4-7. 8 is love" is the next sentence),
+ *  and a full stop, which can also end the sentence, only spaced as the citation spaces it ("8.1-4. 5"). */
+function crossTail(text: string, start: number, end: number, v1: number, v2: number, book: number, chapter: number, comma: boolean): number {
+  const m = /^(\s?)([:.,])(\s?)(\d{1,3})(?![\dA-Za-z])/u.exec(text.slice(end))
+  const own = /(\s?)([:.,])(\s?)\d{1,3}\s*[-–]+\s*\d{1,3}$/u.exec(text.slice(start, end))
+  if (!m || !own || m[2] !== own[2] || (m[2] === '.' && (m[1] !== own[1] || m[3] !== own[3]))) return end
+  if (m[2] === ',' && (!comma || (v2 >= v1 && v2 <= verseCount(book, chapter)))) return end
+  if (m[3] && /^\s+\p{Lu}/u.test(text.slice(end + m[0].length))) return end
+  return end + m[0].length
+}
+
 /** scanRefs in the text's own numbering, with `slack` more chapters than the English has (French Joel has four). */
-function scanOwn(text: string, ctx: RefContext | undefined, slack: number, pattern: RegExp): RefSpan[] {
+function scanOwn(text: string, ctx: RefContext | undefined, slack: number, pattern: RegExp, comma: boolean): RefSpan[] {
   const out: RefSpan[] = []
   // one pass, left to right; the book (and chapter) of the last hit carry into bare continuations
   const re = new RegExp(pattern.source, pattern.flags)
   let m: RegExpExecArray | null
   let cur: { book: BookMeta; chapter: number } | null = null
   let lastEnd = -1
-  const push = (start: number, end: number, ref: Ref) => { out.push({ start, end, ref }); lastEnd = end }
+  const push = (start: number, end: number, ref: Ref) => {
+    let to = end
+    // a reference is one chapter, so a citation into the next one opens at its first verse and covers the whole citation
+    if (ref.v1 !== undefined && ref.v2 !== undefined) {
+      const tail = crossTail(text, start, end, ref.v1, ref.v2, ref.book, ref.chapter, comma)
+      if (tail !== end) { delete ref.v2; to = tail; re.lastIndex = tail }
+    }
+    out.push({ start, end: to, ref }); lastEnd = to
+  }
   const gapOk = (from: number, to: number, list: boolean) => {
     if (from < 0 || to < from) return false
     const gap = text.slice(from, to)
@@ -291,25 +312,32 @@ const SENTENCE_END = /[.!?][”’")\]]*\s+[(“‘"]?[A-Z]/
 export function scanPrefaceRefs(text: string, home?: RefHome): RefSpan[] {
   const out: RefSpan[] = []
   const homeBook = home ? BOOKS[home.book - 1] : undefined
+  const re = new RegExp(PREFACE_RE)
   // the book and chapter the next bare continuation belongs to and where the last reference ended; the home book's
   // chapter named last and where, and the one the text has gone on to
   type At = { book: BookMeta; chapter: number }
   const at: { cur: At | null; end: number; glance: (At & { end: number }) | null; home: At | null } = { cur: null, end: -1, glance: null, home: null }
   const num = (s: string) => parseInt(s.replace(/I/g, '1'), 10)
   const push = (start: number, end: number, book: BookMeta, chapter: number, v1?: string, v2?: string) => {
+    let to = end
     const ref: Ref = { book: book.n, chapter }
     if (v1 !== undefined) {
       ref.v1 = num(v1)
-      if (v2 !== undefined && num(v2) > ref.v1) ref.v2 = num(v2)
+      if (v2 !== undefined) {
+        const v2n = num(v2)
+        const tail = crossTail(text, start, end, ref.v1, v2n, book.n, chapter, false)
+        if (tail !== end) { to = tail; re.lastIndex = tail }
+        else if (v2n > ref.v1) ref.v2 = v2n
+      }
     }
-    out.push({ start, end, ref })
+    out.push({ start, end: to, ref })
     at.cur = { book, chapter }
-    at.end = end
+    at.end = to
     if (book !== homeBook) return
-    at.glance = { book, chapter, end }
+    at.glance = { book, chapter, end: to }
     if (home?.walk?.(chapter) ?? !home?.chapter) at.home = at.cur
   }
-  const gap = (re: RegExp, to: number) => at.end >= 0 && re.test(text.slice(at.end, to))
+  const gap = (gapRe: RegExp, to: number) => at.end >= 0 && gapRe.test(text.slice(at.end, to))
   /** "chapter 9" / "verse 4" at [start, end): against the reference just before, or with a home book against it. */
   const relative = (word: string, start: number, end: number, n: string, v?: string, v2?: string) => {
     const cur = at.cur
@@ -326,7 +354,6 @@ export function scanPrefaceRefs(text: string, home?: RefHome): RefSpan[] {
     const base = near ?? glance ?? at.home ?? (home?.chapter ? { book: homeBook!, chapter: home.chapter } : null)
     if (base) push(start, end, base.book, base.chapter, n, v2)
   }
-  const re = new RegExp(PREFACE_RE)
   let m: RegExpExecArray | null
   while ((m = re.exec(text))) {
     const end = m.index + m[0].length

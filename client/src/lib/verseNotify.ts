@@ -2,8 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Notifications from 'expo-notifications'
 import * as SecureStore from 'expo-secure-store'
 import { Platform } from 'react-native'
-import { nextPortion, readSetOf, type PathAccount } from '@shared/paths'
+import type { PathAccount } from '@shared/paths'
 import { N_, t } from '@shared/i18n'
+import { accountPathNext } from './accountPathNext'
 import { getApiBase } from './api'
 import { bundledChapter } from './bundledBible'
 import { localPathNext, peekPathNext } from './paths'
@@ -106,7 +107,7 @@ async function pathNext(): Promise<PathNext | undefined> {
     const res = await fetch(`${getApiBase()}/api/me/path`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
     if (!res.ok) return undefined
     const acc = await res.json() as PathAccount
-    return acc.path ? { path: acc.path, next: nextPortion(acc.path, readSetOf(acc.read))?.portion ?? null } : null
+    return accountPathNext(acc)
   } catch { return undefined }
 }
 

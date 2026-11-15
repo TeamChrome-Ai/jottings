@@ -1,13 +1,17 @@
 import * as SecureStore from 'expo-secure-store'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Platform } from 'react-native'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { User } from '@shared/types'
 import { get, post, setToken, setUnauthorizedHandler } from '../lib/api'
+import { sendMarks } from '../lib/readMarks'
 import { setReadingWith } from './readingWith'
 
 const TOKEN_KEY = 'berean_token'
 const USER_KEY = 'berean_user'
+/** The most a sign-out waits on each of its requests: offline, or on a stalled connection, it goes ahead without them. */
+const LEAVE_MS = 2500
+const within = (p: Promise<unknown>) => Promise.race([p.catch(() => {}), new Promise(r => setTimeout(r, LEAVE_MS))])
 
 // SecureStore has no web implementation; the web build falls back to localStorage via AsyncStorage.
 const secure = {
@@ -37,14 +41,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem(USER_KEY, JSON.stringify(r.user))
     setUser(r.user)
   }, [])
-  const logout = useCallback(async () => {
-    post('/auth/logout').catch(() => {})
-    setToken(null)
-    await secure.del(TOKEN_KEY).catch(() => {})
-    await AsyncStorage.removeItem(USER_KEY)
-    setUser(null)
-    setReadingWith(null)
-  }, [])
+  // one sign-out at a time: a 401 to one of its own requests calls it again
+  const leaving = useRef<Promise<void> | null>(null)
+  const logout = useCallback(() => leaving.current ??= (async () => {
+    try {
+      // while the token still works: undos still waiting here are dropped once nobody is signed in, and the logout
+      // ends the session it names
+      await within(sendMarks())
+      await within(post('/auth/logout'))
+      setToken(null)
+      await secure.del(TOKEN_KEY).catch(() => {})
+      await AsyncStorage.removeItem(USER_KEY)
+      setUser(null)
+      setReadingWith(null)
+    } finally { leaving.current = null }
+  })(), [])
 
   useEffect(() => {
     let cancelled = false

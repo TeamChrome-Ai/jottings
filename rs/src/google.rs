@@ -69,9 +69,9 @@ pub fn upsert_user(conn: &Connection, c: &GoogleClaims, seen: &crate::bans::Seen
     let mut ids = vec![("google", crate::bans::hash("google", &c.sub))];
     if let Some(e) = email { ids.push(("email", crate::bans::hash("email", e))); }
     crate::bans::check_signup(conn, seen, &ids)?;
-    let first: i64 = conn.query_row("SELECT count(*) FROM users WHERE is_admin=1", [], |r| r.get(0))?;
-    // no usable password: a random argon2-shaped sentinel that can never verify
-    conn.execute("INSERT INTO users (handle, display_name, password_hash, is_admin) VALUES (?1, ?2, ?3, ?4)", params![handle, display, format!("google:{}", random_token(32)), (first == 0 || admin_email) as i64])?;
+    // no usable password: a random argon2-shaped sentinel that can never verify.
+    // the admin count is inside the insert, so two first sign-ups cannot both see zero and both become admin
+    conn.execute("INSERT INTO users (handle, display_name, password_hash, is_admin) SELECT ?1, ?2, ?3, ((SELECT count(*) FROM users WHERE is_admin=1)=0 OR ?4)", params![handle, display, format!("google:{}", random_token(32)), admin_email as i64])?;
     let uid = conn.last_insert_rowid();
     conn.execute("INSERT INTO oauth_identities (provider, subject, user_id, email, created_at) VALUES ('google', ?1, ?2, ?3, ?4)", params![c.sub, uid, email, now_iso()])?;
     Ok((get_user(conn, uid)?.unwrap(), true))
@@ -105,4 +105,59 @@ pub async fn config(headers: axum::http::HeaderMap) -> axum::Json<serde_json::Va
     let native = headers.get(axum::http::header::USER_AGENT).and_then(|v| v.to_str().ok()).map(|ua| ua.starts_with("okhttp") || ua.contains("Expo") || ua.contains("Dalvik")).unwrap_or(false);
     if native { return axum::Json(serde_json::json!({ "google_client_id": serde_json::Value::Null, "google_enabled": false })); }
     axum::Json(serde_json::json!({ "google_client_id": ids.first(), "google_enabled": !ids.is_empty() }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn db() -> crate::db::Conn {
+        let path = std::env::temp_dir().join(format!("berean-test-{}.db", crate::auth::random_token(6)));
+        crate::db::open_pool(path.to_str().unwrap(), None).unwrap().get().unwrap()
+    }
+    fn claims(sub: &str, email: &str, name: &str) -> GoogleClaims {
+        GoogleClaims { sub: sub.into(), email: Some(email.into()), email_verified: Some(true), name: Some(name.into()), picture: None }
+    }
+    /// Sets BEREAN_ADMIN_EMAILS for the guard's life. Nothing else in the tests reads it.
+    struct Listed(Option<String>);
+    impl Listed {
+        fn set(v: &str) -> Self {
+            let prev = std::env::var("BEREAN_ADMIN_EMAILS").ok();
+            std::env::set_var("BEREAN_ADMIN_EMAILS", v);
+            Listed(prev)
+        }
+    }
+    impl Drop for Listed {
+        fn drop(&mut self) {
+            match &self.0 { Some(v) => std::env::set_var("BEREAN_ADMIN_EMAILS", v), None => std::env::remove_var("BEREAN_ADMIN_EMAILS") }
+        }
+    }
+
+    #[test]
+    fn the_first_google_account_is_the_only_admin() {
+        let c = db();
+        let seen = crate::bans::Seen::default();
+        // Same window as a password sign-up: the count of admins is taken inside the insert, so a second connection
+        // cannot also see zero. One connection is what can be asserted; the statement is one writer.
+        let (anna, created) = upsert_user(&c, &claims("g1", "anna@example.com", "Anna"), &seen).unwrap();
+        assert_eq!((created, anna.is_admin), (true, 1));
+        let (ben, created) = upsert_user(&c, &claims("g2", "ben@example.com", "Ben"), &seen).unwrap();
+        assert_eq!((created, ben.is_admin), (true, 0));
+        let (again, created) = upsert_user(&c, &claims("g1", "anna@example.com", "Anna"), &seen).unwrap();
+        assert_eq!((created, again.id, again.is_admin), (false, anna.id, 1));
+        {
+            let _listed = Listed::set("ben@example.com");
+            let (ben, created) = upsert_user(&c, &claims("g2", "ben@example.com", "Ben"), &seen).unwrap();
+            assert_eq!((created, ben.is_admin), (false, 1), "a listed address on an account that exists becomes admin");
+        }
+        c.execute("UPDATE users SET is_admin=0", []).unwrap();
+        assert_eq!(upsert_user(&c, &claims("g3", "cara@example.com", "Cara"), &seen).unwrap().0.is_admin, 1);
+        assert_eq!(upsert_user(&c, &claims("g5", "dan@example.com", "Dan"), &seen).unwrap().0.is_admin, 0);
+        {
+            let _listed = Listed::set("boss@example.com");
+            assert_eq!(upsert_user(&c, &claims("g4", "boss@example.com", "Boss"), &seen).unwrap().0.is_admin, 1);
+        }
+        let n: i64 = c.query_row("SELECT count(*) FROM users WHERE is_admin=1", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 2);
+    }
 }

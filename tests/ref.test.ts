@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect } from 'vitest'
 import { parseRef, formatRef, formatVerseRuns, scanRefs, looksLikeRef, bareBook } from '../shared/ref'
-import { findBookFuzzy, editDistance } from '../shared/books'
+import { findBookFuzzy, editDistance, setNamesLang } from '../shared/books'
 import { findBook } from '../shared/books'
+import { setShownText } from '../shared/texts'
 
 describe('findBook', () => {
   it('resolves names, abbreviations and aliases', () => {
@@ -70,7 +71,41 @@ describe('formatRef / scanRefs', () => {
     expect(flat('There were 12 baskets, 5 loaves and 2 fish; 3.14 is pi.')).toEqual([])
     expect(flat('Adamah, soil: as Deut 26:2; in ver. 12 it is erets.', { book: 1, chapter: 2 })).toEqual(['Deut 26:2=5.26:2', 'ver. 12=1.2:12'])
   })
+  it('links a citation that runs into the next chapter from its first verse, through the last of the citation', () => {
+    // the link covers every word of the citation and opens where it starts; a reference is one chapter, so it names no end
+    expect(flat('destroyed (2 Kings 9:30-10:28).')).toEqual(['2 Kings 9:30-10:28=12.9:30'])
+    expect(flat('see 2 Kings 24:18-25:30 and')).toEqual(['2 Kings 24:18-25:30=12.24:18'])
+    expect(flat('Colossians 1:24-2:5')).toEqual(['Colossians 1:24-2:5=51.1:24'])
+    expect(flat('Luke 9:51–19:27')).toEqual(['Luke 9:51–19:27=42.9:51'])
+    expect(flat('see ch. 3:7–4:13.', { book: 58, chapter: 1 })).toEqual(['ch. 3:7–4:13=58.3:7'])
+  })
+  it('reads that range in the French and German forms, and a German verse list stays a list', () => {
+    setNamesLang('fr')
+    expect(flat('Colossiens 1:24-2:5')).toEqual(['Colossiens 1:24-2:5=51.1:24'])
+    expect(flat('2 Rois 9.30-10.28')).toEqual(['2 Rois 9.30-10.28=12.9:30'])
+    setNamesLang('it')
+    expect(flat('Colossesi 1:24-2:5')).toEqual(['Colossesi 1:24-2:5=51.1:24'])
+    setNamesLang('de')
+    expect(flat('2. Könige 9,30-10,28')).toEqual(['2. Könige 9,30-10,28=12.9:30'])
+    expect(flat('2. Könige 24,18-25,30')).toEqual(['2. Könige 24,18-25,30=12.24:18'])
+    expect(flat('Ex 3,14-15,16')).toEqual(['Ex 3,14-15=2.3:14-15', '16=2.3:16'])
+    expect(flat('Joh 3,16-18')).toEqual(['Joh 3,16-18=43.3:16-18'])
+  })
+  it('does not take the next sentence for the end of a range', () => {
+    expect(flat('See John 3:16-18. 2 Kings 5:8.')).toEqual(['John 3:16-18=43.3:16-18', '2 Kings 5:8=12.5:8'])
+    // a number after the range is the next chapter only when it follows the citation's own separator
+    expect(flat('1 Cor 13:4-7. 8 is love.')).toEqual(['1 Cor 13:4-7=46.13:4-7'])
+    expect(flat('Ps 23:1-6. 7 is not a verse.')).toEqual(['Ps 23:1-6=19.23:1-6'])
+    expect(flat('Rom 8.1-4. 5 follows.')).toEqual(['Rom 8.1-4=45.8:1-4'])
+  })
+  it('reads a colon into the next chapter with a space after it, as the ministry prints some', () => {
+    expect(flat('Gen. 1:1–2: 3')).toEqual(['Gen. 1:1–2: 3=1.1:1'])
+    expect(flat('Rev. 21:9–22: 5')).toEqual(['Rev. 21:9–22: 5=66.21:9'])
+    expect(flat('Gal. 2:19–3: 14')).toEqual(['Gal. 2:19–3: 14=48.2:19'])
+  })
 })
+
+afterEach(() => { setNamesLang('en'); setShownText('en') })
 
 
 describe('misspelt book names', () => {

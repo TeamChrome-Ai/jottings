@@ -326,7 +326,8 @@ pub fn day_met(active_seconds: i64, goal: i64) -> bool { active_seconds >= goal 
 
 pub fn daily_goal_seconds(conn: &rusqlite::Connection, user_id: i64) -> i64 {
     let s: Option<String> = conn.query_row("SELECT settings FROM users WHERE id=?1", params![user_id], |r| r.get(0)).optional().ok().flatten();
-    s.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()).and_then(|v| v.get("daily_goal_minutes").and_then(|g| g.as_f64())).filter(|g| *g > 0.0).map(|g| (g * 60.0) as i64).unwrap_or(DAILY_GOAL_SECONDS)
+    // a positive goal under a second must not cast to 0: day_met(0, 0) is true, so every recorded day would count as met
+    s.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()).and_then(|v| v.get("daily_goal_minutes").and_then(|g| g.as_f64())).filter(|g| *g > 0.0).map(|g| ((g * 60.0) as i64).max(1)).unwrap_or(DAILY_GOAL_SECONDS)
 }
 
 fn shift(date: &str, days: i64) -> String { parse_day(date).map(|d| day_key(d + time::Duration::days(days))).unwrap_or_else(|| date.to_string()) }
@@ -434,6 +435,25 @@ mod tests {
         beat_at(c, 1, &local_beat(sid, now, offset), now).unwrap()
     }
     fn small_goal(c: &Conn) { c.execute("UPDATE users SET settings='{\"daily_goal_minutes\":0.25}' WHERE id=1", []).unwrap(); }
+
+    #[test]
+    fn a_goal_under_a_second_does_not_meet_an_empty_day() {
+        let c = fresh();
+        // 0.01 minutes is under a second. Friend and group streaks read this same goal.
+        c.execute("UPDATE users SET settings='{\"daily_goal_minutes\":0.01}' WHERE id=1", []).unwrap();
+        c.execute("INSERT INTO activity_days (user_id, date, active_seconds, pages) VALUES (1, '2026-09-20', 0, 1)", []).unwrap();
+        let goal = daily_goal_seconds(&c, 1);
+        let s = streak_info(&c, 1, "2026-09-20").unwrap();
+        assert_eq!((goal, s.today_goal_seconds, s.current, s.days[0].met as i64), (1, 1, 0, 0));
+        c.execute("UPDATE activity_days SET active_seconds=1 WHERE user_id=1", []).unwrap();
+        assert_eq!(streak_info(&c, 1, "2026-09-20").unwrap().current, 1, "one second meets the floored goal");
+        // a quarter minute stays a quarter minute
+        small_goal(&c);
+        assert_eq!(daily_goal_seconds(&c, 1), 15);
+        assert_eq!(streak_info(&c, 1, "2026-09-20").unwrap().current, 0);
+        c.execute("UPDATE users SET settings='{\"daily_goal_minutes\":0}' WHERE id=1", []).unwrap();
+        assert_eq!(daily_goal_seconds(&c, 1), 600, "no positive goal keeps the default");
+    }
 
     #[test]
     fn a_tick_and_its_undo_move_the_ledgers_sums_exactly_and_a_reading_on_its_day_adopts_it() {

@@ -40,6 +40,8 @@ export async function cachedHighlights(uid: HighlightOwner, book: number, chapte
 /** A chapter synced this recently is served from memory: page turns back and forth do not refetch it. */
 const FRESH_MS = 60_000
 const syncs = new Map<string, { at: number; p: Promise<HighlightMap | null> }>()
+/** Each sync on its way, with the taps made on its chapter since it asked: the server may have answered before they reached it. */
+const pending = new Set<{ k: string; taps: Map<number, string | null> }>()
 
 /** Fresh copy from the server, written through to the cache; null when unreachable. Signed out, the device copy. */
 export function syncHighlights(uid: HighlightOwner, book: number, chapter: number): Promise<HighlightMap | null> {
@@ -47,13 +49,16 @@ export function syncHighlights(uid: HighlightOwner, book: number, chapter: numbe
   const k = storageKey(uid, book, chapter)
   const hit = syncs.get(k)
   if (hit && Date.now() - hit.at < FRESH_MS) return hit.p.then(m => (m ? new Map(mem.get(k) ?? m) : null))
+  const waiting = { k, taps: new Map<number, string | null>() }
+  pending.add(waiting)
   const p = (async () => {
     try {
       const rows = await get<Row[]>(`/highlights?book=${book}&chapter=${chapter}`)
       const m: HighlightMap = new Map(rows.map(r => [r.verse_id, r.color]))
+      for (const [v, color] of waiting.taps) if (color) m.set(v, color); else m.delete(v)
       await store(k, m)
-      return new Map(m)
-    } catch { syncs.delete(k); return null }
+      return new Map(mem.get(k) ?? m)
+    } catch { syncs.delete(k); return null } finally { pending.delete(waiting) }
   })()
   syncs.set(k, { at: Date.now(), p })
   return p
@@ -63,8 +68,10 @@ export function syncHighlights(uid: HighlightOwner, book: number, chapter: numbe
 export async function setHighlight(uid: HighlightOwner, verseId: number, color: string | null): Promise<void> {
   const { book, chapter } = chapterOf(verseId)
   const k = storageKey(uid, book, chapter)
-  const m = new Map(mem.get(k) ?? (await cachedHighlights(uid, book, chapter)))
+  if (!mem.has(k)) await cachedHighlights(uid, book, chapter)
+  const m = new Map(mem.get(k))
   if (color) m.set(verseId, color); else m.delete(verseId)
+  for (const s of pending) if (s.k === k) s.taps.set(verseId, color)
   await store(k, m)
   if (uid !== null) await put('/highlights', { verse_id: verseId, color })
 }

@@ -46,6 +46,7 @@ export default function ContentsPicker({ open, author, shelf, work, contents, n,
   useEffect(() => () => { if (pending.current) clearTimeout(pending.current) }, [])
   const later = (fn: () => void) => { if (pending.current) clearTimeout(pending.current); if (reduce) fn(); else pending.current = setTimeout(fn, CONFIRM_MS) }
   const close = () => { if (pending.current) clearTimeout(pending.current); onClose() }
+  const toWorks = () => { if (pending.current) clearTimeout(pending.current); setView(v => ({ ...v, level: 'works' })) }
   const works = shelf?.collection.works ?? []
   const many = works.length > 1
   const openWork = (id: string) => {
@@ -61,10 +62,10 @@ export default function ContentsPicker({ open, author, shelf, work, contents, n,
   const summary = works.find(w => w.id === view.work)
   const title = view.level === 'works' ? shelf?.collection.title ?? '' : shortTitle(view.contents?.work.title ?? summary?.title ?? '')
   return (
-    <Sheet open={open} onClose={close} onBack={many && view.level === 'sections' ? () => setView(v => ({ ...v, level: 'works' })) : undefined} title={title}>
+    <Sheet open={open} onClose={close} onBack={many && view.level === 'sections' ? toWorks : undefined} title={title}>
       <Body level={view.level} author={author} works={works} many={many} viewWork={view.work} contents={view.contents}
         current={view.work === work ? n : -1} currentWork={work} picked={picked}
-        onUp={() => setView(v => ({ ...v, level: 'works' }))} onWork={openWork} onPick={pick} />
+        onUp={toWorks} onWork={openWork} onPick={pick} />
     </Sheet>
   )
 }

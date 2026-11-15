@@ -21,7 +21,10 @@ export function useSecondText(book: number, chapter: number): { second: ChapterD
     let live = true
     const held = peekChapter(book, chapter, other)
     if (held) setSecond(held)
-    else fetchChapter(book, chapter, other).then(c => { if (live) setSecond(c) }, () => { if (live) setSecond(null) })
+    else {
+      setSecond(null)
+      fetchChapter(book, chapter, other).then(c => { if (live) setSecond(c) }, () => { if (live) setSecond(null) })
+    }
     return () => { live = false }
   }, [book, chapter, other])
   const { width } = useWindowDimensions()

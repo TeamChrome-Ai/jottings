@@ -115,7 +115,13 @@ function TokenInvite({ token, onDone }: { token: string; onDone: (friendId: numb
   const [who, setWho] = useState<{ handle: string; display_name: string; avatar?: string; friends: boolean } | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  useEffect(() => { peekToken(token).then(setWho).catch(e => setErr(errMsg(e))) }, [token])
+  // this token's person only: a new link while this stays mounted must not keep showing the one before
+  useEffect(() => {
+    let live = true
+    setWho(null); setErr(null)
+    peekToken(token).then(w => { if (live) setWho(w) }).catch(e => { if (live) setErr(errMsg(e)) })
+    return () => { live = false }
+  }, [token])
   const send = async () => {
     setBusy(true); setErr(null)
     try {

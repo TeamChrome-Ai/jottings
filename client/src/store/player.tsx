@@ -114,6 +114,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const loading = useRef<string | null>(null) // "book-chapter" while start() fetches, to swallow repeated taps
   const endedCb = useRef<((b: number, c: number) => void) | null>(null)
   const paused = useRef(false)
+  /** A recorded reading on a sound of its own, in its run: a spoken number, the clip a Play resumes (none while it
+   *  waits to be said), or a clause the device voice reads (none: it says the clause again by itself). The chapter's
+   *  recording waits where it is. */
+  const aside = useRef<{ token: number; clip: AudioPlayer | null } | null>(null)
   /** Started with `cue`: loaded and paused; Play starts the reading loop rather than resuming it. */
   const cued = useRef(false)
   const current = useRef<Current>({ book: 0, chapter: 0, verses: [], marks: null, index: 0, heading: false, stopAfter: null })
@@ -158,9 +162,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       await wait(POLL_MS, token)
     }
   }
-  /** Point the player at a recording: from memory once it has come down whole, else streamed after a short wait. */
-  const loadAudio = async (url: string) => {
+  /** Point the player at a recording: from memory once it has come down whole, else streamed after a short wait. A run
+   *  that has ended meanwhile leaves the player to the newer one (a slow chapter replaced the one started after it). */
+  const loadAudio = async (url: string, token: number) => {
     const whole = await Promise.race([fetchWhole(url), new Promise<boolean>(r => setTimeout(() => r(false), WHOLE_WAIT_MS))])
+    if (run.current !== token) return
     if (WHOLE) note('load', whole ? 'the whole recording' : 'streamed: the whole recording was not down in 6 s')
     player.current?.replace({ uri: url })
   }
@@ -251,13 +257,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     p.replace({ uri: numberAudioUrl(prefs.get().ttsVoice, n) })
     p.setPlaybackRate(prefs.get().ttsSpeed, 'high')
     p.play()
-    const t0 = Date.now(); let started = false
+    aside.current = { token, clip: p }
+    let t0 = Date.now(), started = false, held = false
     const tick = () => {
       if (run.current !== token) { p.pause(); return reject(new Error(STOPPED)) }
-      if (paused.current) return setTimeout(tick, POLL_MS)
+      const ended = p.duration > 0 && p.currentTime >= p.duration - 0.06
+      // A pause holds the clip and Play resumes it (toggle); one already at its end is over all the same (play() would
+      // start it again on the web). Resumed, it has a poll to be seen playing again, and its 4 s to start begin again.
+      if (paused.current && !ended) { held = true; return setTimeout(tick, POLL_MS) }
+      if (held) { held = false; t0 = Date.now(); return setTimeout(tick, POLL_MS) }
       if (p.playing || p.currentTime > 0) started = true
-      const done = (started && !p.playing) || (p.duration > 0 && p.currentTime >= p.duration - 0.06)
-      if (done || Date.now() - t0 > 4000) { p.pause(); return resolve() }
+      const done = (started && !p.playing) || ended
+      if (done || Date.now() - t0 > 4000) { p.pause(); aside.current = null; return resolve() }
       setTimeout(tick, POLL_MS)
     }
     setTimeout(tick, POLL_MS)
@@ -266,11 +277,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Darby's [supplied words] are read as words: some engines say "bracket" or stop dead at the marks
   // The guard stops the voice when its run ends; it stands down once its own verse is over, or a pause's run (toggle)
   // would leave it waiting to stop the verse the Play starts (the device voice then sat on one verse, "playing", silent).
+  // A pause that keeps the run (a clause of a recorded verse) has the guard stop the voice too, as it cannot pause, and
+  // Play has it say the text again. The utterance it stopped is let go first, so its own stop or error ends nothing.
   const speakDevice = (text: string, token: number) => new Promise<void>((resolve, reject) => {
-    let over = false
-    const end = (f: () => void) => () => { over = true; f() }
-    Speech.speak(text.replace(/[[\]]/g, ''), { rate: prefs.get().ttsSpeed, language: speechLanguage(), onDone: end(resolve), onStopped: end(() => reject(new Error(STOPPED))), onError: end(() => reject(new Error('device voice failed'))) })
-    const guard = () => { if (over) return; if (run.current !== token) { over = true; Speech.stop(); return } setTimeout(guard, 200) }
+    let over = false, said = 0, live = false
+    aside.current = { token, clip: null }
+    const say = () => {
+      const n = ++said
+      const end = (f: () => void) => () => { if (n !== said) return; over = true; if (aside.current?.token === token) aside.current = null; f() }
+      Speech.speak(text.replace(/[[\]]/g, ''), { rate: prefs.get().ttsSpeed, language: speechLanguage(), onDone: end(resolve), onStopped: end(() => reject(new Error(STOPPED))), onError: end(() => reject(new Error('device voice failed'))) })
+    }
+    const guard = () => {
+      if (over) return
+      if (run.current !== token) { over = true; if (live) Speech.stop(); else reject(new Error(STOPPED)); return }
+      if (paused.current) { if (live) { live = false; said++; Speech.stop() } }
+      else if (!live) { live = true; say() }
+      setTimeout(guard, POLL_MS)
+    }
     guard()
   })
 
@@ -283,7 +306,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     try {
       const marks = await marksFor(voice, c.book, c.chapter)
       if (run.current !== token) return
-      await loadAudio(chapterAudioUrl(voice, c.book, c.chapter))
+      await loadAudio(chapterAudioUrl(voice, c.book, c.chapter), token)
       if (run.current !== token) return
       c.marks = marks
       c.index = Math.max(0, marks.verses.findIndex(m => m.v >= v))
@@ -339,7 +362,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const vm = c.marks.verses[c.index]
         const nextVm = c.marks.verses[c.index + 1]
         setState(s => ({ ...s, spoken: { book: c.book, chapter: c.chapter, v: vm.v, off: null } }))
-        if (p.ttsNumbers && !running) { await whilePaused(token); await playNumber(vm.v, token); await wait(120, token) }
+        if (p.ttsNumbers && !running) { aside.current = { token, clip: null }; await whilePaused(token); await playNumber(vm.v, token); await wait(120, token) }
         const text = c.verses.find(x => x.v === vm.v)?.t.trim() ?? ''
         if (vm.parts?.length) {
           // the recording service refused part of this verse: recorded clauses play, refused ones are read by the device, in order
@@ -423,8 +446,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (!deviceOnly(prefs.get().ttsDevice)) {
         try {
           marks = await marksFor(voice, book, chapter)
+          if (run.current !== token) return
           if (!player.current) player.current = createAudioPlayer(null, { updateInterval: POLL_MS })
-          await loadAudio(chapterAudioUrl(voice, book, chapter))
+          await loadAudio(chapterAudioUrl(voice, book, chapter), token)
           if (run.current !== token) return
           // Android 16 keeps the media service in the foreground only while the session its notification names
           // is in use. setActiveForLockScreen builds a new session each time and drops the old one, and with it
@@ -466,14 +490,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       paused.current = true
       player.current?.pause(); numbers.current?.pause()
       // the device voice cannot pause: its run ends here (its guard and its verse's wait stand down at once), and Play
-      // starts the verse again in a run of its own
+      // starts the verse again in a run of its own. Reading a clause of a recorded verse it keeps the run, and its guard
+      // stops it (speakDevice).
       if (current.current.marks === null) { ++run.current; Speech.stop() }
       setState(s => ({ ...s, status: 'paused' }))
     } else if (state.status === 'paused') {
       note('play', undefined, where())
       paused.current = false
       if (cued.current) { cued.current = false; const token = ++run.current; loop(token) }
-      else if (current.current.marks) player.current?.play()
+      // a number the pause held goes on; one still to be said, or the device voice's clause, comes by itself. The
+      // chapter's recording waits for it.
+      else if (current.current.marks) (aside.current?.token === run.current ? aside.current.clip : player.current)?.play()
       else { const token = ++run.current; loop(token) }
       setState(s => ({ ...s, status: 'playing' }))
     }

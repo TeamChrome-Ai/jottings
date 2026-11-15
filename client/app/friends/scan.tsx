@@ -48,7 +48,8 @@ function Scanner() {
       return
     }
     looking.current = true
-    peekToken(token).then(w => setFound({ token, ...w })).catch(e => setErr(errMsg(e))).finally(() => { looking.current = false })
+    // a miss stops the camera until Try again; a person found afterwards clears that miss, which would otherwise be all the card draws
+    peekToken(token).then(w => { setErr(null); setFound({ token, ...w }) }).catch(e => setErr(errMsg(e))).finally(() => { looking.current = false })
   }
   const send = async () => {
     if (!found) return
@@ -76,7 +77,7 @@ function Scanner() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ title: t('Scan a code') }} />
-      <CameraView style={StyleSheet.absoluteFill} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={found ? undefined : onScan} />
+      <CameraView style={StyleSheet.absoluteFill} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={found || err ? undefined : onScan} />
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
         <View style={{ width: FRAME, height: FRAME, borderRadius: 28, borderWidth: 3, borderColor: c.accent }} />
         <View style={{ marginTop: 16, backgroundColor: c.bg, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6 }}><T small>{t('Point at a friend’s code')}</T></View>

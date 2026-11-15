@@ -51,7 +51,7 @@ export default function ChapterPicker({ open, book, chapter, readSet, marks = NO
   const selBook = pickedBook ?? book
   const bookIdx = BOOKS.findIndex(bk => bk.n === selBook)
   const selCh = pickedCh ?? (cur === book ? chapter : null)
-  const toBooks = () => { setB(null); setPickedBook(null) }
+  const toBooks = () => { if (pending.current) clearTimeout(pending.current); setB(null); setPickedBook(null) }
   // the current selection lands just after the stagger settles; a tapped cell fills at once
   const settle = (i: number, step: number, wait: number) => wait + i * step + 90
   // the New Testament's books carry a faint wash of the accent, under their own label

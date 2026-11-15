@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { votdFor } from '@shared/votd'
+import { accountPathNext } from '../client/src/lib/accountPathNext'
 import { formatRef } from '@shared/ref'
 import { BOOKS } from '@shared/books'
 import { HAS_TEXTS } from './_texts'
@@ -231,5 +232,19 @@ describe('the path item (docs/PATHS.md: "Your path")', () => {
     expect(bookLabel(PATH_BOOK)).toBe(PATH_LABEL)
     expect(bookLabel(PATH_BOOK, 'full', false)).toBe(NO_PATH_LABEL)
     expect(bookLabel(PATH_BOOK, 'abbr', true)).toBe('Your path')
+  })
+})
+
+describe('the background path', () => {
+  const gospels = { id: 'gospels' as const, started_at: '2026-09-01T00:00:00Z', target_date: null, pace_per_week: null, with_ministry: false }
+  it('names the chapter after one the reader marked read, as the app’s own path does', () => {
+    // Matthew 1 read through, Matthew 2 marked: the morning names Matthew 3
+    expect(accountPathNext({ path: gospels, history: [], read: [[40, 1]], marked: [[40, 2]] })?.next).toEqual({ book: 40, chapter: 3 })
+    // nothing read through, Matthew 1 marked: the morning names Matthew 2
+    expect(accountPathNext({ path: gospels, history: [], read: [], marked: [[40, 1]] })?.next).toEqual({ book: 40, chapter: 2 })
+  })
+  it('names the first chapter when nothing is read or marked, and stops when the path is finished', () => {
+    expect(accountPathNext({ path: gospels, history: [], read: [] })?.next).toEqual({ book: 40, chapter: 1 })
+    expect(accountPathNext({ path: null, history: [], read: [[40, 1]] })).toBeNull()
   })
 })

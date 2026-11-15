@@ -309,10 +309,12 @@ pub fn leaderboard(conn: &Connection, ev: &Event) -> rusqlite::Result<Vec<Row>> 
     let scope = match &ev.books { Some(b) if !b.is_empty() => format!(" AND p.book IN ({})", b.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(",")), _ => String::new() };
     let mut mst = conn.prepare_cached(&format!("SELECT u.id, u.handle, u.display_name, m.joined_at, {ADMIN_MODE_SQL} FROM group_members m JOIN users u ON u.id=m.user_id WHERE m.group_id=?1"))?;
     let members: Vec<(i64, String, String, String, bool)> = mst.query_map(params![ev.group_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?.collect::<Result<_, _>>()?;
+    // chapters: the local day of the first credit (page_credits.date), the same day activity_days.chapters counts.
+    // first_read_at is UTC, so its date is the next day west of Greenwich and the day before to the east.
     let mut st = conn.prepare(&format!("SELECT
         coalesce((SELECT sum(a.active_seconds) FROM activity_days a WHERE a.user_id=?1 AND a.date BETWEEN ?2 AND ?3), 0),
         coalesce((SELECT count(*) FROM page_credits p WHERE p.user_id=?1 AND p.date BETWEEN ?2 AND ?3{scope}), 0),
-        coalesce((SELECT count(*) FROM chapters_read p WHERE p.user_id=?1 AND substr(p.first_read_at,1,10) BETWEEN ?2 AND ?3{scope}), 0)"))?;
+        coalesce((SELECT count(*) FROM (SELECT 1 FROM page_credits p WHERE p.user_id=?1{scope} GROUP BY p.book, p.chapter HAVING min(p.date) BETWEEN ?2 AND ?3)), 0)"))?;
     let mut rows: Vec<Row> = Vec::with_capacity(members.len());
     for (user_id, handle, display_name, joined_at, staff) in members {
         let joined = local_day_of(&joined_at, activity::user_offset(conn, user_id));
@@ -872,5 +874,39 @@ mod tests {
         assert_eq!(call(&app, "DELETE", "/me", Some(&ben), json!({ "confirm": "delete" })).await.0, 200);
         let (_, d) = call(&app, "GET", &format!("/groups/{slug}"), Some(&anna), Value::Null).await;
         assert_eq!((d["together"]["chapters"].as_i64(), d["together"]["last"]["chapter"].as_i64(), &d["together"]["last"]["user"]), (Some(2), Some(2), &Value::Null));
+    }
+
+    #[tokio::test]
+    async fn chapters_count_on_the_readers_local_day() {
+        let (app, pool) = app();
+        let (denver_id, denver) = user(&pool, "denver");
+        let (sydney_id, sydney) = user(&pool, "sydney");
+        let (_, g) = call(&app, "POST", "/groups", Some(&denver), json!({ "name": "Across the date line" })).await;
+        let slug = g["slug"].as_str().unwrap().to_string();
+        call(&app, "POST", "/groups/join", Some(&sydney), json!({ "invite_code": g["invite_code"] })).await;
+        // Denver is UTC-6: 20:00 on the 20th is 02:00 UTC on the 21st. Sydney is UTC+10: 08:00 on the 20th is 22:00 UTC
+        // on the 19th. A first read at T12:00:00Z, which the other tests use, never crosses that line.
+        {
+            let c = pool.get().unwrap();
+            let read = |uid, book, ch, day: &str, at: &str, offset| activity::credit_day(&c, uid, book, ch, day, 120, at, offset, false).unwrap();
+            // two first credits on Denver's 20th, one whose first credit is the 19th (its UTC date is the 20th) and which
+            // is read again on the 20th, and one whose resolved day is the 20th while the timestamp is the next UTC afternoon
+            read(denver_id, 43, 3, "2026-09-20", "2026-09-21T02:00:00Z", -360);
+            read(denver_id, 43, 1, "2026-09-20", "2026-09-21T03:00:00Z", -360);
+            read(denver_id, 43, 4, "2026-09-19", "2026-09-20T02:00:00Z", -360);
+            read(denver_id, 43, 4, "2026-09-20", "2026-09-21T04:00:00Z", -360);
+            read(denver_id, 43, 5, "2026-09-20", "2026-09-21T15:00:00Z", 0);
+            // two first credits on Sydney's 20th, one on the 21st whose UTC date is the 20th, and Genesis on the 20th
+            read(sydney_id, 19, 23, "2026-09-20", "2026-09-19T22:00:00Z", 600);
+            read(sydney_id, 19, 2, "2026-09-20", "2026-09-19T23:00:00Z", 600);
+            read(sydney_id, 19, 1, "2026-09-21", "2026-09-20T22:00:00Z", 600);
+            read(sydney_id, 1, 1, "2026-09-20", "2026-09-20T12:00:00Z", 600);
+        }
+        let (_, ev) = call(&app, "POST", &format!("/groups/{slug}/events"), Some(&denver), json!({ "name": "One day", "metric": "chapters", "starts_at": "2026-09-20", "ends_at": "2026-09-20", "books": [19, 43] })).await;
+        let (_, lb) = call(&app, "GET", &format!("/groups/{slug}/events/{}/leaderboard", ev["id"]), Some(&denver), Value::Null).await;
+        let row = |handle: &str| lb["rows"].as_array().unwrap().iter().find(|r| r["handle"] == handle).unwrap().clone();
+        let (d, s) = (row("denver"), row("sydney"));
+        // Denver's three first credits are all John, so the board matches his day's chapters. Sydney's Genesis is not in the books.
+        assert_eq!((d["chapters"].as_i64(), d["pages"].as_i64(), s["chapters"].as_i64(), s["pages"].as_i64()), (Some(3), Some(4), Some(2), Some(2)));
     }
 }

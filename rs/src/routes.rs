@@ -122,8 +122,8 @@ async fn login(State(s): State<AppState>, seen: crate::bans::Seen, jar: CookieJa
     }).await?;
     Ok((jar.add(cookie), Json(json!({ "user": user, "token": token }))))
 }
-async fn logout(State(s): State<AppState>, jar: CookieJar) -> ApiResult<(CookieJar, Json<Value>)> {
-    if let Some(c) = jar.get(auth::COOKIE) { let conn = s.pool.get()?; conn.execute("DELETE FROM sessions WHERE token=?1", params![c.value()])?; }
+async fn logout(State(s): State<AppState>, headers: axum::http::HeaderMap, jar: CookieJar) -> ApiResult<(CookieJar, Json<Value>)> {
+    if let Some(token) = auth::token_from_parts(&headers) { let conn = s.pool.get()?; conn.execute("DELETE FROM sessions WHERE token=?1", params![token])?; }
     let mut c = axum_extra::extract::cookie::Cookie::from(auth::COOKIE); c.set_path("/");
     Ok((jar.remove(c), Json(json!({ "ok": true }))))
 }
@@ -461,5 +461,45 @@ mod tests {
         // and off again
         call(&app, "PATCH", "/me", Some(&anna), json!({ "settings": { "public_profile": false } })).await;
         assert_eq!(call(&app, "GET", "/users/anna", Some(&ben), NULL).await.0, 404);
+    }
+
+    fn sessions(pool: &crate::db::DbPool, token: &str) -> i64 {
+        pool.get().unwrap().query_row("SELECT count(*) FROM sessions WHERE token=?1", rusqlite::params![token], |r| r.get(0)).unwrap()
+    }
+    /// POST /auth/logout with the given headers; the status and the response headers (the cleared cookie).
+    async fn logout(app: &axum::Router, headers: &[(&str, &str)]) -> (u16, axum::http::HeaderMap) {
+        use axum::body::Body;
+        use tower::ServiceExt;
+        let mut req = axum::http::Request::builder().method("POST").uri("/auth/logout").header("content-type", "application/json").header("x-forwarded-for", "203.0.113.9");
+        for (k, v) in headers { req = req.header(*k, *v); }
+        let res = app.clone().oneshot(req.body(Body::from("{}")).unwrap()).await.unwrap();
+        (res.status().as_u16(), res.headers().clone())
+    }
+    fn cookie_cleared(headers: &axum::http::HeaderMap, token: &str) -> bool {
+        headers.get_all("set-cookie").iter().filter_map(|v| v.to_str().ok()).any(|v| v.starts_with("berean_session=") && !v.contains(token))
+    }
+
+    #[tokio::test]
+    async fn logout_deletes_the_bearer_session() {
+        let (app, pool) = app();
+        let (_, bearer) = user(&pool, "anna");
+        let (_, cookie) = user(&pool, "ben");
+        // the app sends the token as Bearer and may send no cookie; the session is the one the other routes would use
+        let (st, _) = logout(&app, &[("authorization", &format!("Bearer {bearer}"))]).await;
+        assert_eq!(st, 200);
+        assert_eq!(sessions(&pool, &bearer), 0, "the bearer session is deleted");
+        assert!(call(&app, "GET", "/me", Some(&bearer), NULL).await.1["user"].is_null());
+        // a browser that only has the cookie is signed out of that session too
+        let (st, headers) = logout(&app, &[("cookie", &format!("berean_session={cookie}"))]).await;
+        assert_eq!(st, 200);
+        assert_eq!(sessions(&pool, &cookie), 0);
+        assert!(cookie_cleared(&headers, &cookie), "cookie logout clears it: {headers:?}");
+        // bearer is what the other routes would use, and a cookie sent with it is still cleared.
+        // the jar emits a removal only for a cookie the request actually carried
+        let (_, both) = user(&pool, "cara");
+        let (st, headers) = logout(&app, &[("authorization", &format!("Bearer {both}")), ("cookie", &format!("berean_session={both}"))]).await;
+        assert_eq!(st, 200);
+        assert_eq!(sessions(&pool, &both), 0);
+        assert!(cookie_cleared(&headers, &both), "the cookie is still cleared: {headers:?}");
     }
 }

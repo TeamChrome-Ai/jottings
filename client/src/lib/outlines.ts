@@ -2,7 +2,7 @@
  * Outlines: item helpers, verse text resolution (chapter files first), note auto-linking, loading by id or
  * share code, and the print/PDF document builder. Screens under app/outlines and app/o share everything here.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Alert, Platform } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Clipboard from 'expo-clipboard'
@@ -12,6 +12,7 @@ import { formatRef, refKey, scanRefs, type Ref } from '@shared/ref'
 import { ApiError, get, getApiBase } from './api'
 import { fetchChapter } from './bible'
 import { NotOnDevice, getOwnOutline, isLocalId, saveOutlineItems } from './library'
+import { onSourceChange, peekSource } from './text'
 import { BRAND, NOUN } from '@shared/brand'
 import { t, tc } from '@shared/i18n'
 import { dateLocale } from '../i18n'
@@ -87,14 +88,16 @@ export const fmtDateLong = (iso: string) => { const d = new Date(iso); return is
 
 // ---------------- verse text ----------------
 export type VerseRow = Pick<Verse, 'v' | 't' | 'h'>
+/** By the Bible read and the reference: after a switch of Bible a jotting shows the new one's wording. */
 const verseCache = new Map<string, VerseRow[]>()
 
 /** Verses for one reference. Chapters come from the local chapter files when present, otherwise the static JSON. */
 export async function fetchVerseRows(ref: Ref): Promise<VerseRow[]> {
-  const k = refKey(ref)
+  const src = peekSource()
+  const k = `${src}:${refKey(ref)}`
   const hit = verseCache.get(k)
   if (hit) return hit
-  const ch = await fetchChapter(ref.book, ref.chapter)
+  const ch = await fetchChapter(ref.book, ref.chapter, src)
   const v1 = ref.v1 ?? 1, v2 = ref.v1 === undefined ? Number.MAX_SAFE_INTEGER : ref.v2 ?? ref.v1
   const rows = ch.verses.filter(v => v.v >= v1 && v.v <= v2).map(v => ({ v: v.v, t: v.t, h: v.h }))
   verseCache.set(k, rows)
@@ -122,9 +125,10 @@ export function keyToRef(k: string): Ref | null {
 
 export interface VerseTexts { verses: Map<string, VerseRow[]>; loading: boolean; error: string }
 
-/** Verse text for every key; rows arrive incrementally, refetched only when the key set changes. */
+/** Verse text for every key; rows arrive incrementally, refetched only when the key set or the Bible read changes. */
 export function useVerseTexts(keys: readonly string[]): VerseTexts {
   const sig = keys.join(',')
+  const src = useSyncExternalStore(onSourceChange, peekSource, peekSource)
   const [state, setState] = useState<VerseTexts>({ verses: new Map(), loading: keys.length > 0, error: '' })
   useEffect(() => {
     const list = sig ? sig.split(',') : []
@@ -135,7 +139,7 @@ export function useVerseTexts(keys: readonly string[]): VerseTexts {
       .then(verses => { if (live) setState({ verses, loading: false, error: '' }) })
       .catch((e: unknown) => { if (live) setState(s => ({ ...s, loading: false, error: e instanceof Error ? e.message : t('Could not load verses') })) })
     return () => { live = false }
-  }, [sig])
+  }, [sig, src])
   return state
 }
 

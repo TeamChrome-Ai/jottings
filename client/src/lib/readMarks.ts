@@ -132,6 +132,8 @@ export function loadMarks(uid: number | undefined): Promise<void> {
 }
 /** Sends what waits and re-reads the account's marks (Home on focus: a mark made on another device shows). */
 export const refreshMarks = (): Promise<void> => (loadedFor == null ? Promise.resolve() : sync(true).then(() => {}))
+/** Sends what waits for the account now (sign-out, while the token still works: the next reader's `forReader` drops undos). */
+export const sendMarks = (): Promise<void> => (loadedFor == null ? Promise.resolve() : sync(false).then(() => {}))
 
 /**
  * Marks the chapter as read: shown at once, then sent. Answers once the server has it (or it waits here), with the

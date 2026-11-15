@@ -98,48 +98,60 @@ export default function Search() {
   const [suggest, setSuggest] = useState<string | null>(null)
   const [word, setWord] = useState<WordTarget | null>(null)
   const runRef = useRef<(query?: string) => void>(() => {})
+  // each run takes a number; a slower search that finishes later must not paint over this one
+  const runGen = useRef(0)
   useEffect(() => { const t = setTimeout(warmLocalSearch, 300); return () => clearTimeout(t) }, [])
   useEffect(() => {
     const pq = typeof params.q === 'string' ? params.q : ''
     if (pq) { setQ(pq); setTimeout(() => runRef.current(pq), 0) }
   }, [params.q])
   const run = async (override?: string) => {
+    const mine = ++runGen.current
+    // a run that finishes without searching (a reference, a Strong's number) is still the latest, so the one before it stops looking busy
+    const settle = () => { if (mine === runGen.current) { setSlow(false); setBusy(false) } }
     const query = (override ?? q).trim()
-    if (!query) return
+    if (!query) { settle(); return }
     remember(query)
     const code = strongsCode(query)
-    if (code) { setWord({ code, word: '', label: code }); return }
+    if (code) { setWord({ code, word: '', label: code }); settle(); return }
     // "jn 3:16", "1 cor 13" open; a book's name alone ("song", "1 kings") is searched as a word below
     const ref = parseRef(query)
     const bookOnly = bareBook(query)
-    if (ref && !bookOnly) { openRef(ref.book, ref.chapter, ref.v1, ref.v2); return }
+    if (ref && !bookOnly) { openRef(ref.book, ref.chapter, ref.v1, ref.v2); settle(); return }
     // "Jhon 3:16": a reference with a misspelt book still opens; a bare misspelt name ("Pslams") is offered, not assumed
     setSuggest(null)
     if (bookOnly) { /* a real name: nothing to guess */ }
-    else if (/\d/.test(query)) { const near = parseRef(query, { fuzzy: true }); if (near) { openRef(near.book, near.chapter, near.v1, near.v2); return } }
+    else if (/\d/.test(query)) { const near = parseRef(query, { fuzzy: true }); if (near) { openRef(near.book, near.chapter, near.v1, near.v2); settle(); return } }
     else { const near = findBookFuzzy(query); if (near) setSuggest(near.name) }
     // "love in the gospels", "comfort in Isaiah": the words, searched in those books only
     const within = splitScope(query)
     const words = within?.query ?? query
     const where = within?.scope ?? scope
     const w = within ? { label: within.label, words } : null
-    setBusy(true); setErr('')
+    setBusy(true); setErr(''); setSlow(false)
     const t0 = Date.now()
-    const slowTimer = setTimeout(() => setSlow(true), SLOW_MS)
+    const slowTimer = setTimeout(() => { if (mine === runGen.current) setSlow(true) }, SLOW_MS)
     try {
       const order = pickedOrder ?? undefined
       const local = await searchLocal(words, where, 100, order).catch(() => null)
+      if (mine !== runGen.current) return
       const r = local ?? await get<SearchResponse>(`/search?q=${encodeURIComponent(words)}&scope=${encodeURIComponent(where)}&limit=100${order ? `&order=${order}` : ''}`)
+      if (mine !== runGen.current) return
       if (r.kind === 'ref' && r.ref) { openRef(r.ref.book, r.ref.chapter, r.ref.v1); return }
       showRes({ hits: r.hits, total: r.total, offline: false, took: local ? Date.now() - t0 : r.took_ms, query: words, asked: query, within: w, scope: where, order: r.order ?? null, book: r.book?.book ?? null, exact: r.exact ?? 0 })
     } catch (e) {
+      if (mine !== runGen.current) return
       if (!isNetworkError(e)) { dropRes(); setErr((e as Error).message); return }
       try {
         const hits = await offlineScan(words, where)
+        if (mine !== runGen.current) return
         if (!hits.length && bookOnly) { openRef(bookOnly.n, 1); return }
         showRes({ hits, total: hits.length, offline: true, took: Date.now() - t0, query: words, asked: query, within: w, scope: where, order: null, book: bookOnly?.n ?? null, exact: 0 })
-      } catch (e2) { dropRes(); setErr((e2 as Error).message) }
-    } finally { clearTimeout(slowTimer); setSlow(false); setBusy(false) }
+      } catch (e2) {
+        if (mine !== runGen.current) return
+        dropRes(); setErr((e2 as Error).message)
+      }
+    } finally { clearTimeout(slowTimer); settle() }
   }
 
   runRef.current = (query?: string) => { run(query) }

@@ -75,8 +75,10 @@ function Editor({ initial }: { initial: Outline }) {
   latest.current.items = items
   latest.current.meta = meta
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** The last save asked for: each waits for the one before, so an older whole list never lands after a newer one. */
+  const saving = useRef<Promise<void>>(Promise.resolve())
 
-  const flush = useCallback(async (keepalive = false) => {
+  const send = useCallback(async (keepalive: boolean) => {
     const l = latest.current
     if (!l.itemsDirty && !l.metaDirty) return
     const version = l.version
@@ -93,8 +95,13 @@ function Editor({ initial }: { initial: Outline }) {
         if (doMeta) latest.current.metaDirty = false
         setSave(latest.current.itemsDirty || latest.current.metaDirty ? 'dirty' : 'saved')
       }
-    } catch { setSave('error') }
+    } catch {
+      // edited since: the save of that edit, still to come, says how it went
+      if (latest.current.version === version) setSave('error')
+    }
   }, [initial.id])
+  // what is sent is read when its turn comes, so a save that waited sends the latest
+  const flush = useCallback((keepalive = false) => (saving.current = saving.current.then(() => send(keepalive))), [send])
 
   const schedule = useCallback(() => {
     latest.current.version++
@@ -104,14 +111,15 @@ function Editor({ initial }: { initial: Outline }) {
   }, [flush])
 
   useEffect(() => {
-    const before = () => { if (latest.current.itemsDirty || latest.current.metaDirty) void flush(true) }
+    // the page is closing: this save cannot wait for one on its way
+    const before = () => { if (latest.current.itemsDirty || latest.current.metaDirty) void send(true) }
     if (Platform.OS === 'web') window.addEventListener('beforeunload', before)
     return () => {
       if (Platform.OS === 'web') window.removeEventListener('beforeunload', before)
       if (timer.current) clearTimeout(timer.current)
       void flush(true)
     }
-  }, [flush])
+  }, [flush, send])
 
   const changeItems = (fn: (prev: OutlineItem[]) => OutlineItem[]) => {
     setItems(prev => { const next = fn(prev); latest.current.items = next; return next })

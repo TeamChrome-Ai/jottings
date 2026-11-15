@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BOOKS } from '@shared/books'
 import { N_, t } from '@shared/i18n'
 import { useColors, useInks } from '../hooks/useTheme'
+import { bookPaneChapters } from '../lib/bookPaneChapters'
 import { bookmarkKey, type BookmarkTarget } from '../lib/bookmarks'
 import { PANE_W } from '../lib/layout'
 import { waveStep } from '../lib/springs'
@@ -24,7 +25,7 @@ const NO_MARKS: ReadonlyMap<string, number> = new Map()
  * across chapters; when a page turn crosses into the next book the open grid follows. A long press bookmarks, as in
  * the picker.
  */
-export default function BookPane({ book, chapter, readSet, marks = NO_MARKS, onMark, onPick }: { book: number; chapter: number; readSet: ReadonlySet<string>; marks?: ReadonlyMap<string, number>; onMark?: (t: BookmarkTarget) => void; onPick: (b: number, c: number) => void }) {
+export default function BookPane({ book, chapter, readSet, marks = NO_MARKS, onMark, onPick }: { book: number; chapter: number; readSet: ReadonlySet<string>; marks?: ReadonlyMap<string, number>; onMark?: (t: BookmarkTarget) => void; onPick: (b: number, c: number, v?: number) => void }) {
   const c = useColors()
   const ink = useInks()
   const reduce = useReduceMotion()
@@ -35,15 +36,16 @@ export default function BookPane({ book, chapter, readSet, marks = NO_MARKS, onM
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => { if (pending.current) clearTimeout(pending.current) }, [])
   // a tapped cell shows its fill for CONFIRM_MS before the chapter changes, as in the picker
-  const pick = (n: number) => {
+  const pick = (n: number, v?: number) => {
     setPickedCh(n)
-    const go = () => { onPick(open, n); setPickedCh(null) }
+    const go = () => { onPick(open, n, v); setPickedCh(null) }
     if (pending.current) clearTimeout(pending.current)
     if (reduce) go(); else pending.current = setTimeout(go, CONFIRM_MS)
   }
   const meta = BOOKS[open - 1]
+  const cells = bookPaneChapters(open)
   const selCh = pickedCh ?? (open === book ? chapter : null)
-  const step = waveStep(meta.chapters)
+  const step = waveStep(cells.length)
   // on mount the current book comes up near the top; after that the reader's own scrolling stands
   const scroll = useRef<ScrollView>(null)
   const placed = useRef(false)
@@ -70,11 +72,11 @@ export default function BookPane({ book, chapter, readSet, marks = NO_MARKS, onM
               {shown ? (
                 // keyed by the book: a newly opened grid pops in as one wave, the picker's
                 <View key={open} style={[pickerStyles.wrap, styles.grid]}>
-                  {Array.from({ length: meta.chapters }, (_, i) => i + 1).map((n, i) => {
+                  {cells.map(({ label, chapter: n, verse }, i) => {
                     const chMarked = marks.has(bookmarkKey({ book: open, chapter: n }))
                     return (
-                      <PopIn key={n} index={i} cap={Infinity} step={step}>
-                        <Choice label={String(n)} name={`${meta.name} ${n}`} selected={n === selCh} fillDelay={pickedCh ? 0 : i * step + 90} onPress={() => pick(n)} style={[pickerStyles.num, styles.cell]} fontSize={15}
+                      <PopIn key={label} index={i} cap={Infinity} step={step}>
+                        <Choice label={label} name={`${meta.name} ${label}`} selected={n === selCh && (verse === undefined || pickedCh === n)} fillDelay={pickedCh ? 0 : i * step + 90} onPress={() => pick(n, verse)} style={[pickerStyles.num, styles.cell]} fontSize={15}
                           bg={chMarked ? ink.accentSoft : readSet.has(`${open}.${n}`) ? ink.selected : ink.card} marked={chMarked} onLongPress={onMark ? () => onMark({ book: open, chapter: n }) : undefined} />
                       </PopIn>
                     )

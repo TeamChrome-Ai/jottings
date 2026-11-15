@@ -341,13 +341,16 @@ export default function LibraryReader({ author, work, link }: { author: string; 
   // the word is one, the Strong's number his text renders with the word when it has one, and the dictionary ----
   const lookup = useWordLookup()
   const [wordTarget, setWordTarget] = useState<WordTarget | null>(null)
+  // a slower lookup for an earlier tap must not replace the sheet of a later one
+  const wordTap = useRef(0)
   // the first tapped word should not wait for the dictionary's index
   useEffect(() => { if (lookup) void loadDictionaryIndex().then(i => { if (i) warmWordLookup(i) }) }, [lookup])
   const onWord = useCallback((tap: WordTap) => {
     const entry = lookupGlossary(darbyGlossary(), tap)
     // function words open nothing, as in the Bible reader; a term of Darby's always does
     if (!entry && !isLookupWord(tap.word)) return
-    void topWordCode(tap.word).then(code => setWordTarget({ code, word: tap.word, term: entry?.term }))
+    const mine = ++wordTap.current
+    void topWordCode(tap.word).then(code => { if (mine === wordTap.current) setWordTarget({ code, word: tap.word, term: entry?.term }) })
   }, [])
 
   // ---- the toolbar and its sheets ----
