@@ -76,6 +76,8 @@ const SETTINGS: Scene = { route: 'settings' }
 /** Said the same on a phone (the switch in More) and a tablet (Aa in the toolbar). */
 const LOOKUP = () => t('Word lookup: the Hebrew or Greek behind a word, and its subject in the dictionary.')
 const CHAPTER_MINISTRY = () => t('Ministry on this chapter: Darby and Coates going through it.')
+/** The authors a card names before "and others": with seven in the library all of them are more than a card's 84 characters hold. */
+const CARD_AUTHORS = 5
 const SIZE = () => t('Text size, a step at a time; the rest is in Settings.')
 const PAGED = () => t('Paged mode sets the chapter out as pages you turn.')
 
@@ -128,7 +130,7 @@ export const EXTENDED: Step[] = [
   { id: 'bookmarks', targets: ['home-bookmarks'], scene: HOME, get text() { return t('Bookmarks, grouped as books, chapters and verses.') }, ...CARD },
   { id: 'chronology', targets: ['home-chronology'], scene: HOME, get text() { return t('Darby’s table of the kings and prophets, every reference a link.') }, ...CARD },
   { id: 'dictionary', targets: ['home-dictionary'], scene: HOME, get text() { return t('Morrish’s dictionary A to Z, and Strong’s concordance through Word lookup.') }, ...CARD },
-  { id: 'ministry-library', targets: ['home-ministry'], scene: HOME, get text() { return t('{authors}, searchable by passage or title.', { authors: authorNames() }) }, ...CARD },
+  { id: 'ministry-library', targets: ['home-ministry'], scene: HOME, get text() { return t('{authors}, searchable by passage or title.', { authors: authorNames([], CARD_AUTHORS) }) }, ...CARD },
   { id: 'together', targets: ['home-together'], scene: HOME, account: true, get text() { return t('Together: your friends and reading groups.') }, ...CARD, maxShare: 0.5 },
   { id: 'together-out', targets: ['home-together'], scene: HOME, account: false, get text() { return t('Together: reading groups, and friends once you sign in.') }, ...CARD },
   // Outlines, on a sample the tour makes and removes
@@ -176,7 +178,7 @@ export type TourMode = 'short' | 'full'
  * More. The tour picks its steps by the same line. */
 export const TOOLBAR_WIDE = 720
 
-/** The 1890 edition (docs/EDITION.md) has no chronological table and no Coates, Stoney or Raven: that step goes, these
+/** The 1890 edition (docs/EDITION.md) has no chronological table and no Coates, Stoney, Raven or Taylor: that step goes, these
  *  say less. */
 const ONLY_1961: ReadonlySet<string> = new Set(['chronology'])
 const TEXT_1890: Readonly<Record<string, () => string>> = {

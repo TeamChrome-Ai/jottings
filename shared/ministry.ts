@@ -29,7 +29,7 @@ export interface MinistryAuthor {
 }
 
 /** The order the library, the ministry sheet and the Home line give them (the owner's, 2026-10-16): Mr. Darby, then
- *  Mr. Raven, then the rest by when their ministry was published: Bellett, Wigram, Stoney, Coates. */
+ *  Mr. Raven, then the rest by when their ministry was published: Bellett, Wigram, Stoney, Coates, Taylor. */
 export const MINISTRY_AUTHORS: readonly MinistryAuthor[] = [
   {
     id: 'darby', name: 'J. N. Darby', short: 'Darby', born: 1800, died: 1882, enabled: true,
@@ -67,15 +67,23 @@ export const MINISTRY_AUTHORS: readonly MinistryAuthor[] = [
     source: N_('C. A. Coates (1862–1945); public domain.'),
     corpus: 'tools/coates_convert.py --all (the whole collected edition, 40 works)',
   },
+  {
+    id: 'taylor', name: 'J. Taylor Sr.', short: 'Taylor', born: 1870, died: 1953, enabled: true,
+    licence: 'Died 1953: public domain where the term is his life and 70 years, and in the US what was published before 1931, so only his own addresses in booklets dated 1929 or earlier are shown, and no reading (data/ministry/taylor/SOURCE.md).',
+    source: N_('J. Taylor Sr. (1870–1953); public domain.'),
+    corpus: 'data/ministry/taylor (the addresses of 1904–1929 that its scope lets in, by volume)',
+  },
   // placeholders: the structure is ready, nothing is converted and nothing reaches the app
   { id: 'kelly', name: 'W. Kelly', short: 'Kelly', born: 1821, died: 1906, enabled: false, licence: 'Died 1906: public domain everywhere.', source: '', corpus: '' },
   { id: 'mackintosh', name: 'C. H. Mackintosh', short: 'Mackintosh', born: 1820, died: 1896, enabled: false, licence: 'Died 1896: public domain everywhere.', source: '', corpus: '' },
-  { id: 'taylor', name: 'J. Taylor Sr.', short: 'Taylor', born: 1870, died: 1953, enabled: false, licence: 'Died 1953: in copyright in the UK until 2024, and in the US by publication date; needs the publisher’s permission.', source: '', corpus: '' },
 ]
 export const enabledAuthors = () => MINISTRY_AUTHORS.filter(a => a.enabled)
-/** The enabled authors by surname, in order, but those `hidden`: "Darby, Raven, Bellett, Wigram, Stoney and Coates". */
-export function authorNames(hidden: readonly string[] = []): string {
+/** The enabled authors by surname, in order, but those `hidden`: "Darby, Raven, Bellett, Wigram, Stoney, Coates and Taylor".
+ *  `most`: where there is no room for them all, that many and the rest unnamed: "Darby, Raven, Bellett, Wigram, Stoney
+ *  and others". */
+export function authorNames(hidden: readonly string[] = [], most = Infinity): string {
   const n = enabledAuthors().filter(a => !hidden.includes(a.id)).map(a => a.short)
+  if (n.length > most) return t('{list} and others', { list: n.slice(0, most).join(', ') })
   return n.length > 1 ? t('{list} and {last}', { list: n.slice(0, -1).join(', '), last: n[n.length - 1] }) : n.join('')
 }
 export const ministryAuthor = (id: string) => MINISTRY_AUTHORS.find(a => a.id === id && a.enabled)
@@ -158,5 +166,27 @@ export interface TextHit extends MinistryItem { author: string; apart?: true }
 export interface TextSearch { q: string; total: number; exact: number; page: number; pages: number; authors: { id: string; short: string; total: number }[]; items: TextHit[] }
 /** `q`: the words asked for, as the server read them; the items are then the paragraphs that have them, nearest first. */
 export interface MinistryRefs { book: number; chapter: number; verses: number[]; q?: string; groups: MinistryGroup[] }
+
+/**
+ * GET /api/ministry/expand?q=: a plain question put in the writers' own words by a hosted model (docs/SEARCH_EXPAND.md):
+ * the verses they expound on it, phrases they wrote, and related subjects, each with the paragraphs it finds in the
+ * edition served (`total`, never 0). `ok`: the lists, which may be empty; `off`: the server asks no model; `busy`: the
+ * day's new questions are spent, or the model gave no answer. `q`: the question as the server keeps it.
+ */
+export type ExpandState = 'ok' | 'off' | 'busy'
+export interface Suggestion { text: string; total: number }
+export interface SuggestedVerse { book: number; chapter: number; verse: number; total: number }
+export interface Expansion { q: string; state: ExpandState; phrases: Suggestion[]; verses: SuggestedVerse[]; related: Suggestion[] }
+
+/**
+ * GET /api/ministry/passages?q=: for the assistant, the paragraphs the expansion of a plain question finds (with one of
+ * its phrases as typed, or citing one of its verses in their own text, in the edition served), at most ten.
+ * `by: 'meaning'`: the ten nearest the question in meaning (docs/SEARCH_EXPAND.md, "Passages by meaning");
+ * `'matches'`: the server could not order them so, and they are the ten with most of the phrases and verses. `q` and
+ * `state` are the expansion's; `off` and `busy` have no items. A passage opens as a TextHit does; its snippet is the
+ * paragraph's opening.
+ */
+export interface PassageHit { author: string; work: { id: string; title: string; collection: string }; n: number; section: string; para: number; snippet: string }
+export interface Passages { q: string; state: ExpandState; by: 'meaning' | 'matches'; items: PassageHit[] }
 
 export type { Passage }

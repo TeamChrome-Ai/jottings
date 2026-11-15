@@ -83,3 +83,22 @@ describe('a tap while the chapter syncs', () => {
     expect(stored(7)).toEqual(new Map([[V1, 'blue']]))
   })
 })
+
+describe('what verses had before Ask colours them (the Undo of add_highlight)', () => {
+  it('is read from the server when this device has not cached the chapter', async () => {
+    h.server.set(V16, 'green')
+    const hl = await launch()
+    expect(await hl.tintsBefore(1, [V16, V16 + 1])).toEqual(new Map([[V16, 'green']]))
+  })
+  it('is unknown, not none, when the server cannot be reached', async () => {
+    h.server.set(V16, 'green')
+    h.online = false
+    const hl = await launch()
+    expect(await hl.tintsBefore(1, [V16])).toBeNull()
+  })
+  it('is this device’s own when nobody is signed in', async () => {
+    const hl = await launch()
+    await hl.setHighlight(null, V16, 'pink')
+    expect(await hl.tintsBefore(null, [V16, V1])).toEqual(new Map([[V16, 'pink']]))
+  })
+})

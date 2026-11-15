@@ -55,6 +55,15 @@ fn search(q: &str) -> Vec<(&'static str, &'static str)> {
     prefix.into_iter().chain(alias).chain(contains).take(LIMIT).map(|r| (r.id.as_str(), r.headword.as_str())).collect()
 }
 
+/// The first `most` articles `search` finds for `word`: id, headword and text, the text cut at `chars`.
+pub(crate) fn articles(word: &str, most: usize, chars: usize) -> Vec<(String, String, String)> {
+    search(word).into_iter().take(most).filter_map(|(id, headword)| {
+        let text = entries().get(id)?.get("text")?.as_str()?;
+        let text = if text.chars().count() > chars { format!("{}…", text.chars().take(chars).collect::<String>().trim_end()) } else { text.to_string() };
+        Some((id.to_string(), headword.to_string(), text))
+    }).collect()
+}
+
 fn day(mut r: Response) -> Response { r.headers_mut().insert(header::CACHE_CONTROL, "public, max-age=86400".parse().unwrap()); r }
 
 #[derive(Deserialize)] pub struct IndexQ { q: Option<String> }

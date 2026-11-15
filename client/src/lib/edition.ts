@@ -8,7 +8,7 @@ import { useSyncExternalStore } from 'react'
 import { AppState, Platform } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { fetchWithTimeout, getApiBase, loadApiBase } from './api'
-import { onEditionChange, parseEdition, peekEdition, setCleanseState, setEditionState, type Edition } from './editionCore'
+import { onEditionChange, parseEdition, peekEdition, servedKey, setCleanseState, setEditionState, type Edition } from './editionCore'
 
 export const EDITION_KEY = 'berean_edition'
 /** The cleanse flag beside it ("1" / "0"), kept the same way. */
@@ -69,3 +69,5 @@ export function watchEdition(): () => void {
 const subscribe = (l: () => void) => onEditionChange(() => l())
 /** The edition shown, live. */
 export const useEdition = (): Edition => useSyncExternalStore(subscribe, peekEdition, peekEdition)
+/** `servedKey`, live. */
+export const useServed = (): string => useSyncExternalStore(subscribe, servedKey, servedKey)

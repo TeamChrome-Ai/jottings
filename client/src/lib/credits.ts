@@ -59,12 +59,18 @@ const SCRIPTURE: Credit[] = [
   { name: N_('J. B. Stoney (1814–1897) and F. E. Raven (1837–1903), their ministry'), what: N_('Ministry on a verse, and the library.'), licence: N_('Public domain') },
   { name: N_('G. V. Wigram (1805–1879) and J. G. Bellett (1795–1864), their writings'), what: N_('Ministry on a verse, and the library: their books and papers. Text from Bible Truth Publishers’ online library, acknowledged with thanks.'), licence: N_('Public domain'), url: 'https://bibletruthpublishers.com/memorials-of-the-ministry-of-g-v-wigram-1-volume-1/g-v-wigram/lbd15145' },
   { name: N_('C. A. Coates (1862–1945), the Outlines of the books of the Bible and his addresses'), what: N_('Ministry on a chapter and a verse, and in the library.'), licence: N_('Public domain'), url: 'https://archive.org/search?query=creator%3A%22C.+A.+Coates%22'},
+  { name: N_('J. Taylor Sr. (1870–1953), his early addresses'), what: N_('Ministry on a verse, and the library.'), licence: N_('Public domain') },
 ]
 
 export const CREDITS: CreditSection[] = [
   { get title() { return t('Scripture and notes') }, items: SCRIPTURE.map(shown) },
   { get title() { return t('Voices') }, items: [
     { name: 'Speechify', what: N_('Voices powered by Speechify: the three voices (Alec, Beatrice, Dominic) and their word timings. Synthesized through Speechify’s text-to-speech; the recordings are made and served by {brand}.'), licence: N_('Commercial API'), url: 'https://speechify.com' },
+  ].map(shown) },
+  { get title() { return t('Search') }, items: [
+    { name: 'Anthropic', what: N_('Other wordings in the ministry search, suggested by Claude Haiku: when a search of three words or more finds fewer than five paragraphs, its words are sent to Anthropic’s Claude API, with nothing about you, and {brand} shows only the suggestions that find paragraphs in the library.'), licence: N_('Commercial API'), url: 'https://www.anthropic.com' },
+    { name: 'OpenAI', what: N_('The library’s paragraphs in order of meaning, from OpenAI’s text-embedding-3-small: when the library is asked a question, its words are sent to OpenAI’s embeddings API, with nothing about you, and {brand} puts the paragraphs the question finds in order of how close they are to it.'), licence: N_('Commercial API'), url: 'https://openai.com' },
+    { name: N_('OpenAI, for Ask'), what: N_('Ask’s answers, from GPT-6.1 Terra through OpenAI’s chat completions API: what you write to Ask, and the settings it reads when you ask it to, are sent to OpenAI with nothing about your account. The conversation is kept on your device; {brand} keeps only how many messages each account sent that day.'), licence: N_('Commercial API'), url: 'https://openai.com' },
   ].map(shown) },
   { get title() { return tc('typefaces', 'Type') }, items: [
     { name: 'Literata', what: N_('The reading face for scripture, numerals and titles.'), licence: 'SIL Open Font License 1.1', url: 'https://github.com/googlefonts/literata', note: 'Copyright 2015–2020 The Literata Project Authors (TypeTogether for Google).' },
@@ -94,7 +100,7 @@ export const CREDITS: CreditSection[] = [
 
 /** The 1890 edition's Scripture and notes. */
 function scripture1890(ownText: boolean): Credit[] {
-  const keep = SCRIPTURE.filter(i => i !== NOTICES && !/1961|CCEL|Coates|Stoney|Raven|^J\. N\. Darby, The Holy Scriptures/.test(`${i.name} ${i.what} ${i.licence} ${i.note ?? ''}`))
+  const keep = SCRIPTURE.filter(i => i !== NOTICES && !/1961|CCEL|Coates|Stoney|Raven|Taylor|^J\. N\. Darby, The Holy Scriptures/.test(`${i.name} ${i.what} ${i.licence} ${i.note ?? ''}`))
   return [
     { name: N_('J. N. Darby, The Holy Scriptures, New Testament 1884, Old Testament 1890'), what: ownText ? N_('The Bible text, from the 1884 and 1890 printings.') : N_('The Bible text, from a published digital copy of the text, checked against the 1884 and 1890 printings.'), licence: N_('Public domain') },
     { name: N_('J. N. Darby’s notes'), what: N_('Mr. Darby’s own notes, from the 1884 and 1890 printings.'), licence: N_('Public domain') },

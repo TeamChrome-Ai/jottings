@@ -289,6 +289,18 @@ CREATE TABLE IF NOT EXISTS store_click_hours (hour TEXT PRIMARY KEY, n INTEGER N
 CREATE TABLE IF NOT EXISTS link_previews (url TEXT PRIMARY KEY, host TEXT NOT NULL, title TEXT, description TEXT, fetched_at TEXT NOT NULL);
 -- a jotting's links by address: whether a preview may be asked for without signing in
 CREATE INDEX IF NOT EXISTS outline_items_link ON outline_items(url) WHERE kind = 'link';
+-- rs/src/expand.rs: the model's answer to a plain question, by the question as kept (lowercase, single spaces, no
+-- closing punctuation), kept as it came; whose it was is never recorded
+CREATE TABLE IF NOT EXISTS search_expansions (q TEXT PRIMARY KEY, model TEXT NOT NULL, raw TEXT NOT NULL, at TEXT NOT NULL);
+-- the model calls of a day (UTC), counted as each is taken, before it is made: a call in flight and one that fails are
+-- calls the day paid for, which a count of the answers kept would miss
+CREATE TABLE IF NOT EXISTS search_expansion_calls (day TEXT PRIMARY KEY, calls INTEGER NOT NULL);
+-- rs/src/near.rs: a question's vector as the embedding model gave it (little-endian f32), by the question as kept in
+-- search_expansions and the model, which must be the vector file's; whose it was is never recorded
+CREATE TABLE IF NOT EXISTS search_vectors (q TEXT NOT NULL, model TEXT NOT NULL, vec BLOB NOT NULL, at TEXT NOT NULL, PRIMARY KEY (q, model));
+-- rs/src/assistant.rs: the reader messages Ask took a day (UTC), for an account (`who` its id) and for every account
+-- together (`who` 0), each counted before its first model call; nothing of what was asked is kept
+CREATE TABLE IF NOT EXISTS assistant_messages (day TEXT NOT NULL, who INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (day, who));
 "#;
 
 /// The 1890 edition's own text, written by the data build only when data/darby_1890.json exists (edition::tables reads

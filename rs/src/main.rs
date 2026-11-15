@@ -1,5 +1,5 @@
 //! Berean server: axum + SQLite, one static binary with the client and data embedded.
-mod activity; mod auth; mod bans; mod avatars; mod badges; mod bible; mod brand; mod books; mod cleanse; mod companion; mod dictionary; mod db; mod edition; mod error; mod i18n; mod feedback; mod friends; mod google; mod groups; mod link_preview; mod me_data; mod ministry; mod ministry_offline; mod moderation; mod og; mod scan; mod outlines; mod refparse; mod review_ask; mod search; mod tts; mod routes; mod rules; mod r#static; mod paths; mod store; mod live; mod marks; mod readthrough;
+mod activity; mod assistant; mod auth; mod bans; mod avatars; mod badges; mod bible; mod brand; mod books; mod cleanse; mod companion; mod dictionary; mod db; mod edition; mod error; mod expand; mod i18n; mod feedback; mod friends; mod google; mod groups; mod link_preview; mod me_data; mod ministry; mod ministry_offline; mod moderation; mod near; mod og; mod scan; mod outlines; mod refparse; mod review_ask; mod search; mod tts; mod routes; mod rules; mod r#static; mod paths; mod store; mod live; mod marks; mod readthrough;
 #[cfg(test)] mod testkit;
 
 use axum::{http::{header, HeaderValue}, Router};
@@ -14,7 +14,10 @@ static ASSETLINKS: once_cell::sync::Lazy<String> = once_cell::sync::Lazy::new(||
 #[derive(Clone)]
 pub struct AppState { pub pool: DbPool, /** data/ministry.db, read-only; None when the file is absent */ pub ministry: Option<std::sync::Arc<ministry::Ministry>>,
     /** the edition served (edition.rs), as last read from the database */ pub edition: std::sync::Arc<edition::Cache>,
-    /** how a link preview reaches the page it is of (link_preview.rs): the web, or a test's table */ pub net: std::sync::Arc<dyn link_preview::Net> }
+    /** how a link preview reaches the page it is of (link_preview.rs): the web, or a test's table */ pub net: std::sync::Arc<dyn link_preview::Net>,
+    /** the model a plain question is put in other words by (expand.rs), from the environment */ pub expand: std::sync::Arc<expand::Config>,
+    /** what orders the library's paragraphs by meaning (near.rs), from the environment */ pub near: std::sync::Arc<near::Config>,
+    /** the model Ask talks to (assistant.rs), from the environment */ pub chat: std::sync::Arc<assistant::Config> }
 
 impl AppState {
     /// Runs `f` on the blocking pool with a pooled connection. rusqlite is synchronous, and on a 2-vCPU host a
@@ -183,7 +186,8 @@ async fn main() -> anyhow::Result<()> {
     let ministry_path = std::env::var("BEREAN_MINISTRY_DB").unwrap_or_else(|_| format!("{data_dir}/ministry.db"));
     let ministry = ministry::Ministry::open(&ministry_path)?;
     if ministry.is_none() { tracing::warn!("no {ministry_path}: the ministry library is empty (run tools/ministry_index.ts)"); }
-    let state = AppState { pool: pool.clone(), ministry, edition: std::sync::Arc::new(edition::Cache::new(edition::TTL)), net: std::sync::Arc::new(link_preview::Web) };
+    let near = std::sync::Arc::new(near::Config::from_env(ministry.as_deref(), &ministry_path));
+    let state = AppState { pool: pool.clone(), ministry, edition: std::sync::Arc::new(edition::Cache::new(edition::TTL)), net: std::sync::Arc::new(link_preview::Web), expand: std::sync::Arc::new(expand::Config::from_env()), near, chat: std::sync::Arc::new(assistant::Config::from_env()) };
     // URL reputation lists for the rule scanner, refreshed twice a day; stale report jobs and ended repeating group
     // events swept every minute
     tokio::spawn(async move { loop { scan::refresh_blocklists().await; tokio::time::sleep(std::time::Duration::from_secs(12 * 3600)).await; } });

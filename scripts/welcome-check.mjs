@@ -62,6 +62,11 @@ if (!only) {
   await page.screenshot({ path: `${out}/16-handoff-named.png` })
   await begin.click()
   check('Begin closes the welcome', await skipBtn(page).waitFor({ state: 'detached', timeout: 3000 }).then(() => true, () => false))
+  // on a new device the tour follows a Begin and opens John 1: leave it, and go back to Home
+  const tourSkip = page.getByRole('button', { name: 'Skip the tour' })
+  check('the tour follows Begin', await shown(tourSkip, 6000))
+  await tourSkip.click()
+  await page.getByText('Home', { exact: true }).last().click()
   await page.waitForTimeout(700)
   await page.screenshot({ path: `${out}/17-home.png` })
   const home = await page.evaluate(() => document.body.innerText)

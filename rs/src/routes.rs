@@ -162,6 +162,7 @@ async fn delete_me(State(s): State<AppState>, AuthUser(u): AuthUser, Json(b): Js
     tx.execute("DELETE FROM groups WHERE owner_id=?1", params![u.id])?;
     tx.execute("UPDATE group_events SET created_by=(SELECT owner_id FROM groups g WHERE g.id=group_events.group_id) WHERE created_by=?1", params![u.id])?;
     tx.execute("DELETE FROM users WHERE id=?1", params![u.id])?;
+    tx.execute("DELETE FROM assistant_messages WHERE who=?1", params![u.id])?;
     tx.commit()?;
     Ok(Json(json!({ "ok": true, "deleted": true })))
 }
@@ -319,6 +320,10 @@ pub fn router() -> Router<AppState> {
         .route("/ministry", get(crate::ministry::library))
         .route("/ministry/search", get(crate::ministry::search))
         .route("/ministry/text", get(crate::ministry::text))
+        .route("/ministry/expand", get(crate::expand::expand))
+        .route("/ministry/passages", get(crate::near::passages))
+        .route("/assistant", get(crate::assistant::state))
+        .route("/assistant/turn", post(crate::assistant::turn))
         .route("/ministry/offline", get(crate::ministry_offline::listing))
         .route("/ministry/offline/{author}", get(crate::ministry_offline::pack))
         .route("/ministry/offline/{author}/refs", get(crate::ministry_offline::refs))

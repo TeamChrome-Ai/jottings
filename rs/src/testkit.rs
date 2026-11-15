@@ -20,7 +20,7 @@ pub fn site() -> (Router, crate::db::DbPool) {
 fn state(net: std::sync::Arc<dyn crate::link_preview::Net>) -> AppState {
     let path = std::env::temp_dir().join(format!("berean-test-{}.db", crate::auth::random_token(8)));
     let pool = crate::db::open_pool(path.to_str().unwrap(), None).unwrap();
-    AppState { pool, ministry: None, edition: edition_cache(), net }
+    AppState { pool, ministry: None, edition: edition_cache(), net, expand: std::sync::Arc::new(crate::expand::Config::off()), near: std::sync::Arc::new(crate::near::Config::off()), chat: std::sync::Arc::new(crate::assistant::Config::off()) }
 }
 /// No network in a test: no name resolves and no page answers.
 pub struct Offline;
@@ -35,9 +35,15 @@ fn with_guard(state: AppState) -> Router {
     crate::routes::router().layer(axum::middleware::from_fn_with_state(state.clone(), crate::edition::guard)).with_state(state)
 }
 /** A router whose ministry library is the database at `path` (crate::ministry::tests::fixture). */
-pub fn app_with_ministry(path: &str) -> (Router, crate::db::DbPool) {
+pub fn app_with_ministry(path: &str) -> (Router, crate::db::DbPool) { app_with_expand(path, crate::expand::Config::off()) }
+/** `app_with_ministry` whose question expansion (expand.rs) asks the model `expand` names. */
+pub fn app_with_expand(path: &str, expand: crate::expand::Config) -> (Router, crate::db::DbPool) { app_with_near(path, expand, crate::near::Config::off()) }
+/** `app_with_expand` whose passages (near.rs) are ordered as `near` says. */
+pub fn app_with_near(path: &str, expand: crate::expand::Config, near: crate::near::Config) -> (Router, crate::db::DbPool) { app_with_chat(path, expand, near, crate::assistant::Config::off()) }
+/** `app_with_near` whose assistant (assistant.rs) talks to the model `chat` names. */
+pub fn app_with_chat(path: &str, expand: crate::expand::Config, near: crate::near::Config, chat: crate::assistant::Config) -> (Router, crate::db::DbPool) {
     let (_, pool) = app();
-    let state = AppState { pool: pool.clone(), ministry: crate::ministry::Ministry::open(path).unwrap(), edition: edition_cache(), net: std::sync::Arc::new(Offline) };
+    let state = AppState { pool: pool.clone(), ministry: crate::ministry::Ministry::open(path).unwrap(), edition: edition_cache(), net: std::sync::Arc::new(Offline), expand: std::sync::Arc::new(expand), near: std::sync::Arc::new(near), chat: std::sync::Arc::new(chat) };
     (with_guard(state), pool)
 }
 /// A user with a session; returns (id, token).

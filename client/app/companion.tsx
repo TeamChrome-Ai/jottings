@@ -8,9 +8,11 @@ import { loadContents, loadLibrary, peekContents, peekLibrary, libraryUnavailabl
 import { apartAt, EVERY_AUTHOR, collectionDetail, collectionOfKind, contentsHeading, countOf, newSectionHits, opensToContents, paragraphLink, positionKey, readerLink, searchNote, searchWorks, sectionHitDetail, shelfOf, shortTitle, textAuthorChoices, textHeading, type WorkHit } from '../src/lib/libraryNav'
 import { lastRead, loadPositions } from '../src/lib/libraryPosition'
 import { useCompanionIndexes } from '../src/hooks/useCompanion'
-import { useEdition } from '../src/lib/edition'
+import { useServed } from '../src/lib/edition'
 import LibraryReader from '../src/components/LibraryReader'
 import MinistryItemRow from '../src/components/MinistryItemRow'
+import SearchExpansion from '../src/components/SearchExpansion'
+import AskRow from '../src/components/AskRow'
 import { SectionsList, WorksChooser } from '../src/components/ContentsPicker'
 import { CONFIRM_MS } from '../src/components/ChapterPicker'
 import { FadeSwap, Stagger, STAGGER_CAP, useFreshList } from '../src/components/motion/nav'
@@ -33,10 +35,10 @@ const SEARCH_WAIT_MS = 250
  * (LibraryReader), at `n` and `p` when given (the deep link, with `from` the verse it came from), else where it was
  * left. Older links still land: `?author=darby` is the author's collections, `&kind=outline` the collection of that kind.
  */
-/** Another edition (docs/EDITION.md) remounts the library: its lists are asked again, an author it leaves out is gone. */
+/** Another edition, or the cleanse turned on or off (docs/EDITION.md), remounts the library: its lists and its searches are asked again, an author it leaves out is gone. */
 export default function Companion() {
-  const edition = useEdition()
-  return <CompanionPage key={edition} />
+  const served = useServed()
+  return <CompanionPage key={served} />
 }
 
 function CompanionPage() {
@@ -86,12 +88,16 @@ function IndexView({ initialQuery }: { initialQuery: string }) {
   const hits = useMemo(() => newSectionHits(found.hits, places), [found.hits, places])
   const text = useTextSearch(query)
   const last = useLastRead()
+  const reduce = useReduceMotion()
+  // a suggested wording is searched for in the box, which is scrolled back into view with its results
+  const search = (words: string) => { setQ(words); scroll.current?.scrollTo({ y: 0, animated: !reduce }) }
   return (
     <Screen animate={false} scrollRef={scroll}>
       <Stack.Screen options={{ title: t('Ministry') }} />
       <Input value={q} onChangeText={setQ} placeholder={t('Search by passage, title or words')} autoCorrect={false} autoCapitalize="none" returnKeyType="search" accessibilityLabel={t('Search the ministry by passage, title or words')} />
-      {query ? <Results works={works} hits={hits} titlesPending={found.query !== query} places={places} text={text} library={library} query={query} scroll={scroll} /> : library === undefined ? <Spinner /> : !library?.authors.length ? <ErrorText>{t(libraryUnavailable)}</ErrorText> : (
+      {query ? <Results works={works} hits={hits} titlesPending={found.query !== query} places={places} text={text} library={library} query={query} scroll={scroll} onSearch={search} /> : library === undefined ? <Spinner /> : !library?.authors.length ? <ErrorText>{t(libraryUnavailable)}</ErrorText> : (
         <>
+          <AskRow alone />
           {last ? (
             <Stagger index={0}>
               <Card style={{ gap: 0, paddingVertical: 8 }}>
@@ -136,13 +142,17 @@ function useLastRead() {
 
 /**
  * Search: works whose title matches, then the server's sections by title (the papers, readings and letters inside every
- * work), then sections by passage or title from the companion's own index (the Synopsis and Coates).
+ * work), then sections by passage or title from the companion's own index (the Synopsis and Coates), then the paragraphs
+ * with the words, and for a plain question that found few of them, other wordings.
  */
-function Results({ works, hits, titlesPending, places, text, library, query, scroll }: { works: readonly WorkHit[]; hits: readonly SectionHit[]; titlesPending: boolean; places: readonly Place[]; text: TextSearchState; library: Library | null | undefined; query: string; scroll: RefObject<ScrollView | null> }) {
+function Results({ works, hits, titlesPending, places, text, library, query, scroll, onSearch }: { works: readonly WorkHit[]; hits: readonly SectionHit[]; titlesPending: boolean; places: readonly Place[]; text: TextSearchState; library: Library | null | undefined; query: string; scroll: RefObject<ScrollView | null>; onSearch: (words: string) => void }) {
   const router = useRouter()
   // results arrive with the house stagger when they first show; narrowing them by typing does not replay it
   const fresh = useFreshList('results')
   const note = searchNote(works.length + hits.length + places.length, text.shown?.answer, titlesPending || text.pending)
+  // every author's paragraphs, whichever author the list is narrowed to
+  const answer = text.shown?.answer
+  const paragraphs = !text.pending && answer?.kind === 'found' ? answer.authors.reduce((n, a) => n + a.total, 0) : null
   return (
     <View style={{ gap: SPACE.l }}>
       {works.length ? (
@@ -160,6 +170,7 @@ function Results({ works, hits, titlesPending, places, text, library, query, scr
         }} />
       <Paragraphs text={text} scroll={scroll} />
       {note ? <T muted>{note === 'searching' ? t('Searching…') : t('Nothing for “{query}”.', { query })}</T> : null}
+      <SearchExpansion query={query} found={paragraphs} onSearch={onSearch} />
     </View>
   )
 }

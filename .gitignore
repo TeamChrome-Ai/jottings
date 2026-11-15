@@ -19,3 +19,4 @@ tools/__pycache__/
 data/ministry.db*
 client/.neutered/
 __pycache__/
+data/ministry_vec.bin*

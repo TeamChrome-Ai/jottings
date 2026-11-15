@@ -193,6 +193,7 @@ dependencies = [
  "argon2",
  "axum",
  "axum-extra",
+ "base64",
  "brotli 6.0.0",
  "bytes",
  "flate2",

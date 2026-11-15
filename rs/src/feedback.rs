@@ -218,7 +218,7 @@ mod tests {
     fn app() -> (Router, crate::db::DbPool) {
         let path = std::env::temp_dir().join(format!("berean-test-{}.db", crate::auth::random_token(6)));
         let pool = crate::db::open_pool(path.to_str().unwrap(), None).unwrap();
-        let state = AppState { pool: pool.clone(), ministry: None, edition: std::sync::Arc::new(crate::edition::Cache::new(std::time::Duration::ZERO)), net: std::sync::Arc::new(crate::testkit::Offline) };
+        let state = AppState { pool: pool.clone(), ministry: None, edition: std::sync::Arc::new(crate::edition::Cache::new(std::time::Duration::ZERO)), net: std::sync::Arc::new(crate::testkit::Offline), expand: std::sync::Arc::new(crate::expand::Config::off()), near: std::sync::Arc::new(crate::near::Config::off()), chat: std::sync::Arc::new(crate::assistant::Config::off()) };
         (crate::routes::router().with_state(state), pool)
     }
     /// A user with a session; returns (id, token).

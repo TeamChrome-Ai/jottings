@@ -16,6 +16,7 @@ import { useDesktop } from '../../src/hooks/useDesktop'
 import { face, proseStyle } from '../../src/theme'
 import StreakCard from '../../src/components/StreakCard'
 import { ThemeStrip } from '../../src/components/ThemeGallery'
+import AskRow from '../../src/components/AskRow'
 import { Card, Enter, Grow, H2, ListRow, Numeral, Row, Screen, Spinner, T, TYPE } from '../../src/components/ui'
 import { useArrivalDelay } from '../../src/components/motion/home'
 import { FadeSwap } from '../../src/components/motion/nav'
@@ -188,6 +189,7 @@ export default function Home() {
           {hasChronology(edition) ? <ListRow ref={tourRef('home-chronology')} icon="clock" label={t('Chronological table')} detail={t('Kings and prophets of Judah and Israel')} onPress={() => router.push('/chronology')} /> : null}
           <ListRow ref={tourRef('home-dictionary')} icon="dictionary" label={t('Dictionary and concordance')} detail={t('Morrish’s dictionary, Strong’s concordance')} onPress={() => router.push('/dictionary')} />
           <ListRow ref={tourRef('home-ministry')} icon="companion" label={t('Ministry')} detail={authorNames(enabledAuthors().filter(a => !authorShown(a.id, edition)).map(a => a.id))} onPress={() => router.push('/companion')} />
+          <AskRow />
           <ListRow icon="stack" label={t('Paths')} detail={pathOn && path.state && path.progress ? `${pathTitle(path.state)} · ${countWords(path.progress)}` : t('Reading plans, no dates unless you set one')} onPress={() => router.push('/paths')} />
         </Card>
         {/* before the first finished chapter the sign-in card sits under the Library column (rule above) */}

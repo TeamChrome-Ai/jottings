@@ -48,6 +48,8 @@ futures = "0.3"
 jsonwebtoken = "9"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 sha2 = "0.10"
+# the embedding API's vectors (near.rs)
+base64 = "0.22"
 
 [profile.release]
 opt-level = 3

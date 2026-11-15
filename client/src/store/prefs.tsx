@@ -43,6 +43,9 @@ export interface Prefs {
   onboarded: boolean
   /** The guided tour after the welcome has been seen (finished or skipped); Settings can show it again. */
   toured: boolean
+  /** The version whose news this device has seen (shared/whatsNew.ts), '' for none: set by the welcome on a new install,
+   *  and as the news starts after an update; Settings can play it again. */
+  seenNew: string
   /** What the welcome asked to call the reader: Home's date line, and the display name offered at sign-up. */
   readerName: string
   /** The app's language (`auto`: the device's), the Bible shown (`auto`: the language's own Darby, the English one where it
@@ -62,7 +65,7 @@ export const FONT_MIN = 14, FONT_MAX = 32
 export const NAME_MAX = 40
 /** A value missing from the stored record takes these; `paragraphs` is off, so a new install starts every verse on its own
  *  line while a saved record keeps its choice. */
-export const DEFAULTS: Prefs = { theme: 'system', themeLight: LIGHT_DEFAULT, themeDark: DARK_DEFAULT, font: 'serif', fontSize: 19, lineHeight: 1.6, letterSpacing: 0, wordSpacing: 0, verseNumbers: true, paragraphs: false, showNotes: true, moreColours: false, noteLetters: 'chapter', reduceMotion: false, motionSpeed: 1, align: 'center', width: 'medium', ttsVoice: 'alec', ttsSpeed: 1, ttsNumbers: false, ttsHeading: true, ttsPause: 'short', ttsWord: true, ttsAutoNext: true, ttsDevice: false, ttsStopAtSelection: false, customFonts: [], dailyGoal: DAILY_GOAL_DEFAULT, streakReminder: { enabled: true, hour: 20, minute: 0 }, verseNotify: { items: [] }, inviteNotify: true, onboarded: false, toured: false, readerName: '', lang: 'auto', bible: 'auto', bible2: '' }
+export const DEFAULTS: Prefs = { theme: 'system', themeLight: LIGHT_DEFAULT, themeDark: DARK_DEFAULT, font: 'serif', fontSize: 19, lineHeight: 1.6, letterSpacing: 0, wordSpacing: 0, verseNumbers: true, paragraphs: false, showNotes: true, moreColours: false, noteLetters: 'chapter', reduceMotion: false, motionSpeed: 1, align: 'center', width: 'medium', ttsVoice: 'alec', ttsSpeed: 1, ttsNumbers: false, ttsHeading: true, ttsPause: 'short', ttsWord: true, ttsAutoNext: true, ttsDevice: false, ttsStopAtSelection: false, customFonts: [], dailyGoal: DAILY_GOAL_DEFAULT, streakReminder: { enabled: true, hour: 20, minute: 0 }, verseNotify: { items: [] }, inviteNotify: true, onboarded: false, toured: false, seenNew: '', readerName: '', lang: 'auto', bible: 'auto', bible2: '' }
 const KEY = 'berean_prefs'
 /** usePosition's key, read once at start-up to tell a returning reader from a new device. */
 const POSITION_KEY = 'berean_pos'
@@ -98,13 +101,13 @@ function createStore(): PrefsStore & { hydrate: (stored: Prefs | null) => void; 
   const commit = (patched: Prefs) => {
     const next = withFonts(patched, prefs)
     if ((Object.keys(next) as (keyof Prefs)[]).every(k => Object.is(next[k], prefs[k]))) return
-    const urgent = next.onboarded !== prefs.onboarded || next.toured !== prefs.toured
+    const urgent = next.onboarded !== prefs.onboarded || next.toured !== prefs.toured || next.seenNew !== prefs.seenNew
     prefs = next
     // nothing is written before the stored copy has been read, or it would be clobbered
     if (loaded) {
       dirty = true
       if (timer) clearTimeout(timer)
-      // the welcome/tour flags must hit disk before the process can die; everything else can wait for a quiet moment
+      // the welcome/tour/news flags must hit disk before the process can die; everything else can wait for a quiet moment
       if (urgent) flush()
       else timer = setTimeout(flush, SAVE_MS)
     }
@@ -114,8 +117,8 @@ function createStore(): PrefsStore & { hydrate: (stored: Prefs | null) => void; 
     get: () => prefs,
     isLoaded: () => loaded,
     set: p => commit({ ...prefs, ...p, fontSize: clamp(p.fontSize ?? prefs.fontSize, FONT_MIN, FONT_MAX) }),
-    // the added fonts are files on the device; the daily goal, the notifications, the welcome, the tour and the name are not reading preferences
-    reset: () => commit({ ...DEFAULTS, customFonts: prefs.customFonts, dailyGoal: prefs.dailyGoal, streakReminder: prefs.streakReminder, verseNotify: prefs.verseNotify, inviteNotify: prefs.inviteNotify, onboarded: prefs.onboarded, toured: prefs.toured, readerName: prefs.readerName, lang: prefs.lang, bible: prefs.bible, bible2: prefs.bible2 }),
+    // the added fonts are files on the device; the daily goal, the notifications, the welcome, the tour, the news seen and the name are not reading preferences
+    reset: () => commit({ ...DEFAULTS, customFonts: prefs.customFonts, dailyGoal: prefs.dailyGoal, streakReminder: prefs.streakReminder, verseNotify: prefs.verseNotify, inviteNotify: prefs.inviteNotify, onboarded: prefs.onboarded, toured: prefs.toured, seenNew: prefs.seenNew, readerName: prefs.readerName, lang: prefs.lang, bible: prefs.bible, bible2: prefs.bible2 }),
     subscribe: fn => { listeners.add(fn); return () => { listeners.delete(fn) } },
     hydrate: stored => { if (stored) prefs = withFonts(stored, DEFAULTS); loaded = true; emit() },
     flush,
@@ -168,6 +171,8 @@ function migrate(raw: Record<string, unknown>): Partial<Prefs> {
   out.onboarded = typeof raw.onboarded === 'boolean' ? raw.onboarded : true
   // and one from before the tour existed: they have found their way round already
   out.toured = typeof raw.toured === 'boolean' ? raw.toured : true
+  // a record from before an update had news to tell has seen none of it
+  out.seenNew = typeof raw.seenNew === 'string' ? raw.seenNew : ''
   out.readerName = typeof raw.readerName === 'string' ? raw.readerName.slice(0, NAME_MAX) : ''
   out.motionSpeed = clampSpeed(raw.motionSpeed)
   out.lang = parseLangPref(raw.lang)

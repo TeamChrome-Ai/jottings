@@ -20,6 +20,9 @@ let cleanse: boolean = DEFAULT_CLEANSE
 const listeners = new Set<(e: Edition) => void>()
 export const peekEdition = (): Edition => current
 export const peekCleanse = (): boolean => cleanse || NEUTERED
+/** What a page holding one state's answers is mounted by (lib/edition.ts `useServed`): the edition and whether it is
+ *  cleansed, since the 1890 edition's counts and paragraphs differ with the cleanse. */
+export const servedKey = (): string => (peekCleanse() ? `${current}+cleanse` : current)
 /** Sets the edition shown; listeners hear a change only. */
 export function setEditionState(e: Edition): boolean {
   if (e === current) return false
@@ -40,9 +43,9 @@ export function onEditionChange(l: (e: Edition) => void): () => void { listeners
 // ---------- what an edition leaves out ----------
 
 /** Authors the edition leaves out everywhere (the companion, the library, Ministry on a verse, downloads): C. A.
- *  Coates, J. B. Stoney and F. E. Raven are texts of a publisher's edition; the cleanse (and a neutered build) leaves
- *  them out too. rs/src/edition.rs hides_author is the same rule. */
-export const EDITION_AUTHORS = ['coates', 'stoney', 'raven'] as const
+ *  Coates, J. B. Stoney, F. E. Raven and J. Taylor Sr. are texts of a publisher's edition; the cleanse (and a neutered
+ *  build) leaves them out too. rs/src/edition.rs hides_author is the same rule. */
+export const EDITION_AUTHORS = ['coates', 'stoney', 'raven', 'taylor'] as const
 export const hiddenAuthors = (e: Edition): readonly string[] => (e === '1890' || peekCleanse() ? EDITION_AUTHORS : [])
 export const authorShown = (id: string, e: Edition = current): boolean => !hiddenAuthors(e).includes(id)
 /** The 1961 edition's chronological table (and the order of the prophets with it); never in a neutered build. */

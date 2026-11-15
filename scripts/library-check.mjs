@@ -168,6 +168,9 @@ const dialog = page => page.getByRole('dialog').last()
   const label = await link.textContent()
   await link.click()
   await page.waitForTimeout(1500)
+  // a verse named in the ministry opens Ministry on it over the reading; its Read button goes on to the Bible reader
+  const read = dialog(page).getByRole('button', { name: /^Read / })
+  if (await read.count()) { await read.first().click(); await page.waitForTimeout(1500) }
   ok(`following “${label}” opens the Bible reader (${new URL(page.url()).pathname}${new URL(page.url()).search})`, /\/read\/\d+\/\d+/.test(page.url()))
   await shot(page, '10-reference-in-bible-reader')
   await page.goBack()

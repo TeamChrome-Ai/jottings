@@ -104,9 +104,24 @@ await page.keyboard.press('Escape'); await page.waitForTimeout(600)
 
 // 3. a verse nobody wrote on: no Ministry, and the bar is the height it always is (with rows for whole chapters, Jeremiah
 // 40 and 47 are the only chapters no author touches)
-const plainHeight = await (async () => { await select(24, 47, /waters rise up out of the north/); return barHeight() })()
-ok('Jeremiah 47:2 selected: no Ministry in the bar', !(await ministryButton().count()))
+// (a library with more authors leaves no chapter untouched: then the verse has Ministry like any other, and says so)
+const untouched = !((await (await fetch(`${base}/api/ministry/chapter/24/47`)).json()).verses ?? []).includes(2)
+let plainHeight = await (async () => { await select(24, 47, /waters rise up out of the north/); return barHeight() })()
+ok(untouched ? 'Jeremiah 47:2 selected: no Ministry in the bar' : 'Jeremiah 47:2 selected: this library has ministry on it too, and the bar offers it', untouched ? !(await ministryButton().count()) : await ministryButton().isVisible())
 await shot('09-no-ministry-bar')
+if (!untouched) {
+  // the height is still measured on a bar without Ministry: a verse of Joshua 17 that no paragraph cites (two bars
+  // that both offer Ministry would agree however tall the button made them)
+  const has = new Set((await (await fetch(`${base}/api/ministry/chapter/6/17`)).json()).verses ?? [])
+  const bare = (await (await fetch(`${base}/bible/6/17.json`)).json()).verses.find(v => !has.has(v.v))
+  ok('Joshua 17 has a verse nobody wrote on, to measure the bar without Ministry', !!bare)
+  if (bare) {
+    await select(6, 17, bare.t.slice(0, 24))
+    ok(`Joshua 17:${bare.v} selected: no Ministry in the bar`, !(await ministryButton().count()))
+    plainHeight = await barHeight()
+    await shot('09b-no-ministry-bar')
+  }
+}
 await select(43, 3, /For God so/)
 ok(`the bar does not change height for Ministry (${Math.round(plainHeight)} and ${Math.round(await barHeight())} px)`, Math.abs(plainHeight - await barHeight()) < 1)
 

@@ -76,6 +76,16 @@ export async function setHighlight(uid: HighlightOwner, verseId: number, color: 
   if (uid !== null) await put('/highlights', { verse_id: verseId, color })
 }
 
+/** What verses of one chapter are coloured now, for an Undo that puts them back (Ask's add_highlight): the account's,
+ *  from the server, or this device's signed out; null when the server cannot be reached, since a chapter this device has
+ *  not cached would read as no colour and its Undo would clear the account's own. */
+export async function tintsBefore(uid: HighlightOwner, verseIds: readonly number[]): Promise<HighlightMap | null> {
+  if (!verseIds.length) return new Map()
+  const { book, chapter } = chapterOf(verseIds[0])
+  const tints = await syncHighlights(uid, book, chapter)
+  return tints && new Map(verseIds.flatMap(id => (tints.has(id) ? [[id, tints.get(id)!] as const] : [])))
+}
+
 /** Every highlight kept on this device while signed out, one entry per chapter. */
 export async function localHighlightChapters(): Promise<{ book: number; chapter: number; tints: HighlightMap }[]> {
   const keys = (await AsyncStorage.getAllKeys()).filter(k => k.startsWith(`${PREFIX}${LOCAL}:`))

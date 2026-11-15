@@ -18,11 +18,11 @@ import { addBookmark, createOutline, deleteOutline, getOwnOutline, listBookmarks
 import { localBookmarks, localOutline, localOutlines } from './localLibrary'
 import { fetchExport } from './yourdata'
 import { localPosition, savePosition } from '../hooks/usePosition'
-import { isThemeId } from '../theme'
+import { settingsPatch } from './settingsPatch'
 import type { Prefs, PrefsStore } from '../store/prefs'
 import {
   HL_COLORS, MAX_FILE_BYTES, buildDeviceBackup, jottingKey, readPrefs,
-  type BackupColor, type BackupContent, type BackupItem, type BackupPrefs, type ParsedBackup,
+  type BackupColor, type BackupContent, type BackupItem, type ParsedBackup,
 } from './backupFile'
 import { NOUN } from '@shared/brand'
 import { N_, t, tn } from '@shared/i18n'
@@ -222,7 +222,7 @@ export async function applyBackup(p: ParsedBackup, user: { id: number } | null, 
   // a device already in use keeps its place; a new one opens where the backup left off
   if (content.position && !(await localPosition())) { savePosition(content.position, uid !== null); res.position = true }
 
-  const settings = content.prefs ? knownPrefs(content.prefs) : null
+  const settings = content.prefs ? settingsPatch(content.prefs) : null
   if (settings) {
     const now = prefs.get() as unknown as Record<string, unknown>
     // "your settings are back" only when something was different
@@ -230,16 +230,6 @@ export async function applyBackup(p: ParsedBackup, user: { id: number } | null, 
     if (res.settings) prefs.set(settings)
   }
   return res
-}
-
-/** A theme this build does not have is left out, so the reader's current one stays. */
-function knownPrefs(p: BackupPrefs): Partial<Prefs> | null {
-  const { theme, themeLight, themeDark, ...rest } = p
-  const out: Partial<Prefs> = { ...rest }
-  if (theme === 'system' || (theme && isThemeId(theme))) out.theme = theme as Prefs['theme']
-  if (themeLight && isThemeId(themeLight)) out.themeLight = themeLight
-  if (themeDark && isThemeId(themeDark)) out.themeDark = themeDark
-  return Object.keys(out).length ? out : null
 }
 
 interface Restored { restored: { days: number; credits: number; chapters: number; badges: number } }

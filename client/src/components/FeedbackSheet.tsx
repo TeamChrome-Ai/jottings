@@ -15,7 +15,7 @@ import { Button, ErrorText, Input, Row, Sheet, SwitchRow, T } from './ui'
  * offers to add the read-aloud log (lib/readAloudLog.ts), on unless the reader turns it off: a stopped reading is the
  * fault it traces, and the reader sees it go.
  */
-export default function FeedbackSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function FeedbackSheet({ open, onClose, draft = '' }: { open: boolean; onClose: () => void; /** what the form opens with (Ask's draft_feedback) */ draft?: string }) {
   const toast = useToast()
   const { user } = useAuth()
   const [message, setMessage] = useState('')
@@ -26,9 +26,9 @@ export default function FeedbackSheet({ open, onClose }: { open: boolean; onClos
   const [withLog, setWithLog] = useState(true)
   useEffect(() => {
     if (!open) return
-    setMessage(''); setEmail(''); setErr(null); setBusy(false); setWithLog(true)
+    setMessage(draft); setEmail(''); setErr(null); setBusy(false); setWithLog(true)
     hasReadAloudLog().then(setHasLog, () => setHasLog(false))
-  }, [open])
+  }, [open, draft])
   const addLog = hasLog && withLog
 
   const version = appVersionLabel(Constants.expoConfig?.version, Constants.expoConfig?.android?.versionCode)

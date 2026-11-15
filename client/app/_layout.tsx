@@ -9,7 +9,7 @@ import * as SplashScreen from 'expo-splash-screen'
 import * as WebBrowser from 'expo-web-browser'
 import RootGesture from '../src/components/RootGesture'
 import ThemeVeil from '../src/components/ThemeVeil'
-import { Tour, Welcome } from '../src/components/FirstRun'
+import { News, Tour, Welcome } from '../src/components/FirstRun'
 import { OverlayHost } from '../src/store/overlay'
 import CrashScreen from '../src/components/CrashScreen'
 import { reloadForNewVersion } from '../src/lib/staleBuild'
@@ -22,6 +22,7 @@ import { isCustomKey } from '../src/lib/customFonts'
 import { AuthProvider } from '../src/store/auth'
 import { PrefsProvider, usePref, usePrefsStore } from '../src/store/prefs'
 import { PlayerProvider } from '../src/store/player'
+import AssistantHost from '../src/components/AssistantHost'
 import { ToastProvider } from '../src/store/toast'
 import { useInkRoot, useInks, useResolvedTheme, useThemeDef } from '../src/hooks/useTheme'
 import { useStreakReminder } from '../src/hooks/useStreakReminder'
@@ -142,6 +143,7 @@ function Shell() {
       <Navigator />
       <Tour />
       <Welcome ready={facesReady} />
+      <News ready={facesReady} />
       {/* the tour (and its theme blob) draw here, or inside an open sheet when there is one */}
       <OverlayHost />
       <ThemeVeil />
@@ -152,6 +154,7 @@ function Shell() {
       <ForcedRename />
       <LibraryMerge />
       <Widgets />
+      <AssistantHost />
     </Fragment>
   )
 }
@@ -207,6 +210,7 @@ function Navigator() {
         <Stack.Screen name="friends/index" options={{ title: t('Friends') }} />
         <Stack.Screen name="groups/index" options={{ title: t('Groups') }} />
         <Stack.Screen name="companion" options={{ title: t('Ministry') }} />
+        <Stack.Screen name="ask" options={{ title: t('Ask') }} />
         <Stack.Screen name="paths" options={{ title: t('Paths') }} />
         <Stack.Screen name="themes" options={{ title: t('Themes') }} />
         <Stack.Screen name="credits" options={{ title: t('Credits') }} />

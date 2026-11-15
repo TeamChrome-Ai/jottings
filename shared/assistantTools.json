@@ -1,0 +1,158 @@
+[
+  {
+    "name": "search_library",
+    "description": "The ten paragraphs of the ministry library nearest a question in meaning, each with its id, author, work, section and text. Use it for every question about the Bible, doctrine or the Christian life.",
+    "input": { "type": "object", "properties": { "question": { "type": "string", "description": "The reader's question, in plain words." } }, "required": ["question"], "additionalProperties": false },
+    "runs": "server",
+    "changes": false
+  },
+  {
+    "name": "ministry_on_verse",
+    "description": "Paragraphs of the ministry library that expound one verse, best first, each with its id, author, work, section and text.",
+    "input": { "type": "object", "properties": { "reference": { "type": "string", "description": "One verse, as John 3:16." } }, "required": ["reference"], "additionalProperties": false },
+    "runs": "server",
+    "changes": false
+  },
+  {
+    "name": "read_paragraph",
+    "description": "One paragraph of the ministry library, whole, by its id.",
+    "input": { "type": "object", "properties": { "id": { "type": "integer", "description": "The paragraph's id, from another tool's result." } }, "required": ["id"], "additionalProperties": false },
+    "runs": "server",
+    "changes": false
+  },
+  {
+    "name": "read_verses",
+    "description": "Bible verses in J. N. Darby's translation: one verse, a range within a chapter, or a whole chapter.",
+    "input": { "type": "object", "properties": { "reference": { "type": "string", "description": "As John 3:16, Romans 8:28-39 or Psalm 23." } }, "required": ["reference"], "additionalProperties": false },
+    "runs": "server",
+    "changes": false
+  },
+  {
+    "name": "look_up_word",
+    "description": "Articles of Morrish's Concise Bible Dictionary for a word or a subject, each with its id, headword and text.",
+    "input": { "type": "object", "properties": { "word": { "type": "string" } }, "required": ["word"], "additionalProperties": false },
+    "runs": "server",
+    "changes": false
+  },
+  {
+    "name": "app_guide",
+    "description": "The sections of the app's guide on a topic: what a screen or a setting does and how to use it, step by step, and which screen to open.",
+    "input": { "type": "object", "properties": { "topic": { "type": "string", "description": "A few words, as add my own font or bookmarks." } }, "required": ["topic"], "additionalProperties": false },
+    "runs": "server",
+    "changes": false
+  },
+  {
+    "name": "open_chapter",
+    "description": "Open the Bible at a chapter, or at a verse of it.",
+    "input": { "type": "object", "properties": { "reference": { "type": "string", "description": "As John 3 or John 3:16." } }, "required": ["reference"], "additionalProperties": false },
+    "runs": "app",
+    "changes": false
+  },
+  {
+    "name": "open_paragraph",
+    "description": "Open a paragraph of the ministry library in its reader, by an id a tool gave in this conversation.",
+    "input": { "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"], "additionalProperties": false },
+    "runs": "app",
+    "changes": false
+  },
+  {
+    "name": "open_screen",
+    "description": "Open a screen of the app.",
+    "input": { "type": "object", "properties": { "screen": { "type": "string", "enum": ["home", "search", "stats", "settings", "settings/text", "settings/page", "settings/daily", "settings/motion", "settings/offline", "settings/about", "settings/account", "themes", "bookmarks", "jottings", "ministry", "dictionary", "chronology", "paths", "credits", "about", "acknowledgments"] } }, "required": ["screen"], "additionalProperties": false },
+    "runs": "app",
+    "changes": false
+  },
+  {
+    "name": "open_dictionary_entry",
+    "description": "Open an article of the dictionary, by the id look_up_word gave.",
+    "input": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"], "additionalProperties": false },
+    "runs": "app",
+    "changes": false
+  },
+  {
+    "name": "show_bookmarks",
+    "description": "Open the reader's bookmarks.",
+    "input": { "type": "object", "properties": {}, "additionalProperties": false },
+    "runs": "app",
+    "changes": false
+  },
+  {
+    "name": "get_settings",
+    "description": "The reader's settings as they are now: the same fields change_settings takes.",
+    "input": { "type": "object", "properties": {}, "additionalProperties": false },
+    "runs": "app",
+    "changes": false
+  },
+  {
+    "name": "change_settings",
+    "description": "Change one or more of the reader's settings. Only the fields named change; a value outside its range is refused and the result says the range. Light themes: paper (the default), sepia, linen, sand, mint, sky, rose, lavender, olive. Dark: slate (the default), midnight, forest, wine, nord, plum, graphite, ocean. True black: black, black-ember, black-jade, black-ice, black-rose, black-gold, black-lilac, black-white. system follows the device between themeLight and themeDark.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "theme": { "type": "string", "enum": ["system", "paper", "sepia", "linen", "sand", "mint", "sky", "rose", "lavender", "olive", "slate", "midnight", "forest", "wine", "nord", "plum", "graphite", "ocean", "black", "black-ember", "black-jade", "black-ice", "black-rose", "black-gold", "black-lilac", "black-white"] },
+        "themeLight": { "type": "string", "enum": ["paper", "sepia", "linen", "sand", "mint", "sky", "rose", "lavender", "olive"], "description": "The light theme when theme is system." },
+        "themeDark": { "type": "string", "enum": ["slate", "midnight", "forest", "wine", "nord", "plum", "graphite", "ocean", "black", "black-ember", "black-jade", "black-ice", "black-rose", "black-gold", "black-lilac", "black-white"], "description": "The dark theme when theme is system." },
+        "font": { "type": "string", "enum": ["serif", "sans", "dyslexic"] },
+        "fontSize": { "type": "number", "minimum": 14, "maximum": 32, "description": "The text size in px; 19 as the app comes." },
+        "lineHeight": { "type": "number", "minimum": 1.2, "maximum": 2.4 },
+        "letterSpacing": { "type": "number", "minimum": 0, "maximum": 0.2, "description": "In em." },
+        "wordSpacing": { "type": "number", "minimum": 0, "maximum": 1, "description": "In em." },
+        "verseNumbers": { "type": "boolean" },
+        "paragraphs": { "type": "boolean", "description": "Verses run on as paragraphs; off, each verse on its own line." },
+        "showNotes": { "type": "boolean", "description": "Darby's footnote markers in the text." },
+        "noteLetters": { "type": "string", "enum": ["chapter", "printed"], "description": "Footnote letters once through the chapter, or restarting on each printed page." },
+        "moreColours": { "type": "boolean", "description": "Offer twelve highlight colours instead of four." },
+        "reduceMotion": { "type": "boolean" },
+        "motionSpeed": { "type": "number", "minimum": 0.5, "maximum": 1.5, "description": "Animation speed; 1 as the app comes." },
+        "align": { "type": "string", "enum": ["left", "center", "right"], "description": "Where the column sits on a wide screen." },
+        "width": { "type": "string", "enum": ["narrow", "medium", "wide", "full"], "description": "How wide the column may grow on a wide screen." },
+        "ttsSpeed": { "type": "number", "minimum": 0.5, "maximum": 2, "description": "Read-aloud speed." },
+        "ttsNumbers": { "type": "boolean", "description": "Read the verse numbers aloud." },
+        "ttsHeading": { "type": "boolean", "description": "Read the chapter's heading aloud." },
+        "ttsPause": { "type": "string", "enum": ["none", "short", "long"], "description": "The pause between verses." },
+        "ttsWord": { "type": "boolean", "description": "Light each word as it is read." },
+        "ttsAutoNext": { "type": "boolean", "description": "Go on to the next chapter when one ends." },
+        "dailyGoal": { "type": "integer", "enum": [10, 15, 20, 30, 45, 60], "description": "Minutes of reading a day." },
+        "readerName": { "type": "string", "maxLength": 40, "description": "What Home calls the reader." }
+      },
+      "additionalProperties": false
+    },
+    "runs": "app",
+    "changes": true
+  },
+  {
+    "name": "start_listening",
+    "description": "Read a chapter aloud, from a verse if one is given; with no reference, the chapter the reader is at.",
+    "input": { "type": "object", "properties": { "reference": { "type": "string", "description": "As John 3 or John 3:16." } }, "additionalProperties": false },
+    "runs": "app",
+    "changes": true
+  },
+  {
+    "name": "stop_listening",
+    "description": "Stop reading aloud.",
+    "input": { "type": "object", "properties": {}, "additionalProperties": false },
+    "runs": "app",
+    "changes": true
+  },
+  {
+    "name": "add_bookmark",
+    "description": "Bookmark a verse, or a whole chapter.",
+    "input": { "type": "object", "properties": { "reference": { "type": "string", "description": "As John 3:16 or John 3." } }, "required": ["reference"], "additionalProperties": false },
+    "runs": "app",
+    "changes": true
+  },
+  {
+    "name": "add_highlight",
+    "description": "Highlight a verse or a range of verses within a chapter in a colour.",
+    "input": { "type": "object", "properties": { "reference": { "type": "string", "description": "As John 3:16 or John 3:16-18." }, "colour": { "type": "string", "enum": ["yellow", "green", "blue", "pink", "orange", "red", "purple", "teal", "sky", "lime", "brown", "grey"] } }, "required": ["reference", "colour"], "additionalProperties": false },
+    "runs": "app",
+    "changes": true
+  },
+  {
+    "name": "draft_feedback",
+    "description": "Open the feedback form with a message to the developer filled in. The reader reads it, changes it if they wish, and sends it themselves; this sends nothing.",
+    "input": { "type": "object", "properties": { "message": { "type": "string", "maxLength": 2000 } }, "required": ["message"], "additionalProperties": false },
+    "runs": "app",
+    "changes": false
+  }
+]

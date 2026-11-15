@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router'
 import FeedbackSheet from '../../src/components/FeedbackSheet'
 import { playWelcome } from '../../src/store/welcome'
 import { startTour } from '../../src/store/tour'
+import { playNews } from '../../src/store/whatsNew'
+import { WHATS_NEW } from '@shared/whatsNew'
 import { useEdition } from '../../src/lib/edition'
 import { hasChronology } from '../../src/lib/editionCore'
 import { Card, ListRow, Screen, Sheet } from '../../src/components/ui'
@@ -31,7 +33,7 @@ export default function AboutSettings() {
   )
 }
 
-/** Settings → About → Welcome and tour: the welcome or the full tour, each after the sheet has gone and this page with it
+/** Settings → About → Welcome and tour: the welcome, the full tour or the news of the last update, each after the sheet has gone and this page with it
  * (the tour moves between tabs, which it does from the tabs, not from a page pushed over them). The short tour runs on a
  * new device from the welcome; the full one starts with its six steps. */
 function AgainSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -42,6 +44,7 @@ function AgainSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
       <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
         <ListRow icon="play" label={t('Welcome')} detail={t('The opening page and first steps')} onPress={() => after(playWelcome)} />
         <ListRow icon="info" label={t('Full tour')} detail={t('Every screen and sheet, one step at a time')} onPress={() => after(() => startTour(null, true))} />
+        <ListRow icon="play" label={t('What is new')} detail={t('The three scenes of version {version}', { version: WHATS_NEW.version })} onPress={() => after(playNews)} />
       </View>
     </Sheet>
   )

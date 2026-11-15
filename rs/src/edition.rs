@@ -55,9 +55,9 @@ impl AppState {
 }
 
 /// An author the edition leaves out everywhere: the companion, the library, its search, Ministry on a verse and the
-/// offline packs. C. A. Coates, J. B. Stoney and F. E. Raven are texts of a publisher's edition
+/// offline packs. C. A. Coates, J. B. Stoney, F. E. Raven and J. Taylor Sr. are texts of a publisher's edition
 /// (client/src/lib/editionCore.ts EDITION_AUTHORS).
-pub fn hides_author(ed: Edition, author: &str) -> bool { ed == Edition::E1890 && matches!(author, "coates" | "stoney" | "raven") }
+pub fn hides_author(ed: Edition, author: &str) -> bool { ed == Edition::E1890 && matches!(author, "coates" | "stoney" | "raven" | "taylor") }
 /// The path a reader or a group on `id` is shown: the Coates path reads as the Synopsis path while Coates is hidden.
 /// Only what is shown changes; the stored id stays.
 pub fn shown_path(ed: Edition, id: &str) -> &str { if ed == Edition::E1890 && id == "coates" { "synopsis" } else { id } }
@@ -143,6 +143,8 @@ mod tests {
         assert_eq!(Edition::parse("1884"), None);
         assert_eq!(Edition::E1890.as_str(), "1890");
         assert!(hides_author(Edition::E1890, "coates") && !hides_author(Edition::E1961, "coates") && !hides_author(Edition::E1890, "darby"));
+        for a in ["coates", "stoney", "raven", "taylor"] { assert!(hides_author(Edition::E1890, a) && !hides_author(Edition::E1961, a), "{a}") }
+        for a in ["darby", "bellett", "wigram"] { assert!(!hides_author(Edition::E1890, a), "{a}") }
         assert_eq!((shown_path(Edition::E1890, "coates"), shown_path(Edition::E1961, "coates"), shown_path(Edition::E1890, "gospels")), ("synopsis", "coates", "gospels"));
     }
 
@@ -261,6 +263,42 @@ mod tests {
         assert_eq!(cache_control(&app, "/bible/43/3?ed=1890").await, (200, "public, max-age=86400".into()));
         assert_eq!(cache_control(&app, "/edition").await, (200, "public, max-age=60".into()));
         assert_eq!(cache_control(&app, "/bible/books?ed=1961").await, (200, "public, max-age=86400".into()));
+    }
+
+    /// J. Taylor Sr. is left out as Coates is: of the library, a work, a verse's ministry, both searches and the offline
+    /// packs, in the 1890 edition and under the cleanse, and he comes back with the 1961 edition.
+    #[tokio::test]
+    async fn taylor_is_hidden_in_1890_and_under_the_cleanse_and_comes_back() {
+        let db = crate::ministry::tests::fixture();
+        crate::ministry::tests::with_taylor(&db);
+        let (app, pool) = crate::testkit::app_with_ministry(&db);
+        let ids = |v: &Value, list: &str, key: &str| v[list].as_array().unwrap().iter().map(|a| a[key].as_str().unwrap().to_string()).collect::<Vec<_>>();
+        let check = |shown: bool, cl: &'static str| {
+            let app = app.clone();
+            async move {
+                let has = |v: Vec<String>| v.contains(&"taylor".to_string());
+                assert_eq!(has(ids(&call(&app, "GET", &format!("/ministry{cl}"), None, Value::Null).await.1, "authors", "id")), shown);
+                assert_eq!(has(ids(&call(&app, "GET", &format!("/ministry/offline{cl}"), None, Value::Null).await.1, "authors", "id")), shown);
+                assert_eq!(has(ids(&call(&app, "GET", &format!("/ministry/refs/43/4/11{cl}"), None, Value::Null).await.1, "groups", "author")), shown);
+                assert_eq!(has(ids(&call(&app, "GET", &format!("/ministry/search?q=intimacy{}", cl.replace('?', "&")), None, Value::Null).await.1, "hits", "author")), shown);
+                let text = call(&app, "GET", &format!("/ministry/text?q=the+well+is+deep{}", cl.replace('?', "&")), None, Value::Null).await.1;
+                assert_eq!((has(ids(&text, "authors", "id")), has(ids(&text, "items", "author")), text["total"].as_i64()), (shown, shown, Some(shown as i64)));
+                let want = if shown { 200 } else { 404 };
+                for uri in ["/ministry/taylor/volume-20", "/ministry/taylor/volume-20/1", "/ministry/refs/43/4/11?author=taylor", "/ministry/offline/taylor", "/ministry/offline/taylor/volume-20"] {
+                    let uri = if cl.is_empty() { uri.to_string() } else if uri.contains('?') { format!("{uri}&cl=1") } else { format!("{uri}?cl=1") };
+                    assert_eq!(call(&app, "GET", &uri, None, Value::Null).await.0, want, "{uri}");
+                }
+            }
+        };
+        check(true, "").await;
+        flip(&pool, Edition::E1890);
+        check(false, "").await;
+        flip(&pool, Edition::E1961);
+        check(true, "").await;
+        crate::cleanse::apply(&pool.get().unwrap()).unwrap();
+        check(false, "?cl=1").await;
+        crate::cleanse::undo(&pool.get().unwrap()).unwrap();
+        check(true, "").await;
     }
 
     #[tokio::test]

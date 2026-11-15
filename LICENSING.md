@@ -85,6 +85,7 @@ release can still only be used under the AGPL.
 | 1.3.10 | 12 November 2026 | 12 November 2027 |
 | 1.3.11 | 13 November 2026 | 13 November 2027 |
 | 1.3.12 | 13 November 2026 | 13 November 2027 |
+| 2.0.0 | 14 November 2026 | 14 November 2027 |
 
 ## 6. What these licenses do not cover
 
@@ -95,6 +96,9 @@ release can still only be used under the AGPL.
 - Fonts. They keep their own licenses, which sit next to them in `client/assets/fonts/`.
 - Third-party code. Code that this project depends on or adapts keeps its own license. See the lockfiles and the
   notices in the files concerned, such as `shared/qr.ts`.
+- Hosted models. Ask (`docs/ASSISTANT.md`) sends a reader's messages to a hosted chat model, OpenAI's by default, under
+  that provider's terms. No part of the model is in this repository, and the ministry an answer cites keeps its own
+  terms.
 
 ## 7. Parts that stay AGPL-only
 

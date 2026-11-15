@@ -78,7 +78,7 @@ pub struct Ministry {
     /** The database has `sections.figures` (built after figures were added); an older one is served without them. */
     pub(crate) figures: bool,
     /// The database has `paras_fts`, the paragraphs' words; in an older one no words are found.
-    fts: bool,
+    pub(crate) fts: bool,
     /// The data's version and where its offline packs are kept (ministry_offline.rs), built on first request.
     pub(crate) version: String,
     pub(crate) offline_dir: std::path::PathBuf,
@@ -224,13 +224,83 @@ impl Ministry {
         let k = self.authors.iter().position(|a| a.ids.0 <= id && id <= a.ids.1)?;
         (!crate::edition::hides_author(s.edition, &self.authors[k].id) && !(s.cleanse && self.cleansed_out(id, 0))).then_some(k)
     }
-    async fn db<T: Send + 'static>(self: &Arc<Self>, f: impl FnOnce(&rusqlite::Connection) -> ApiResult<T> + Send + 'static) -> ApiResult<T> {
+    /// The paragraphs `GET /ministry/text?q=` lists for `q` in the edition served: its `exact` ones, or with `apart` all.
+    /// None when there is nothing to look for or no `paras_fts`.
+    pub(crate) fn text_ids(&self, c: &rusqlite::Connection, q: &str, s: Served, apart: bool) -> ApiResult<HashSet<i64>> {
+        let mut found = HashSet::new();
+        let Some(w) = TextQuery::read(&looked_for(q)).filter(|_| self.fts) else { return Ok(found) };
+        let tiers: &[Tier] = if apart { &[Tier::Exact, Tier::Apart] } else { &[Tier::Exact] };
+        let mut st = c.prepare_cached("SELECT rowid FROM paras_fts WHERE paras_fts MATCH ?1")?;
+        for expr in tiers.iter().filter_map(|&t| w.expr(t)) {
+            for id in st.query_map([expr], |r| r.get::<_, i64>(0))? {
+                let id = id?;
+                if self.author_if_served(id, s).is_some() { found.insert(id); }
+            }
+        }
+        Ok(found)
+    }
+    pub(crate) fn text_total(&self, c: &rusqlite::Connection, q: &str, s: Served, apart: bool) -> ApiResult<usize> { Ok(self.text_ids(c, q, s, apart)?.len()) }
+    /// The paragraphs citing `verse` (book * 1e6 + chapter * 1e3 + verse) in their own text in the edition served: not in
+    /// a footnote or a figure row, and not by the index's row for the whole chapter (verse 0).
+    pub(crate) fn citing_ids(&self, c: &rusqlite::Connection, verse: i64, s: Served) -> ApiResult<Vec<i64>> {
+        let mut st = c.prepare_cached("SELECT DISTINCT para FROM refs WHERE verse = ?1 AND note = 0")?;
+        let mut out = Vec::new();
+        for id in st.query_map([verse], |r| r.get::<_, i64>(0))? { let id = id?; if self.author_if_served(id, s).is_some() { out.push(id) } }
+        Ok(out)
+    }
+    pub(crate) fn citing(&self, c: &rusqlite::Connection, verse: i64, s: Served) -> ApiResult<usize> { Ok(self.citing_ids(c, verse, s)?.len()) }
+    /// A paragraph as `/ministry/text` lists one, with its opening for a snippet and no `hl`; None for one the edition
+    /// served leaves out.
+    pub(crate) fn passage(&self, c: &rusqlite::Connection, id: i64, s: Served) -> ApiResult<Option<Value>> {
+        let Some(k) = self.author_if_served(id, s) else { return Ok(None) };
+        let a = &self.authors[k];
+        Ok(item(c, self, a, id, 0, s.cleanse, |_| (0, 0))?.map(|mut i| {
+            i["author"] = json!(a.id);
+            if let Some(o) = i.as_object_mut() { o.remove("hl"); }
+            i
+        }))
+    }
+    /// A paragraph as the assistant's library tools give it (shared/assistantTools.ts ParagraphRef): its place as
+    /// `passage` has it, its id, and its plain text as served, cut at `chars`; None for one the edition served leaves out.
+    pub(crate) fn paragraph(&self, c: &rusqlite::Connection, id: i64, s: Served, chars: usize) -> ApiResult<Option<Value>> {
+        let Some(mut item) = self.passage(c, id, s)? else { return Ok(None) };
+        let text: String = c.prepare_cached("SELECT text FROM paras WHERE id = ?1")?.query_row([id], |r| r.get(0))?;
+        let mut text = plain(&text);
+        if s.cleanse && item["work"]["collection"].as_str().is_some_and(cleanse::notes_hidden) { text = cleanse::strip_callers_at(&text, 0, 0).0 }
+        if text.chars().count() > chars { text = format!("{}…", text.chars().take(chars).collect::<String>().trim_end()) }
+        if let Some(o) = item.as_object_mut() { o.remove("snippet"); o.insert("id".into(), json!(id)); o.insert("text".into(), json!(text)); }
+        Ok(Some(item))
+    }
+    /// The paragraphs citing `verse` in their own text, in the edition served, best first (the index's rank, the
+    /// chapter's own row counting for every verse of it), at most `most`.
+    pub(crate) fn on_verse(&self, c: &rusqlite::Connection, verse: i64, s: Served, most: usize) -> ApiResult<Vec<i64>> {
+        let mut st = c.prepare_cached("SELECT para, MIN(rank) FROM refs WHERE verse IN (?1, ?2) AND note = 0 GROUP BY para ORDER BY 2, para")?;
+        let mut out = Vec::new();
+        for row in st.query_map([verse, verse / 1000 * 1000], |r| r.get::<_, i64>(0))? {
+            let id = row?;
+            if self.author_if_served(id, s).is_some() { out.push(id) }
+            if out.len() == most { break }
+        }
+        Ok(out)
+    }
+    /// The names of the enabled authors the edition `ed` shows, in the library's order.
+    pub(crate) fn author_names(&self, ed: Edition) -> Vec<String> { self.authors.iter().filter(|a| !crate::edition::hides_author(ed, &a.id)).map(|a| a.name.clone()).collect() }
+    /// The enabled authors' paragraphs, ascending: the rows data/ministry_vec.bin must have (near.rs). Read from the
+    /// covering index `paras_section` and sorted here: a scan of `paras` in id order would map its 122 MB of text into
+    /// the server's memory.
+    pub(crate) fn paragraph_ids(&self) -> ApiResult<Vec<i64>> {
+        let c = self.pool.get()?;
+        let mut ids: Vec<i64> = c.prepare("SELECT id FROM paras WHERE author IN (SELECT id FROM authors WHERE enabled = 1)")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        ids.sort_unstable();
+        Ok(ids)
+    }
+    pub(crate) async fn db<T: Send + 'static>(self: &Arc<Self>, f: impl FnOnce(&rusqlite::Connection) -> ApiResult<T> + Send + 'static) -> ApiResult<T> {
         let pool = self.pool.clone();
         tokio::task::spawn_blocking(move || { let c = pool.get()?; f(&c) }).await.map_err(|_| ApiError::internal("server error"))?
     }
 }
 
-fn day(mut r: Response) -> Response { r.headers_mut().insert(header::CACHE_CONTROL, "public, max-age=86400".parse().unwrap()); r }
+pub(crate) fn day(mut r: Response) -> Response { r.headers_mut().insert(header::CACHE_CONTROL, "public, max-age=86400".parse().unwrap()); r }
 fn get(s: &AppState) -> Option<&Arc<Ministry>> { s.ministry.as_ref() }
 fn need(s: &AppState) -> ApiResult<&Arc<Ministry>> { get(s).ok_or_else(|| ApiError::not_found("no such author")) }
 
@@ -824,6 +894,21 @@ pub mod tests {
         "#).unwrap();
         index_words(&c);
         path.to_str().unwrap().to_string()
+    }
+
+    /// `fixture()` with J. Taylor Sr. as the builder writes him: an author after the others (ids from 3000), one address
+    /// of one booklet, with a paragraph on John 4:11.
+    pub fn with_taylor(path: &str) {
+        let c = rusqlite::Connection::open(path).unwrap();
+        c.execute_batch(r#"
+            INSERT INTO authors VALUES ('taylor', 3, 'J. Taylor Sr.', 'Taylor', 1870, 1953, 1, 'pd', 'J. Taylor Sr. (1870–1953); public domain.');
+            INSERT INTO collections VALUES ('taylor', 'ministry', 0, 'Ministry');
+            INSERT INTO works VALUES ('taylor', 'volume-20', 'ministry', 0, 'Volume 20', 'addresses', 1, '[{"title":"Intimacy","part":"The more excellent way, Edinburgh (1924)","passages":[[43,4,1,4,0]]}]');
+            INSERT INTO sections VALUES ('taylor', 'volume-20', 1, '{"title":"Intimacy","part":"The more excellent way, Edinburgh (1924)","passages":[[43,4,1,4,0]]}', NULL, NULL);
+            INSERT INTO paras VALUES (3000, 'taylor', 'volume-20', 1, 0, 'The well is deep (John 4:11).');
+            INSERT INTO refs VALUES (43004011, 3, 11001000, 3000, 0, 18, 27);
+        "#).unwrap();
+        index_words(&c);
     }
 
     /// `paras_fts` as the builder fills it: every paragraph's plain text under its id.
