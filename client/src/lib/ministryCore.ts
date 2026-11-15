@@ -16,7 +16,7 @@
  * `peek*` answer synchronously from memory: a page a turn carries in shows in the same commit, with no spinner.
  */
 import type { AuthorId } from '@shared/companion'
-import type { Library, MinistryReading, MinistrySection, SectionHit, SectionSearch, WorkContents } from '@shared/ministry'
+import type { Library, MinistryReading, MinistrySection, SectionHit, SectionSearch, TextSearch, WorkContents } from '@shared/ministry'
 import { get } from './api'
 import { loadCompanionIndex, loadCompanionSection } from './companion'
 import { contentsFromIndex, libraryFromCompanion } from './libraryNav'
@@ -33,6 +33,19 @@ const isCompanionAuthor = (a: string): a is AuthorId => (COMPANION as readonly s
 /** With downloaded authors on hand the server gets this long for the list before the phone's copy shows. */
 const LIBRARY_TIMEOUT_MS = 4_000
 
+export type TextAnswer = ({ kind: 'found' } & TextSearch) | { kind: 'unavailable' } | { kind: 'unsupported' }
+export interface TextAsk { page?: number; author?: string }
+const NOTHING: TextAnswer = { kind: 'found', q: '', total: 0, exact: 0, page: 1, pages: 1, authors: [], items: [] }
+
+const isTextSearch = (r: unknown): r is TextSearch => {
+  const s = r as TextSearch | null
+  return !!s && typeof s.q === 'string' && [s.total, s.exact, s.page, s.pages].every(n => typeof n === 'number')
+    && Array.isArray(s.authors) && s.authors.every(a => typeof a?.id === 'string' && typeof a.short === 'string' && typeof a.total === 'number')
+    && Array.isArray(s.items) && s.items.every(i => typeof i?.author === 'string' && typeof i.work?.id === 'string' && typeof i.n === 'number'
+      && typeof i.para === 'number' && typeof i.snippet === 'string' && Array.isArray(i.hl) && i.hl.length === 2)
+}
+const statusOf = (e: unknown) => (e as { status?: unknown } | null)?.status
+
 /**
  * `shown`: whether the edition shows an author (editionCore.ts authorShown); one it leaves out is in no list and has no
  * contents or section, whatever is held for it. `reset` drops the list and the searches (another edition's answers).
@@ -42,6 +55,9 @@ export function createMinistryLoaders(store: OfflineStore | null, shown: (author
   const contents = new Map<string, WorkContents>()
   const sections = new Map<string, MinistrySection>()
   const searches = new Map<string, SectionHit[]>()
+  const texts = new Map<string, TextAnswer>()
+  let textUnsupported = false
+  let resets = 0
   const inflight = new Map<string, Promise<unknown>>()
   /** One request per key at a time: a page and its neighbour asking together share it. */
   const once = <T,>(key: string, run: () => Promise<T>): Promise<T> => {
@@ -132,14 +148,38 @@ export function createMinistryLoaders(store: OfflineStore | null, shown: (author
     })
   }
 
+  function searchText(query: string, { page = 1, author }: TextAsk = {}): Promise<TextAnswer> {
+    const q = query.trim()
+    if (!q) return Promise.resolve(NOTHING)
+    if (textUnsupported) return Promise.resolve({ kind: 'unsupported' })
+    const k = `${q}|${author ?? ''}|${page}`
+    const hit = texts.get(k)
+    if (hit) return Promise.resolve(hit)
+    const asked = resets
+    return once(`x:${asked}:${k}`, async (): Promise<TextAnswer> => {
+      try {
+        const r = await get<unknown>(`/ministry/text?q=${encodeURIComponent(q)}${page > 1 ? `&page=${page}` : ''}${author ? `&author=${encodeURIComponent(author)}` : ''}`)
+        if (!isTextSearch(r)) return { kind: 'unavailable' }
+        const found: TextAnswer = { kind: 'found', ...r }
+        if (asked === resets) texts.set(k, found)
+        return found
+      } catch (e) {
+        const serverOlderThanTheSearch = statusOf(e) === 404 && !author
+        if (serverOlderThanTheSearch) { textUnsupported = true; return { kind: 'unsupported' } }
+        return { kind: 'unavailable' }
+      }
+    })
+  }
+
   return {
     loadLibrary,
     searchSections,
+    searchText,
     peekLibrary: () => (library ? visible(library) : null),
     loadContents,
     peekContents: (author: string, work: string) => (shown(author) ? contents.get(`${author}/${work}`) : undefined),
     loadSection,
     peekSection: (author: string, work: string, n: number) => (shown(author) ? sections.get(`${author}/${work}/${n}`) : undefined),
-    reset: () => { library = null; searches.clear() },
+    reset: () => { library = null; searches.clear(); texts.clear(); resets++ },
   }
 }

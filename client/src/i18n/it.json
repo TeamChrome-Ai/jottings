@@ -222,6 +222,10 @@
   "one": "{n} in più",
   "other": "altre {n}"
  },
+ "{n} near\u0000{n} near": {
+  "one": "{n} vicino",
+  "other": "{n} vicini"
+ },
  "{n} new friend\u0000{n} new friends": {
   "one": "{n} nuovo amico",
   "other": "{n} nuovi amici"
@@ -260,6 +264,14 @@
  "{n} paper\u0000{n} papers": {
   "one": "{n} scritto",
   "other": "{n} scritti"
+ },
+ "{n} paragraph with the words near one another\u0000{n} paragraphs with the words near one another": {
+  "one": "{n} paragrafo con le parole vicine tra loro",
+  "other": "{n} paragrafi con le parole vicine tra loro"
+ },
+ "{n} paragraph\u0000{n} paragraphs": {
+  "one": "{n} paragrafo",
+  "other": "{n} paragrafi"
  },
  "{n} post\u0000{n} posts": {
   "one": "{n} post",
@@ -505,6 +517,7 @@
  "align\u0004Right": "Destra",
  "All": "Tutto",
  "All {letter}": "Tutta la {letter}",
+ "All {n}": "Tutti {n}",
  "All {n} footnote\u0000All {n} footnotes": {
   "one": "{n} nota",
   "other": "Tutte le {n} note"
@@ -1513,9 +1526,9 @@
  "Search": "Cerca",
  "Search {n} articles": "Cerca in {n} voci",
  "Search {query}": "Cerca {query}",
- "Search by passage or title": "Cerca per passo o titolo",
+ "Search by passage, title or words": "Cerca per passo, titolo o parole",
  "Search the dictionary": "Cerca nel dizionario",
- "Search the ministry by passage or title": "Cerca nel ministero per passo o titolo",
+ "Search the ministry by passage, title or words": "Cerca nel ministero per passo, titolo o parole",
  "Searching {books} only. Search every book": "Ricerca solo in {books}. Cerca in tutti i libri",
  "Searching…": "Ricerca in corso…",
  "see {headword}": "vedi {headword}",
@@ -1772,6 +1785,7 @@
  "The whole Bible": "Tutta la Bibbia",
  "The whole Bible, or one Testament.": "Tutta la Bibbia, o un solo Testamento.",
  "The word": "La parola",
+ "The words near one another": "Le parole vicine tra loro",
  "Their handle and name are replaced now, and they must choose new ones the next time they open {brand}.": "Il nome utente e il nome vengono sostituiti subito, e questa persona dovrà sceglierne di nuovi la prossima volta che aprirà {brand}.",
  "Their handle exactly; there is no search.": "Il suo nome utente esatto; non c’è una ricerca.",
  "Their handle, exactly": "Il suo nome utente, esatto",

@@ -316,6 +316,7 @@ pub fn router() -> Router<AppState> {
         .route("/companion/{author}/{work}/{n}", get(crate::companion::section))
         .route("/ministry", get(crate::ministry::library))
         .route("/ministry/search", get(crate::ministry::search))
+        .route("/ministry/text", get(crate::ministry::text))
         .route("/ministry/offline", get(crate::ministry_offline::listing))
         .route("/ministry/offline/{author}", get(crate::ministry_offline::pack))
         .route("/ministry/offline/{author}/refs", get(crate::ministry_offline::refs))

@@ -2,14 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { Text, View, type ScrollView } from 'react-native'
 import { Stack, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router'
 import { AUTHORS, authorOf, formatPassages, searchCompanion, titleIsPassage, workLine, type CompanionIndex, type Place } from '@shared/companion'
-import type { CollectionSummary, Library, LibraryAuthor, SectionHit, WorkContents, WorkSummary } from '@shared/ministry'
+import { MINISTRY_AUTHORS, type CollectionSummary, type Library, type LibraryAuthor, type SectionHit, type TextHit, type WorkContents, type WorkSummary } from '@shared/ministry'
 import { paginate } from '@shared/cbd'
-import { loadContents, loadLibrary, peekContents, peekLibrary, libraryUnavailable, searchSections, unavailableFor } from '../src/lib/ministryLibrary'
-import { collectionDetail, collectionOfKind, contentsHeading, countOf, newSectionHits, opensToContents, positionKey, readerLink, searchWorks, sectionHitDetail, shelfOf, shortTitle, type WorkHit } from '../src/lib/libraryNav'
+import { loadContents, loadLibrary, peekContents, peekLibrary, libraryUnavailable, searchSections, searchText, unavailableFor, type TextAnswer } from '../src/lib/ministryLibrary'
+import { apartAt, EVERY_AUTHOR, collectionDetail, collectionOfKind, contentsHeading, countOf, newSectionHits, opensToContents, paragraphLink, positionKey, readerLink, searchNote, searchWorks, sectionHitDetail, shelfOf, shortTitle, textAuthorChoices, textHeading, type WorkHit } from '../src/lib/libraryNav'
 import { lastRead, loadPositions } from '../src/lib/libraryPosition'
 import { useCompanionIndexes } from '../src/hooks/useCompanion'
 import { useEdition } from '../src/lib/edition'
 import LibraryReader from '../src/components/LibraryReader'
+import MinistryItemRow from '../src/components/MinistryItemRow'
 import { SectionsList, WorksChooser } from '../src/components/ContentsPicker'
 import { CONFIRM_MS } from '../src/components/ChapterPicker'
 import { FadeSwap, Stagger, STAGGER_CAP, useFreshList } from '../src/components/motion/nav'
@@ -18,16 +19,15 @@ import { useReduceMotion } from '../src/store/prefs'
 import { TURN_DX } from '../src/lib/motionTiming'
 import { useReadingFont } from '../src/hooks/useReadingFont'
 import { useColors } from '../src/hooks/useTheme'
-import { Card, ErrorText, H2, Input, ListRow, Screen, SPACE, Spinner, T, Tap, TYPE } from '../src/components/ui'
+import { Card, ErrorText, H2, Input, ListRow, Screen, Segmented, SPACE, Spinner, T, Tap, TYPE } from '../src/components/ui'
 import { t, tn } from '@shared/i18n'
 
 /** Rows per page of search results: the dictionary's. */
 const ROWS = 30
-/** The server's title search waits this long after the last keystroke (the library's own searches answer at once). */
 const SEARCH_WAIT_MS = 250
 
 /**
- * The ministry library. `/companion` lists the authors with their collections, with one search by passage or title;
+ * The ministry library. `/companion` lists the authors with their collections;
  * `?author=darby&collection=cw` a collection's works; `?author=…&work=…&view=contents` a work's sections (a volume of
  * papers or letters lists them before it is read; a book of the Bible opens at once); `?author=…&work=…` reads a work
  * (LibraryReader), at `n` and `p` when given (the deep link, with `from` the verse it came from), else where it was
@@ -84,12 +84,13 @@ function IndexView({ initialQuery }: { initialQuery: string }) {
     return () => { on = false; clearTimeout(t) }
   }, [query])
   const hits = useMemo(() => newSectionHits(found.hits, places), [found.hits, places])
+  const text = useTextSearch(query)
   const last = useLastRead()
   return (
     <Screen animate={false} scrollRef={scroll}>
       <Stack.Screen options={{ title: t('Ministry') }} />
-      <Input value={q} onChangeText={setQ} placeholder={t('Search by passage or title')} autoCorrect={false} autoCapitalize="none" returnKeyType="search" accessibilityLabel={t('Search the ministry by passage or title')} />
-      {query ? <Results works={works} hits={hits} pending={found.query !== query} places={places} library={library} query={query} scroll={scroll} /> : library === undefined ? <Spinner /> : !library?.authors.length ? <ErrorText>{t(libraryUnavailable)}</ErrorText> : (
+      <Input value={q} onChangeText={setQ} placeholder={t('Search by passage, title or words')} autoCorrect={false} autoCapitalize="none" returnKeyType="search" accessibilityLabel={t('Search the ministry by passage, title or words')} />
+      {query ? <Results works={works} hits={hits} titlesPending={found.query !== query} places={places} text={text} library={library} query={query} scroll={scroll} /> : library === undefined ? <Spinner /> : !library?.authors.length ? <ErrorText>{t(libraryUnavailable)}</ErrorText> : (
         <>
           {last ? (
             <Stagger index={0}>
@@ -135,14 +136,13 @@ function useLastRead() {
 
 /**
  * Search: works whose title matches, then the server's sections by title (the papers, readings and letters inside every
- * work), then sections by passage or title from the companion's own index (the Synopsis and Coates). "Nothing for …"
- * only once all three are empty and the server has answered; "Searching…" while it has not.
+ * work), then sections by passage or title from the companion's own index (the Synopsis and Coates).
  */
-function Results({ works, hits, pending, places, library, query, scroll }: { works: readonly WorkHit[]; hits: readonly SectionHit[]; pending: boolean; places: readonly Place[]; library: Library | null | undefined; query: string; scroll: RefObject<ScrollView | null> }) {
+function Results({ works, hits, titlesPending, places, text, library, query, scroll }: { works: readonly WorkHit[]; hits: readonly SectionHit[]; titlesPending: boolean; places: readonly Place[]; text: TextSearchState; library: Library | null | undefined; query: string; scroll: RefObject<ScrollView | null> }) {
   const router = useRouter()
   // results arrive with the house stagger when they first show; narrowing them by typing does not replay it
   const fresh = useFreshList('results')
-  const none = !works.length && !hits.length && !places.length
+  const note = searchNote(works.length + hits.length + places.length, text.shown?.answer, titlesPending || text.pending)
   return (
     <View style={{ gap: SPACE.l }}>
       {works.length ? (
@@ -158,7 +158,83 @@ function Results({ works, hits, pending, places, library, query, scroll }: { wor
           const passage = p.section.passages.length && !titleIsPassage(p.section.title) ? formatPassages(p.section.passages) : ''
           return { key: `${p.author}/${p.work.id}/${p.n}`, title: p.section.title, detail: [`${authorOf(p.author)!.short} · ${workLine(p)}`, passage].filter(Boolean).join(' · '), onPress: () => router.push(openWork(p.author, p.work.id, p.n)) }
         }} />
-      {none ? <T muted>{pending ? t('Searching…') : t('Nothing for “{query}”.', { query })}</T> : null}
+      <Paragraphs text={text} scroll={scroll} />
+      {note ? <T muted>{note === 'searching' ? t('Searching…') : t('Nothing for “{query}”.', { query })}</T> : null}
+    </View>
+  )
+}
+
+interface TextAskState { query: string; author: string; page: number }
+type TextSearchState = ReturnType<typeof useTextSearch>
+function useTextSearch(query: string) {
+  const [ask, setAsk] = useState<TextAskState>({ query: '', author: EVERY_AUTHOR, page: 1 })
+  const [shown, setShown] = useState<{ ask: TextAskState; answer: TextAnswer } | null>(null)
+  useEffect(() => {
+    if (!query) return
+    const t = setTimeout(() => setAsk(a => (a.query === query ? a : { query, author: EVERY_AUTHOR, page: 1 })), SEARCH_WAIT_MS)
+    return () => clearTimeout(t)
+  }, [query])
+  useEffect(() => {
+    if (!ask.query) return
+    let on = true
+    void searchText(ask.query, { author: ask.author || undefined, page: ask.page }).then(answer => { if (on) setShown({ ask, answer }) })
+    return () => { on = false }
+  }, [ask])
+  return {
+    ask,
+    shown,
+    pending: ask.query !== query || shown?.ask !== ask,
+    choose: (author: string) => setAsk(a => (a.author === author ? a : { ...a, author, page: 1 })),
+    turn: (page: number) => setAsk(a => ({ ...a, page })),
+  }
+}
+
+function Paragraphs({ text, scroll }: { text: TextSearchState; scroll: RefObject<ScrollView | null> }) {
+  const router = useRouter()
+  const reduce = useReduceMotion()
+  const [dir, setDir] = useState(0)
+  const blockY = useRef(0)
+  const answer = text.shown?.answer
+  const found = answer?.kind === 'found' ? answer : null
+  const at = text.shown?.ask
+  useEffect(() => { setDir(0) }, [found?.q])
+  const fresh = useFreshList(`text:${at?.author}#${found?.page}`)
+  if (answer?.kind === 'unavailable') return <T small muted>{t('Finding words in the ministry needs a connection to the server.')}</T>
+  if (!found?.items.length || !at) return null
+  const choices = textAuthorChoices(found)
+  const split = apartAt(found)
+  const runs: { at: number; items: readonly TextHit[]; apart?: true }[] = split === null ? [{ at: 0, items: found.items }] : [{ at: 0, items: found.items.slice(0, split) }, { at: split, items: found.items.slice(split), apart: true }]
+  const short = (id: string) => found.authors.find(a => a.id === id)?.short ?? MINISTRY_AUTHORS.find(a => a.id === id)?.short ?? id
+  const choose = (author: string) => {
+    if (!choices || author === text.ask.author) return
+    const place = (id: string) => choices.findIndex(c => c.value === id)
+    setDir(place(author) > place(text.ask.author) ? 1 : -1)
+    text.choose(author)
+  }
+  const turn = (page: number) => {
+    setDir(page > found.page ? 1 : -1)
+    text.turn(page)
+    scroll.current?.scrollTo({ y: Math.max(0, blockY.current - SPACE.s), animated: !reduce })
+  }
+  return (
+    <View style={{ gap: SPACE.m }} onLayout={e => { blockY.current = e.nativeEvent.layout.y }}>
+      <T small muted accessibilityRole="header">{textHeading(found)}</T>
+      {choices ? <Segmented value={text.ask.author} options={choices} onChange={choose} /> : null}
+      <FadeSwap k={`${found.q}|${at.author}#${found.page}`} dx={dir * TURN_DX} style={{ gap: SPACE.m }}>
+        {runs.filter(r => r.items.length).map(run => (
+          <View key={run.at} style={{ gap: SPACE.s }}>
+            {run.apart ? <T small muted bold accessibilityRole="header" style={{ paddingHorizontal: 4 }}>{t('The words near one another')}</T> : null}
+            <Card style={{ gap: 0, paddingVertical: 4 }}>
+              {run.items.map((h, i) => (
+                <Stagger key={`${h.author}/${h.work.id}/${h.n}/${h.para}`} index={run.at + i} cap={fresh ? STAGGER_CAP : 0}>
+                  <MinistryItemRow item={h} byline={short(h.author)} divided={i > 0} testID="text-hit" onPress={() => router.push(paragraphLink(h.author, h))} />
+                </Stagger>
+              ))}
+            </Card>
+          </View>
+        ))}
+      </FadeSwap>
+      {found.pages > 1 ? <Pager page={found.page} pages={found.pages} busy={text.pending} onPage={turn} /> : null}
     </View>
   )
 }

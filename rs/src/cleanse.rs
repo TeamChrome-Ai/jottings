@@ -241,6 +241,29 @@ And God said (Genesis 1:3).");
     }
 
     #[tokio::test]
+    async fn the_text_search_lists_only_what_the_cleanse_serves() {
+        let path = crate::ministry::tests::cleanse_fixture();
+        {
+            let c = rusqlite::Connection::open(&path).unwrap();
+            c.execute_batch("INSERT INTO paras VALUES (204, 'darby', 'genesis', 1, 4, '<i>And God said</i>'), (221, 'darby', 'other-x', 1, 1, 'And God said so.')").unwrap();
+            crate::ministry::tests::index_words(&c);
+        }
+        let (app, pool) = app_with_ministry(&path);
+        let uri = "/ministry/text?q=and%20God%20said";
+        let found = |r: &Value| { let mut f: Vec<(String, i64)> = crate::ministry::tests::text_items(r).into_iter().map(|i| (i.1, i.3)).collect(); f.sort(); f };
+        let r = call(&app, "GET", uri, None, Value::Null).await.1;
+        assert_eq!(found(&r), [("genesis".to_string(), 3), ("genesis".to_string(), 4), ("other-x".to_string(), 1)], "{r}");
+
+        apply(&pool.get().unwrap()).unwrap();
+        let (st, r) = call(&app, "GET", uri, None, Value::Null).await;
+        assert_eq!(st, 200);
+        assert_eq!(found(&r), [("genesis".to_string(), 1)], "no sub-heading, nothing hidden; the paragraph two up past the removed sub-headings: {r}");
+        assert_eq!((r["total"].as_i64(), r["exact"].as_i64(), r["authors"].clone()), (Some(1), Some(1), json!([{ "id": "darby", "short": "Darby", "total": 1 }])));
+        assert_eq!((r["items"][0]["snippet"].as_str(), r["items"][0]["hl"].clone()), (Some("And God said (Genesis 1:3)."), json!([0, 12])));
+        assert_eq!(cache_control(&app, "/ministry/text?q=god&ed=1890&cl=1").await, "public, max-age=86400");
+    }
+
+    #[tokio::test]
     async fn an_edition_row_cannot_bring_1961_back_under_the_cleanse() {
         let (app, pool) = crate::testkit::app();
         apply(&pool.get().unwrap()).unwrap();

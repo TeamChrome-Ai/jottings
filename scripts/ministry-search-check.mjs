@@ -24,14 +24,14 @@ const params = () => Object.fromEntries(new URL(page.url()).searchParams)
 const PAPER = 'Christ for my sins and Christ for my cares'
 
 await page.goto(base + '/companion', { waitUntil: 'networkidle' })
-const input = page.getByPlaceholder('Search by passage or title')
+const input = page.getByPlaceholder('Search by passage, title or words')
 await input.waitFor({ timeout: 30000 })
 
 // 1. a paper inside a volume, by its title
 const requests = []
 page.on('request', r => { if (r.url().includes('/api/ministry/search')) requests.push(new URL(r.url()).searchParams.get('q')) })
 await input.pressSequentially('Christ for my', { delay: 60 })
-const paper = page.getByText(PAPER, { exact: true })
+const paper = page.getByText(PAPER, { exact: true }).first()
 await paper.waitFor({ timeout: 15000 })
 ok('typing "Christ for my" lists the paper from Collected Writings 34', await paper.isVisible())
 ok(`the server was asked once, after typing stopped (${JSON.stringify(requests)})`, requests.length === 1 && requests[0] === 'Christ for my')
@@ -51,7 +51,7 @@ await input.waitFor({ timeout: 30000 })
 await input.fill('romans 5')
 await page.getByText('Romans 5:1–11', { exact: true }).first().waitFor({ timeout: 15000 })
 await page.waitForTimeout(1200)
-const synopsis = await page.getByText('Romans 5:1–11', { exact: true }).count()
+const synopsis = await page.getByText('Romans 5:1–11', { exact: true }).and(page.locator(':not([data-testid="text-hit"] *)')).count()
 const coates = await page.getByText(/^Coates · /).count()
 ok(`"romans 5" lists the Synopsis place once (${synopsis}) and Coates (${coates})`, synopsis === 1 && coates >= 1)
 ok('… and no "Nothing for"', !(await page.getByText(/^Nothing for/).count()))

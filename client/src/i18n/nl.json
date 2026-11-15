@@ -222,6 +222,10 @@
   "one": "nog {n}",
   "other": "nog {n}"
  },
+ "{n} near\u0000{n} near": {
+  "one": "{n} dichtbij",
+  "other": "{n} dichtbij"
+ },
  "{n} new friend\u0000{n} new friends": {
   "one": "{n} nieuwe vriend",
   "other": "{n} nieuwe vrienden"
@@ -260,6 +264,14 @@
  "{n} paper\u0000{n} papers": {
   "one": "{n} verhandeling",
   "other": "{n} verhandelingen"
+ },
+ "{n} paragraph with the words near one another\u0000{n} paragraphs with the words near one another": {
+  "one": "{n} alinea met de woorden dicht bij elkaar",
+  "other": "{n} alinea’s met de woorden dicht bij elkaar"
+ },
+ "{n} paragraph\u0000{n} paragraphs": {
+  "one": "{n} alinea",
+  "other": "{n} alinea’s"
  },
  "{n} post\u0000{n} posts": {
   "one": "{n} bericht",
@@ -505,6 +517,7 @@
  "align\u0004Right": "Rechts",
  "All": "Alles",
  "All {letter}": "Alles onder {letter}",
+ "All {n}": "Alle {n}",
  "All {n} footnote\u0000All {n} footnotes": {
   "one": "{n} voetnoot",
   "other": "Alle {n} voetnoten"
@@ -1513,9 +1526,9 @@
  "Search": "Zoeken",
  "Search {n} articles": "Zoek in {n} artikelen",
  "Search {query}": "Zoeken naar {query}",
- "Search by passage or title": "Zoeken op schriftgedeelte of titel",
+ "Search by passage, title or words": "Zoeken op schriftgedeelte, titel of woorden",
  "Search the dictionary": "Het woordenboek doorzoeken",
- "Search the ministry by passage or title": "De bediening doorzoeken op schriftgedeelte of titel",
+ "Search the ministry by passage, title or words": "De bediening doorzoeken op schriftgedeelte, titel of woorden",
  "Searching {books} only. Search every book": "Zoekt alleen in {books}. In alle boeken zoeken",
  "Searching…": "Zoeken…",
  "see {headword}": "zie {headword}",
@@ -1772,6 +1785,7 @@
  "The whole Bible": "De hele Bijbel",
  "The whole Bible, or one Testament.": "De hele Bijbel, of één Testament.",
  "The word": "Het woord",
+ "The words near one another": "De woorden dicht bij elkaar",
  "Their handle and name are replaced now, and they must choose new ones the next time they open {brand}.": "De gebruikersnaam en naam worden nu vervangen, en de gebruiker moet nieuwe kiezen wanneer {brand} de volgende keer wordt geopend.",
  "Their handle exactly; there is no search.": "De exacte gebruikersnaam; zoeken is niet mogelijk.",
  "Their handle, exactly": "De exacte gebruikersnaam",

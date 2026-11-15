@@ -146,6 +146,16 @@ export interface MinistryItem {
   hl: [number, number]
 }
 export interface MinistryGroup { author: string; name: string; short: string; source: string; total: number; page: number; pages: number; items: MinistryItem[] }
+
+/** A paragraph found by its words, as the verse's items are, with its author; `apart`: it has the words near one
+ *  another rather than as typed (the second tier, after every paragraph of the first). */
+export interface TextHit extends MinistryItem { author: string; apart?: true }
+/**
+ * GET /api/ministry/text?q=&page=&author=: the paragraphs of every author the edition shows that have the words, those
+ * with the words as typed first (`exact` of `total`), 20 a page. `q`: the words as looked for. `authors`: every author
+ * with a hit for the whole query, whichever `author` was asked for, with their counts.
+ */
+export interface TextSearch { q: string; total: number; exact: number; page: number; pages: number; authors: { id: string; short: string; total: number }[]; items: TextHit[] }
 /** `q`: the words asked for, as the server read them; the items are then the paragraphs that have them, nearest first. */
 export interface MinistryRefs { book: number; chapter: number; verses: number[]; q?: string; groups: MinistryGroup[] }
 

@@ -222,6 +222,10 @@
   "one": "{n} weitere",
   "other": "{n} weitere"
  },
+ "{n} near\u0000{n} near": {
+  "one": "{n} nahe beieinander",
+  "other": "{n} nahe beieinander"
+ },
  "{n} new friend\u0000{n} new friends": {
   "one": "{n} neuer Freund",
   "other": "{n} neue Freunde"
@@ -260,6 +264,14 @@
  "{n} paper\u0000{n} papers": {
   "one": "{n} Aufsatz",
   "other": "{n} Aufsätze"
+ },
+ "{n} paragraph with the words near one another\u0000{n} paragraphs with the words near one another": {
+  "one": "{n} Absatz mit den Wörtern nahe beieinander",
+  "other": "{n} Absätze mit den Wörtern nahe beieinander"
+ },
+ "{n} paragraph\u0000{n} paragraphs": {
+  "one": "{n} Absatz",
+  "other": "{n} Absätze"
  },
  "{n} post\u0000{n} posts": {
   "one": "{n} Beitrag",
@@ -505,6 +517,7 @@
  "align\u0004Right": "Rechts",
  "All": "Alle",
  "All {letter}": "Alle {letter}",
+ "All {n}": "Alle {n}",
  "All {n} footnote\u0000All {n} footnotes": {
   "one": "{n} Fußnote",
   "other": "Alle {n} Fußnoten"
@@ -1513,9 +1526,9 @@
  "Search": "Suche",
  "Search {n} articles": "{n} Artikel durchsuchen",
  "Search {query}": "{query} suchen",
- "Search by passage or title": "Nach Stelle oder Titel suchen",
+ "Search by passage, title or words": "Nach Stelle, Titel oder Wörtern suchen",
  "Search the dictionary": "Das Wörterbuch durchsuchen",
- "Search the ministry by passage or title": "Den Dienst nach Stelle oder Titel durchsuchen",
+ "Search the ministry by passage, title or words": "Den Dienst nach Stelle, Titel oder Wörtern durchsuchen",
  "Searching {books} only. Search every book": "Suche nur in {books}. In allen Büchern suchen",
  "Searching…": "Suche läuft …",
  "see {headword}": "siehe {headword}",
@@ -1772,6 +1785,7 @@
  "The whole Bible": "Die ganze Bibel",
  "The whole Bible, or one Testament.": "Die ganze Bibel oder ein Testament.",
  "The word": "Das Wort",
+ "The words near one another": "Die Wörter nahe beieinander",
  "Their handle and name are replaced now, and they must choose new ones the next time they open {brand}.": "Benutzername und Name werden sofort ersetzt, und die Person muss beim nächsten Öffnen von {brand} neue wählen.",
  "Their handle exactly; there is no search.": "Genau der Benutzername; es gibt keine Suche.",
  "Their handle, exactly": "Genau der Benutzername",

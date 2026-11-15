@@ -6,9 +6,10 @@
  */
 import { BOOKS, type BookMeta } from '@shared/books'
 import { AUTHORS, formatPassage, formatPassages, titleIsPassage, type CompanionIndex, type Passage, type Place, type WorkKind, type WorkMeta } from '@shared/companion'
-import { MINISTRY_AUTHORS, type CollectionSummary, type Library, type LibraryAuthor, type MinistrySectionMeta, type SectionHit, type WorkContents, type WorkSummary } from '@shared/ministry'
+import { MINISTRY_AUTHORS, type CollectionSummary, type Library, type LibraryAuthor, type MinistryItem, type MinistrySectionMeta, type SectionHit, type TextSearch, type WorkContents, type WorkSummary } from '@shared/ministry'
 import { formatVerseRuns, type Ref } from '@shared/ref'
 import { N_, t, tn } from '@shared/i18n'
+import type { TextAnswer } from './ministryCore'
 
 /** Lower case without accents or apostrophes, for matching titles. */
 const fold = (s: string) => s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[’']/g, '')
@@ -504,6 +505,30 @@ export function searchWorks(library: Library | null | undefined, query: string, 
     if (out.length >= limit) return out
   }
   return out
+}
+
+export const paragraphLink = (author: string, item: Pick<MinistryItem, 'work' | 'n' | 'para'>, from?: string) =>
+  ({ pathname: '/companion' as const, params: { author, work: item.work.id, n: String(item.n), p: String(item.para), ...(from ? { from } : null) } })
+
+export function textHeading(s: Pick<TextSearch, 'total' | 'exact'>): string {
+  const near = s.total - s.exact
+  if (!s.exact) return near > 0 ? tn(near, '{n} paragraph with the words near one another', '{n} paragraphs with the words near one another', { n: near.toLocaleString() }) : ''
+  const exact = tn(s.exact, '{n} paragraph', '{n} paragraphs', { n: s.exact.toLocaleString() })
+  return near > 0 ? `${exact} · ${tn(near, '{n} near', '{n} near', { n: near.toLocaleString() })}` : exact
+}
+export function apartAt(s: Pick<TextSearch, 'exact' | 'items'>): number | null {
+  const first = s.exact ? s.items.findIndex(i => i.apart) : -1
+  return first < 0 ? null : first
+}
+export const EVERY_AUTHOR = ''
+export function textAuthorChoices(s: Pick<TextSearch, 'authors'>): { value: string; label: string }[] | null {
+  if (s.authors.length < 2) return null
+  const all = s.authors.reduce((n, a) => n + a.total, 0)
+  return [{ value: EVERY_AUTHOR, label: t('All {n}', { n: all.toLocaleString() }) }, ...s.authors.map(a => ({ value: a.id, label: `${a.short} ${a.total.toLocaleString()}` }))]
+}
+export function searchNote(listed: number, text: TextAnswer | undefined, pending: boolean): 'searching' | 'nothing' | null {
+  if (listed || text?.kind === 'unavailable' || (text?.kind === 'found' && text.items.length)) return null
+  return pending ? 'searching' : 'nothing'
 }
 
 /** The server's title hits the companion's own search has not already listed (the same author, work and section). */

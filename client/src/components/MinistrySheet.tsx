@@ -12,6 +12,7 @@ import { fetchChapter, peekChapter, tokenize, type ChapterData } from '../lib/bi
 import { loadCompanionChapter } from '../lib/companion'
 import { peekEdition } from '../lib/editionCore'
 import { loadMinistryRefs, ministryUnavailable } from '../lib/ministry'
+import { paragraphLink } from '../lib/libraryNav'
 import { askable, pickedPhrase, pickedSpan, pickWords, type WordPick } from '../lib/ministryShared'
 import { TURN_DX } from '../lib/motionTiming'
 import { face } from '../theme'
@@ -19,7 +20,8 @@ import { useReadingFont } from '../hooks/useReadingFont'
 import { useInks } from '../hooks/useTheme'
 import { FadeSwap, Stagger } from './motion/nav'
 import Pager from './Pager'
-import { Button, Card, Enter, ErrorText, Segmented, Sheet, Spinner, T, Tap, tick, TYPE, useSheetWait } from './ui'
+import { Button, Card, Enter, ErrorText, Segmented, Sheet, Spinner, T, tick, useSheetWait } from './ui'
+import MinistryItemRow from './MinistryItemRow'
 import type { WordAt } from './WordSheet'
 import { tourRef } from '../store/tour'
 
@@ -83,8 +85,6 @@ async function chapterGroups(s: Extract<MinistryScope, { kind: 'chapter' }>): Pr
     return [{ author: a, name: meta.name, short: meta.short, source: meta.source, total: items.length, page: 1, pages: 1, items }]
   })
 }
-/** Where an item opens: the library's reader at its paragraph, with `from` the verse its Back returns to. */
-const reading = (author: string, item: MinistryItem, from?: string) => ({ pathname: '/companion' as const, params: { author, work: item.work.id, n: String(item.n), p: String(item.para), ...(from ? { from } : null) } })
 /** About 200 characters from the start, cut between words. */
 function lead(text: string, size = 200): string {
   if (text.length <= size) return text
@@ -191,7 +191,7 @@ function Lists({ scope, origin, onClose }: { scope: MinistryScope; origin: Minis
     : `${scope.book}.${scope.chapter}.${scope.verse}`
   const openItem = (g: MinistryGroup, item: MinistryItem) => {
     onClose()
-    router.push(reading(g.author, item, origin.kind === 'bible' ? from : undefined))
+    router.push(paragraphLink(g.author, item, origin.kind === 'bible' ? from : undefined))
   }
   const two = !!authors && authors.length > 1
   const body = groups === undefined ? <Spinner />
@@ -205,7 +205,7 @@ function Lists({ scope, origin, onClose }: { scope: MinistryScope; origin: Minis
               <Card style={{ gap: 0, paddingVertical: 4 }}>
                 {run.items.map((item, i) => (
                   <Stagger key={`${item.work.id}/${item.n}/${item.para}/${item.note ?? 0}`} index={run.at + i} base={dir ? 0 : wait()}>
-                    <Item item={item} divided={i > 0} onPress={() => openItem(group, item)} />
+                    <MinistryItemRow item={item} divided={i > 0} onPress={() => openItem(group, item)} />
                   </Stagger>
                 ))}
               </Card>
@@ -292,8 +292,8 @@ export function WordInMinistry({ word, at, onClose, onMore }: { word: string; at
             {run.near ? <T small muted bold accessibilityRole="header" style={{ paddingHorizontal: 4 }}>{nearHeading(scope, run.near)}</T> : null}
             <Card style={{ gap: 0, paddingVertical: 4 }}>
               {run.items.map((item, i) => (
-                <Item key={`${item.work.id}/${item.n}/${item.para}/${item.note ?? 0}`} item={item} divided={i > 0}
-                  onPress={() => { onClose(); router.push(reading(g.author, item, `${book}.${chapter}.${verse}`)) }} />
+                <MinistryItemRow key={`${item.work.id}/${item.n}/${item.para}/${item.note ?? 0}`} item={item} divided={i > 0}
+                  onPress={() => { onClose(); router.push(paragraphLink(g.author, item, `${book}.${chapter}.${verse}`)) }} />
               ))}
             </Card>
           </View>
@@ -388,27 +388,4 @@ function VerseWords({ verses, picked, onWord }: { verses: readonly Verse[]; pick
  *  up (ChapterView's inlineMark). */
 const NUMBER_PX = WORDS_PX * 0.58
 const NUMBER = { fontSize: NUMBER_PX, ...face('sans', { bold: true }), ...(Platform.OS === 'web' ? { lineHeight: Math.round(NUMBER_PX) } : null) }
-
-/** One paragraph on the verse: where it is (work, section), then its words around the reference, the reference in the accent. */
-function Item({ item, divided, onPress }: { item: MinistryItem; divided: boolean; onPress: () => void }) {
-  const c = useInks()
-  const f = useReadingFont(17, 1.3)
-  const q = useReadingFont(16, 1.5)
-  const [a, b] = item.hl
-  // the Synopsis's works are its books: "Synopsis · John", as the companion names them
-  const work = item.work.collection === 'synopsis' ? `Synopsis · ${item.work.title}` : item.work.title
-  const label = [work, item.section].filter(Boolean).join(', ')
-  return (
-    <Tap onPress={onPress} scaleTo={0.985} accessibilityRole="link" accessibilityLabel={`${label}: ${item.snippet}`}
-      style={{ paddingVertical: 12, gap: 4, borderTopWidth: divided ? 1 : 0, borderTopColor: c.border }}>
-      <Text numberOfLines={1} style={{ color: c.muted, fontSize: TYPE.small }}>{work}</Text>
-      {item.section ? <Text numberOfLines={2} style={{ color: c.text, ...f.body, ...f.bold }}>{item.section}</Text> : null}
-      <Text style={{ color: c.text, ...q.body }}>
-        {item.snippet.slice(0, a)}
-        {b > a ? <Text style={{ color: c.accent, ...q.bold }}>{item.snippet.slice(a, b)}</Text> : null}
-        {item.snippet.slice(b)}
-      </Text>
-    </Tap>
-  )
-}
 

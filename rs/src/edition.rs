@@ -326,9 +326,27 @@ mod tests {
         assert_eq!(call(&app, "GET", "/me/path", Some(&t), Value::Null).await.1["path"]["id"], "coates");
     }
 
+    #[tokio::test]
+    async fn the_text_search_leaves_out_an_author_the_edition_hides() {
+        let path = crate::ministry::tests::fixture();
+        crate::ministry::tests::with_text(&path);
+        let (app, pool) = crate::testkit::app_with_ministry(&path);
+        let uri = "/ministry/text?q=sealed%20with%20the%20spirit";
+        let authors = |v: &Value| v["authors"].as_array().unwrap().iter().map(|a| a["id"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+        let r = call(&app, "GET", uri, None, Value::Null).await.1;
+        assert_eq!((authors(&r), r["total"].as_i64()), (vec!["darby".to_string(), "coates".to_string()], Some(5)));
+        flip(&pool, Edition::E1890);
+        let r = call(&app, "GET", uri, None, Value::Null).await.1;
+        assert_eq!((authors(&r), r["total"].as_i64(), r["exact"].as_i64()), (vec!["darby".to_string()], Some(3), Some(1)), "{r}");
+        assert!(crate::ministry::tests::text_items(&r).iter().all(|i| i.0 == "darby"), "{r}");
+        assert_eq!(call(&app, "GET", &format!("{uri}&author=coates"), None, Value::Null).await.0, 404);
+        flip(&pool, Edition::E1961);
+        assert_eq!(call(&app, "GET", uri, None, Value::Null).await.1["total"], 5);
+    }
+
     #[test]
     fn which_reads_depend_on_the_edition() {
-        for p in ["/bible/43/3", "/bible/verses", "/search", "/strongs/G1320", "/intro", "/chronology", "/companion/darby", "/ministry", "/ministry/search", "/ministry/refs/43/3/16", "/ministry/offline", "/api/intro"] { assert!(depends(p), "{p}") }
+        for p in ["/bible/43/3", "/bible/verses", "/search", "/strongs/G1320", "/intro", "/chronology", "/companion/darby", "/ministry", "/ministry/search", "/ministry/text", "/ministry/refs/43/3/16", "/ministry/offline", "/api/intro"] { assert!(depends(p), "{p}") }
         for p in ["/bible/books", "/ministry/offline/darby", "/ministry/offline/darby/refs", "/edition", "/me", "/stats"] { assert!(!depends(p), "{p}") }
     }
 }

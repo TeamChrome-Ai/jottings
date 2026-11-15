@@ -32,6 +32,9 @@ const MAX_WORDS: usize = 12;
 const SMALL: &str = "a an and are as at be but by do for from had has have he her him his i if in is it me my no not of on or our she \
     so that the thee their them then there they thou thy to unto us was we were what when which who will with ye you your said saith says say \
     shall all this these those upon into also even";
+fn is_small(w: &str) -> bool { SMALL.split(' ').any(|s| s == w) }
+const NEAR_WORDS: usize = 8;
+const POSSESSIVE_WORDS: usize = 2;
 
 pub(crate) struct Author { pub id: String, ord: i64, name: String, short: String, born: i64, died: i64, source: String,
     /// The first and last id of the author's paragraphs (ids run in reading order, author first: ministry.sql), an
@@ -216,6 +219,10 @@ impl Ministry {
     fn cleansed_out(&self, para: i64, note: i64) -> bool {
         let collection = self.spans.get(self.section_of(para)).map_or("", |s| s.1.as_str());
         cleanse::collection_hidden(collection) || (note > 0 && cleanse::notes_hidden(collection)) || (note >= 0 && self.head_ids.contains(&para))
+    }
+    fn author_if_served(&self, id: i64, s: Served) -> Option<usize> {
+        let k = self.authors.iter().position(|a| a.ids.0 <= id && id <= a.ids.1)?;
+        (!crate::edition::hides_author(s.edition, &self.authors[k].id) && !(s.cleanse && self.cleansed_out(id, 0))).then_some(k)
     }
     async fn db<T: Send + 'static>(self: &Arc<Self>, f: impl FnOnce(&rusqlite::Connection) -> ApiResult<T> + Send + 'static) -> ApiResult<T> {
         let pool = self.pool.clone();
@@ -433,12 +440,13 @@ pub async fn chapter(State(s): State<AppState>, Path((book, chapter)): Path<(i64
 
 #[derive(Deserialize)] pub struct RefsQ { author: Option<String>, page: Option<i64>, q: Option<String> }
 
+fn page_of(total: i64, page: i64) -> (i64, i64) { let pages = ((total + PER_PAGE - 1) / PER_PAGE).max(1); (page.clamp(1, pages), pages) }
+
 /// One author's page of a list, `{ author, name, short, source, total, page, pages, items }`: PER_PAGE items, `page`
 /// clamped to the last, `item` making each of the page's.
 fn paged<T>(a: &Author, all: Vec<T>, page: i64, mut item: impl FnMut(T) -> ApiResult<Option<Value>>) -> ApiResult<Value> {
     let total = all.len() as i64;
-    let pages = ((total + PER_PAGE - 1) / PER_PAGE).max(1);
-    let page = page.clamp(1, pages);
+    let (page, pages) = page_of(total, page);
     let mut items = Vec::new();
     for x in all.into_iter().skip(((page - 1) * PER_PAGE) as usize).take(PER_PAGE as usize) { items.extend(item(x)?) }
     Ok(json!({ "author": a.id, "name": a.name, "short": a.short, "source": a.source, "total": total, "page": page, "pages": pages, "items": items }))
@@ -496,18 +504,14 @@ struct Asked { q: String, words: Vec<String>, phrase: String }
 fn asked(q: &str) -> Option<Asked> {
     let q = q.split_whitespace().collect::<Vec<_>>().join(" ");
     let ws = words(&q);
-    if ws.is_empty() || ws.len() > MAX_WORDS || ws.iter().all(|w| SMALL.split(' ').any(|s| s == w)) { return None }
+    if ws.is_empty() || ws.len() > MAX_WORDS || ws.iter().all(|w| is_small(w)) { return None }
     // the words as the index's tokenizer (unicode61) parts them, which folds case and accents its own way: at an
     // apostrophe too, where `fold` drops it ("Lord's" is "lord s" there)
     let phrase = format!("\"{}\"", q.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" "));
     Some(Asked { q, words: ws, phrase })
 }
 
-/// Where `words` (folded) first stand in `plain` in that order with nothing but spaces and punctuation between them,
-/// [start, end) in UTF-16 units; [0, 0) when they do not. The text's words are read as `words` reads them: letters and
-/// digits, an apostrophe inside a word dropped.
-fn at_words(plain: &str, words: &[String]) -> (usize, usize) {
-    if words.is_empty() { return (0, 0) }
+fn spans(plain: &str) -> Vec<(String, usize, usize)> {
     let mut found: Vec<(String, usize, usize)> = Vec::new();
     let (mut open, mut u) = (false, 0);
     for ch in plain.chars() {
@@ -517,8 +521,31 @@ fn at_words(plain: &str, words: &[String]) -> (usize, usize) {
         } else if !matches!(ch, '\'' | '’') { open = false }
         u += ch.len_utf16();
     }
-    let folded: Vec<String> = found.iter().map(|w| fold(&w.0)).collect();
-    folded.windows(words.len()).position(|ws| ws == words).map_or((0, 0), |i| (found[i].1, found[i + words.len() - 1].2))
+    found.into_iter().map(|(w, a, b)| (fold(&w), a, b)).collect()
+}
+fn is_word(text: &str, word: &str, start: bool) -> bool { if start { text.starts_with(word) } else { text == word } }
+
+fn at_words(plain: &str, words: &[String]) -> (usize, usize) { at_phrase(&spans(plain), words, false) }
+fn at_phrase(text: &[(String, usize, usize)], words: &[String], prefix: bool) -> (usize, usize) {
+    let Some(last) = words.len().checked_sub(1) else { return (0, 0) };
+    text.windows(words.len()).find(|ws| ws.iter().zip(words).enumerate().all(|(k, (t, w))| is_word(&t.0, w, prefix && k == last)))
+        .map_or((0, 0), |ws| (ws[0].1, ws[last].2))
+}
+fn at_near(text: &[(String, usize, usize)], need: &[NearWord]) -> (usize, usize) {
+    if need.is_empty() { return (0, 0) }
+    let of: Vec<Option<(usize, bool)>> = text.iter().map(|t| need.iter().position(|n| is_word(&t.0, &n.word, n.start)).map(|k| (k, t.0 == need[k].word))).collect();
+    let mut have = vec![(0usize, 0usize); need.len()];
+    let enough = |have: &[(usize, usize)]| need.iter().zip(have).all(|(n, h)| h.0 >= n.times && h.1 >= n.itself);
+    let (mut lo, mut best) = (0, None::<(usize, usize)>);
+    for hi in 0..text.len() {
+        if let Some((k, itself)) = of[hi] { have[k].0 += 1; if itself { have[k].1 += 1 } }
+        while lo <= hi && enough(&have) {
+            if best.is_none_or(|(a, b)| hi - lo < b - a) { best = Some((lo, hi)) }
+            if let Some((k, itself)) = of[lo] { have[k].0 -= 1; if itself { have[k].1 -= 1 } }
+            lo += 1;
+        }
+    }
+    match best.or_else(|| of.iter().position(Option::is_some).map(|i| (i, i))) { Some((a, b)) => (text[a].1, text[b].2), None => (0, 0) }
 }
 
 /// One author's page of the paragraphs that have the words, nearest the verses `ids` first: a paragraph referring to one
@@ -603,6 +630,159 @@ pub async fn refs(State(s): State<AppState>, Path((book, chapter, sel)): Path<(i
     Ok(day(Json(body).into_response()))
 }
 
+fn looked_for(q: &str) -> String {
+    let q = q.split_whitespace().collect::<Vec<_>>().join(" ");
+    let (mut n, mut open) = (0, false);
+    for (i, ch) in q.char_indices() {
+        if ch.is_alphanumeric() {
+            if !open { n += 1; if n > MAX_WORDS { return q[..i].trim_end().to_string() } }
+            open = true;
+        } else if !matches!(ch, '\'' | '’') { open = false }
+    }
+    q
+}
+
+fn is_word_start(w: &str) -> bool { w.chars().count() >= 3 && !w.chars().all(char::is_numeric) && !is_small(w) }
+/// FTS5's unicode61 tokenizer parts "Lord's" as "lord s"; `fold` makes it "lords". A word that may be one is looked for both ways.
+fn may_be_possessive(w: &str) -> bool { w.chars().count() >= 4 && w.ends_with('s') && !w.ends_with("ss") && !is_small(w) }
+
+/// A word looked for apart, `times` in all: `itself` of them the word, the other (when `start`) a word it begins.
+struct NearWord { word: String, times: usize, itself: usize, start: bool }
+struct TextQuery { words: Vec<String>, prefix: bool, near: Vec<NearWord>, exact: String, apart: Option<String> }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tier { Exact, Apart }
+
+impl TextQuery {
+    fn read(looked_for: &str) -> Option<TextQuery> {
+        // a word typed with an apostrophe inside is looked for as the index parts it ("Jesus's" is "jesus s"); `typed` has
+        // that reading at the word's place in `words`
+        let mut typed: Vec<Option<String>> = Vec::new();
+        for raw in looked_for.split(|c: char| !c.is_alphanumeric() && !matches!(c, '\'' | '’')) {
+            let parts: Vec<String> = raw.split(['\'', '’']).flat_map(words).collect();
+            match words(raw).len() { 1 if parts.len() > 1 => typed.push(Some(parts.join(" "))), n => typed.extend(std::iter::repeat_n(None, n)) }
+        }
+        let words = words(looked_for);
+        if words.iter().all(|w| is_small(w)) { return None }
+        if typed.len() != words.len() { typed = vec![None; words.len()] }
+        let last = words.len() - 1;
+        let prefix = is_word_start(&words[last]) && typed[last].is_none();
+        let same_as_typed = |i: usize| (0..words.len()).any(|j| typed[j].is_some() && words[j] == words[i]);
+        let split: Vec<usize> = (0..words.len()).filter(|&i| !same_as_typed(i) && may_be_possessive(&words[i])).take(POSSESSIVE_WORDS).collect();
+        let mut apart: Vec<usize> = Vec::new();
+        for i in (0..words.len()).filter(|&i| !is_small(&words[i])) { if !apart.iter().any(|&j| words[j] == words[i] && typed[j] == typed[i]) { apart.push(i) } }
+        let parted = |i: usize, reading: usize| split.iter().position(|&s| s == i).is_some_and(|k| reading >> k & 1 == 1);
+        let term = |i: usize, reading: usize| match &typed[i] {
+            Some(t) => t.clone(),
+            None if parted(i, reading) => format!("{} s", &words[i][..words[i].len() - 1]),
+            None => words[i].clone(),
+        };
+        // FTS5 lets one word of the text answer for every NEAR operand it matches: a reading in which two operands have a
+        // word of the index in common would list paragraphs that lack one of them, and is not looked for apart
+        let shared = |reading: usize, star: bool| {
+            let ops: Vec<(String, bool)> = apart.iter().map(|&i| (term(i, reading), star && i == last && !parted(last, reading))).collect();
+            ops.iter().enumerate().any(|(x, a)| ops.iter().enumerate().any(|(y, b)| x != y && a.0.split(' ').any(|t| b.0.split(' ').any(|u| t == u || (b.1 && t.starts_with(u))))))
+        };
+        let readings = || 0..1usize << split.len();
+        // the last word is looked for whole there when only its being a word start makes it share one
+        let near_prefix = prefix && apart.last() == Some(&last) && !readings().any(|r| shared(r, true) && !shared(r, false));
+        let star = |on: bool, reading: usize| if on && !parted(last, reading) { " *" } else { "" };
+        let exacts: Vec<String> = readings().map(|r| format!("\"{}\"{}", (0..words.len()).map(|i| term(i, r)).collect::<Vec<_>>().join(" "), star(prefix, r))).collect();
+        let aparts: Vec<String> = readings().filter(|&r| apart.len() >= 2 && !shared(r, near_prefix))
+            .map(|r| format!("NEAR({}, {NEAR_WORDS})", apart.iter().map(|&i| format!("\"{}\"{}", term(i, r), star(near_prefix && i == last, r))).collect::<Vec<_>>().join(" "))).collect();
+        let mut near: Vec<NearWord> = Vec::new();
+        for &i in &apart {
+            let start = near_prefix && i == last;
+            let k = near.iter().position(|n| n.word == words[i]).unwrap_or_else(|| { near.push(NearWord { word: words[i].clone(), times: 0, itself: 0, start: false }); near.len() - 1 });
+            near[k].times += 1;
+            if start { near[k].start = true } else { near[k].itself += 1 }
+        }
+        Some(TextQuery { words, prefix, near, exact: exacts.join(" OR "), apart: (!aparts.is_empty()).then(|| aparts.join(" OR ")) })
+    }
+    fn expr(&self, tier: Tier) -> Option<&str> { match tier { Tier::Exact => Some(&self.exact), Tier::Apart => self.apart.as_deref() } }
+    fn at(&self, plain: &str, tier: Tier) -> (usize, usize) {
+        let text = spans(plain);
+        match tier {
+            Tier::Exact => at_phrase(&text, &self.words, self.prefix),
+            Tier::Apart => at_near(&text, &self.near),
+        }
+    }
+}
+
+/// FTS5's bm25 favours short paragraphs and one author's are short (68% of the top 60 on 44% of the hits, measured), so
+/// the authors take turns by their share of the hits (Sainte-Laguë), each keeping its own order.
+pub(crate) fn merge_by_share<T: Copy>(lists: &[Vec<T>]) -> Vec<T> {
+    let mut taken = vec![0usize; lists.len()];
+    let mut out = Vec::with_capacity(lists.iter().map(Vec::len).sum());
+    while let Some(k) = (0..lists.len()).filter(|&k| taken[k] < lists[k].len())
+        .min_by(|&a, &b| ((2 * taken[a] + 1) * lists[b].len()).cmp(&((2 * taken[b] + 1) * lists[a].len()))) {
+        out.push(lists[k][taken[k]]);
+        taken[k] += 1;
+    }
+    out
+}
+
+fn text_found(c: &rusqlite::Connection, m: &Ministry, w: &TextQuery, only: Option<usize>, page: i64, s: Served) -> ApiResult<Value> {
+    let mut seen = HashSet::new();
+    let mut tiers: Vec<(Tier, Vec<Vec<(i64, usize)>>)> = Vec::new();
+    for tier in [Tier::Exact, Tier::Apart] {
+        let mut by_author = vec![Vec::new(); m.authors.len()];
+        if let Some(expr) = w.expr(tier) {
+            let mut rows: Vec<(f64, i64, usize)> = Vec::new();
+            let mut st = c.prepare_cached("SELECT rowid, bm25(paras_fts) FROM paras_fts WHERE paras_fts MATCH ?1")?;
+            for r in st.query_map([expr], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))? {
+                let (id, rank) = r?;
+                if let Some(k) = m.author_if_served(id, s) { if seen.insert(id) { rows.push((rank, id, k)) } }
+            }
+            rows.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+            for (_, id, k) in rows { by_author[k].push((id, k)) }
+        }
+        tiers.push((tier, by_author));
+    }
+    let authors: Vec<Value> = m.authors.iter().enumerate().filter_map(|(k, a)| {
+        let total: usize = tiers.iter().map(|t| t.1[k].len()).sum();
+        (total > 0).then(|| json!({ "id": a.id, "short": a.short, "total": total }))
+    }).collect();
+    let list: Vec<(Tier, (i64, usize))> = tiers.iter().flat_map(|(tier, by)| match only { Some(k) => by[k].clone(), None => merge_by_share(by) }.into_iter().map(move |x| (*tier, x))).collect();
+    let exact = list.iter().filter(|x| x.0 == Tier::Exact).count();
+    let total = list.len() as i64;
+    let (page, pages) = page_of(total, page);
+    let mut items = Vec::new();
+    for (tier, (id, k)) in list.into_iter().skip(((page - 1) * PER_PAGE) as usize).take(PER_PAGE as usize) {
+        let a = &m.authors[k];
+        if let Some(mut i) = item(c, m, a, id, 0, s.cleanse, |p| w.at(p, tier))? {
+            i["author"] = json!(a.id);
+            if tier == Tier::Apart { i["apart"] = json!(true) }
+            items.push(i);
+        }
+    }
+    Ok(json!({ "total": total, "exact": exact, "page": page, "pages": pages, "authors": authors, "items": items }))
+}
+
+#[derive(Deserialize)] pub struct TextQ { q: Option<String>, page: Option<i64>, author: Option<String> }
+
+/// `GET /ministry/text?q=&page=&author=`: the paragraphs of the text with the words of `q`, across every author the
+/// edition shows: `{ q, total, exact, page, pages, authors: [{ id, short, total }], items: [{ author, work: { id, title,
+/// collection }, n, section, para, snippet, hl, apart? }] }`. First the `exact` paragraphs with the words in order as
+/// typed, then those with them near one another (`apart`), never one twice; PER_PAGE a page, `page` clamped. `q` is
+/// echoed as looked for. `author` narrows `items`, `total` and `exact` to one author (404 for one not enabled or not
+/// shown); `authors` is every author with a hit, in registry order, never narrowed. Nothing to look for, no database or
+/// one without `paras_fts`: nothing found, never a 400, since the app asks as the reader types.
+pub async fn text(State(s): State<AppState>, Query(q): Query<TextQ>) -> ApiResult<Response> {
+    let looked_for = looked_for(q.q.as_deref().unwrap_or(""));
+    let served = s.served().await;
+    let only = match &q.author {
+        Some(id) => { let m = need(&s)?; m.author_in(id, served.edition)?; m.authors.iter().position(|a| a.id == *id) }
+        None => None,
+    };
+    let mut body = match (get(&s).filter(|m| m.fts).cloned(), TextQuery::read(&looked_for)) {
+        (Some(m), Some(w)) => { let page = q.page.unwrap_or(1); m.clone().db(move |c| text_found(c, &m, &w, only, page, served)).await? }
+        _ => json!({ "total": 0, "exact": 0, "page": 1, "pages": 1, "authors": [], "items": [] }),
+    };
+    body["q"] = json!(looked_for);
+    Ok(day(Json(body).into_response()))
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -610,8 +790,13 @@ pub mod tests {
 
     /// A small ministry.db: Darby and Coates enabled, Kelly disabled with rows of his own on the same verses. Ids run in
     /// reading order as the builder gives them (ministry.sql): Darby's from 1, Coates's from 1000, Kelly's from 2000.
+    fn dir_no_other_database_prunes() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("berean-ministry-{}", crate::auth::random_token(8)));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
     pub fn fixture() -> String {
-        let path = std::env::temp_dir().join(format!("berean-ministry-{}.db", crate::auth::random_token(8)));
+        let path = dir_no_other_database_prunes().join("ministry.db");
         let c = rusqlite::Connection::open(&path).unwrap();
         c.execute_batch(include_str!("ministry.sql")).unwrap();
         c.execute_batch(r#"
@@ -707,6 +892,31 @@ pub mod tests {
         "#).unwrap();
         index_words(&c);
         path
+    }
+
+    pub fn with_text(path: &str) {
+        let c = rusqlite::Connection::open(path).unwrap();
+        c.execute_batch(r#"
+            INSERT INTO works VALUES ('darby', 'cw-text', 'cw', 2, 'Collected Writings 5: Sealing', 'papers', 2, '[{"title":"Sealing","passages":[]},{"title":"Grace","passages":[]}]');
+            INSERT INTO sections VALUES ('darby', 'cw-text', 1, '{"title":"Sealing","passages":[]}', NULL, NULL), ('darby', 'cw-text', 2, '{"title":"Grace","passages":[]}', NULL, NULL);
+            INSERT INTO paras VALUES (300, 'darby', 'cw-text', 1, 0, 'Ye were sealed with the Holy Spirit of promise.'),
+              (301, 'darby', 'cw-text', 1, 1, 'Believers are sealed with the Spirit, as Ephesians says.'),
+              (302, 'darby', 'cw-text', 1, 2, 'The Spirit is given, and we are sealed.'),
+              (303, 'darby', 'cw-text', 1, 3, 'The Lord’s supper is the remembrance of Him.'),
+              (304, 'darby', 'cw-text', 1, 4, 'We beheld the only begotten Son of the Father, full of grace and truth.'),
+              (305, 'darby', 'cw-text', 1, 5, 'He loved them.'),
+              (306, 'darby', 'cw-text', 1, 6, 'Verse 1190 of a long psalm.'),
+              (307, 'darby', 'cw-text', 1, 7, 'Christ is the propitiation for our sins.'),
+              (308, 'darby', 'cw-text', 1, 8, 'It was Moses’s rod that budded.'),
+              (309, 'darby', 'cw-text', 1, 9, 'The disciples did indeed disciple the nations.'),
+              (310, 'darby', 'cw-text', 1, 10, 'The boy’s boys were there.'),
+              (311, 'darby', 'cw-text', 1, 11, 'Kindness for the boy’s many boys.'),
+              (1100, 'coates', 'romans', 1, 1, 'Sealed with the Spirit, says Coates.'),
+              (1101, 'coates', 'romans', 1, 2, 'The Spirit sealed it.'),
+              (2100, 'kelly', 'john', 1, 1, 'Kelly: sealed with the Spirit too.');
+        "#).unwrap();
+        for k in 0..45i64 { c.execute("INSERT INTO paras VALUES (?1, 'darby', 'cw-text', 2, ?2, 'Grace reigns through righteousness.')", params![400 + k, k]).unwrap(); }
+        index_words(&c);
     }
 
     #[test]
@@ -1105,5 +1315,193 @@ pub mod tests {
         assert_eq!(call(&app, "GET", "/ministry/refs/43/3/16?q=loved", None, Value::Null).await.1, json!({ "book": 43, "chapter": 3, "verses": [16], "q": "loved", "groups": [] }));
         assert_eq!(call(&app, "GET", "/ministry/darby/cw-doctrinal-1", None, Value::Null).await.0, 404);
         assert_eq!(call(&app, "GET", "/ministry/search?q=john", None, Value::Null).await.1, json!({ "hits": [] }));
+    }
+
+    pub fn text_items(r: &Value) -> Vec<(String, String, i64, i64, bool)> {
+        r["items"].as_array().unwrap().iter().map(|i| (i["author"].as_str().unwrap().into(), i["work"]["id"].as_str().unwrap().into(), i["n"].as_i64().unwrap(),
+            i["para"].as_i64().unwrap(), i["apart"] == json!(true))).collect()
+    }
+    fn ti(author: &str, work: &str, n: i64, para: i64, apart: bool) -> (String, String, i64, i64, bool) { (author.into(), work.into(), n, para, apart) }
+    fn nothing(q: &str) -> Value { json!({ "q": q, "total": 0, "exact": 0, "page": 1, "pages": 1, "authors": [], "items": [] }) }
+    async fn text_app() -> axum::Router {
+        let path = fixture();
+        with_text(&path);
+        app_with_ministry(&path).0
+    }
+
+    #[tokio::test]
+    async fn the_text_finds_the_words_as_typed_then_apart() {
+        let app = text_app().await;
+        let (st, r) = call(&app, "GET", "/ministry/text?q=%20Sealed%20%20with%20the%20Spirit%20", None, Value::Null).await;
+        assert_eq!(st, 200, "{r}");
+        assert_eq!((r["q"].as_str(), r["total"].as_i64(), r["exact"].as_i64(), r["page"].as_i64(), r["pages"].as_i64()), (Some("Sealed with the Spirit"), Some(5), Some(2), Some(1), Some(1)));
+        assert_eq!(r["authors"], json!([{ "id": "darby", "short": "Darby", "total": 3 }, { "id": "coates", "short": "Coates", "total": 2 }]), "Kelly is disabled");
+        let items = text_items(&r);
+        assert_eq!(items[..2], [ti("darby", "cw-text", 1, 1, false), ti("coates", "romans", 1, 1, false)], "the words as typed first, the authors in turn: {r}");
+        assert_eq!(items[2..].iter().map(|i| (i.0.as_str(), i.4)).collect::<Vec<_>>(), [("darby", true), ("coates", true), ("darby", true)], "then apart, by the authors' shares");
+        let mut apart: Vec<_> = items[2..].to_vec();
+        apart.sort();
+        assert_eq!(apart, [ti("coates", "romans", 1, 2, true), ti("darby", "cw-text", 1, 0, true), ti("darby", "cw-text", 1, 2, true)], "no paragraph twice");
+        let first = &r["items"][0];
+        assert_eq!((first["work"].clone(), first["section"].as_str(), first.get("apart")), (json!({ "id": "cw-text", "title": "Collected Writings 5: Sealing", "collection": "cw" }), Some("Sealing"), None));
+        let lit: Vec<String> = r["items"].as_array().unwrap().iter().map(item_hl).collect();
+        assert_eq!(lit[..2], ["sealed with the Spirit", "Sealed with the Spirit"]);
+        let mut lit_apart = lit[2..].to_vec();
+        lit_apart.sort();
+        assert_eq!(lit_apart, ["Spirit is given, and we are sealed", "Spirit sealed", "sealed with the Holy Spirit"], "apart: the shortest run with every word");
+    }
+
+    #[tokio::test]
+    async fn the_text_by_author() {
+        let app = text_app().await;
+        let all = call(&app, "GET", "/ministry/text?q=sealed%20with%20the%20spirit", None, Value::Null).await.1;
+        let (st, r) = call(&app, "GET", "/ministry/text?q=sealed%20with%20the%20spirit&author=coates", None, Value::Null).await;
+        assert_eq!(st, 200, "{r}");
+        assert_eq!(text_items(&r), [ti("coates", "romans", 1, 1, false), ti("coates", "romans", 1, 2, true)]);
+        assert_eq!((r["total"].as_i64(), r["exact"].as_i64(), r["pages"].as_i64()), (Some(2), Some(1), Some(1)));
+        assert_eq!(r["authors"], all["authors"], "the whole query's authors, never narrowed");
+        let sum: i64 = all["authors"].as_array().unwrap().iter().map(|a| a["total"].as_i64().unwrap()).sum();
+        assert_eq!(Some(sum), all["total"].as_i64());
+        assert!(text_items(&all).iter().all(|i| i.0 != "kelly"), "a disabled author never, even with the words");
+        for uri in ["/ministry/text?q=sealed&author=kelly", "/ministry/text?q=sealed&author=nobody", "/ministry/text?q=&author=kelly"] {
+            let (st, body) = call(&app, "GET", uri, None, Value::Null).await;
+            assert_eq!((st, body["error"].as_str()), (404, Some("no such author")), "{uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_text_reads_apostrophes_and_word_starts() {
+        let app = text_app().await;
+        let get = |q: &str| { let app = app.clone(); let uri = format!("/ministry/text?q={q}"); async move { call(&app, "GET", &uri, None, Value::Null).await.1 } };
+        for q in ["Lords%20supper", "Lord%27s%20supper", "Lord%E2%80%99s%20supper", "the%20lords%20supp"] {
+            let r = get(q).await;
+            assert_eq!((text_items(&r), r["exact"].as_i64()), (vec![ti("darby", "cw-text", 1, 3, false)], Some(1)), "{q}: {r}");
+            assert_eq!(item_hl(&r["items"][0]), if q.ends_with("supp") { "The Lord’s supper" } else { "Lord’s supper" }, "{q}");
+        }
+        let paras = |r: &Value| text_items(r).into_iter().map(|i| (i.1, i.3)).collect::<Vec<_>>();
+        let propitiation = ("cw-text".to_string(), 7);
+        let r = get("propit").await;
+        assert_eq!((paras(&r), item_hl(&r["items"][0])), (vec![propitiation.clone()], "propitiation".to_string()));
+        assert!(paras(&get("pro").await).contains(&propitiation), "3 letters: a word start");
+        assert_eq!(get("pr").await["total"], 0, "2 letters: the word itself only");
+        assert_eq!(paras(&get("1190").await), [("cw-text".to_string(), 6)]);
+        assert_eq!(get("119").await["total"], 0, "a number is only itself");
+        let r = get("loved%20the").await;
+        assert!(paras(&r).contains(&("cw-doctrinal-1".to_string(), 0)) && !paras(&r).contains(&("cw-text".to_string(), 5)), "a small word is not a word start ('them'): {r}");
+    }
+
+    #[tokio::test]
+    async fn the_text_never_lets_one_word_stand_for_two_and_reads_a_possessive_of_a_word_in_s() {
+        let app = text_app().await;
+        let get = |q: &str| { let app = app.clone(); let uri = format!("/ministry/text?q={q}"); async move { call(&app, "GET", &uri, None, Value::Null).await.1 } };
+        for q in ["grace%20grace", "sealed%20seal"] {
+            let r = get(q).await;
+            assert_eq!((r["total"].as_i64(), text_items(&r)), (Some(0), vec![]), "{q}: no paragraph has both words, and one word is not two");
+        }
+        let r = get("reigns%20grace%20grace").await;
+        assert_eq!((r["total"].as_i64(), r["exact"].as_i64(), item_hl(&r["items"][0])), (Some(45), Some(0), "Grace reigns".to_string()), "a word typed twice is looked for once when apart");
+        let r = get("disciples%20disciple").await;
+        assert_eq!((text_items(&r), item_hl(&r["items"][0])), (vec![ti("darby", "cw-text", 1, 9, true)], "disciples did indeed disciple".to_string()), "a last word that begins another is looked for whole, not dropped: {r}");
+        let r = get("believers%20sealed%20believe").await;
+        assert_eq!(r["total"].as_i64(), Some(0), "\"believe\" begins \"believers\" and is still asked of the paragraph: {r}");
+        let r = get("boy%27s%20boys").await;
+        assert_eq!((text_items(&r), item_hl(&r["items"][0])), (vec![ti("darby", "cw-text", 1, 10, false), ti("darby", "cw-text", 1, 11, true)], "boy’s boys".to_string()), "{r}");
+        let r = get("kindness%20boy%27s%20boys").await;
+        assert_eq!((text_items(&r), item_hl(&r["items"][0])), (vec![ti("darby", "cw-text", 1, 11, true)], "Kindness for the boy’s many boys".to_string()), "both of the words that fold alike are in the run: {r}");
+        let r = get("Lord%27s%20lord").await;
+        assert_eq!(r["total"].as_i64(), Some(0), "\"Lord’s\" is not also \"lord\": {r}");
+        for q in ["Moses%27s%20rod", "Moses%E2%80%99s%20rod"] {
+            let r = get(q).await;
+            assert_eq!((text_items(&r), item_hl(&r["items"][0])), (vec![ti("darby", "cw-text", 1, 8, false)], "Moses’s rod".to_string()), "{q}: {r}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_text_with_nothing_to_look_for_or_too_much() {
+        let app = text_app().await;
+        for (uri, q) in [("/ministry/text", ""), ("/ministry/text?q=", ""), ("/ministry/text?q=%20%20%20", ""), ("/ministry/text?q=of%20%20The%20unto", "of The unto"), ("/ministry/text?q=-%20%2C", "- ,")] {
+            let (st, r) = call(&app, "GET", uri, None, Value::Null).await;
+            assert_eq!((st, r), (200, nothing(q)), "{uri}");
+        }
+        let long = "the%20only%20begotten%20Son%20of%20the%20Father%20full%20of%20grace%20and%20truth%20extra%20words%20here";
+        let r = call(&app, "GET", &format!("/ministry/text?q={long}"), None, Value::Null).await.1;
+        assert_eq!(r["q"], "the only begotten Son of the Father full of grace and truth", "the first 12 words");
+        assert_eq!(text_items(&r), [ti("darby", "cw-text", 1, 4, false)]);
+        for q in ["%22", "*", "NEAR(", "OR", "-", ":", "%22sealed%22%20OR%20%22x", "spirit*", "NEAR(sealed%20spirit%2C%200)", "-sealed", "text%3Asealed", "%22sealed%20with",
+            "sealed%20AND%20NOT%20spirit", "%5Esealed", "(sealed)", "sealed%20%2B%20spirit", "%7Bsealed%7D"] {
+            let (st, r) = call(&app, "GET", &format!("/ministry/text?q={q}"), None, Value::Null).await;
+            assert_eq!(st, 200, "{q}: {r}");
+        }
+        let r = call(&app, "GET", "/ministry/text?q=%22sealed%22%20*%20(spirit*)", None, Value::Null).await.1;
+        assert_eq!((r["total"].as_i64(), r["exact"].as_i64()), (Some(5), Some(0)), "typed syntax is only a separator: {r}");
+    }
+
+    #[tokio::test]
+    async fn the_text_by_page() {
+        let app = text_app().await;
+        let get = |page: &str| { let app = app.clone(); let uri = format!("/ministry/text?q=grace%20reigns{page}"); async move { call(&app, "GET", &uri, None, Value::Null).await.1 } };
+        let paras = |r: &Value| text_items(r).into_iter().map(|i| i.3).collect::<Vec<_>>();
+        let r = get("").await;
+        assert_eq!((r["total"].as_i64(), r["exact"].as_i64(), r["page"].as_i64(), r["pages"].as_i64(), paras(&r)), (Some(45), Some(45), Some(1), Some(3), (0..20).collect::<Vec<_>>()), "like paragraphs in reading order");
+        assert_eq!((get("&page=2").await["page"].as_i64(), paras(&get("&page=2").await)), (Some(2), (20..40).collect::<Vec<_>>()));
+        let last = get("&page=3").await;
+        assert_eq!((last["page"].as_i64(), paras(&last)), (Some(3), (40..45).collect::<Vec<_>>()));
+        assert_eq!(get("&page=9").await["page"], 3, "past the end: the last page");
+        assert_eq!(get("&page=0").await["page"], 1);
+        assert_eq!(get("&page=-4").await["page"], 1);
+    }
+
+    #[tokio::test]
+    async fn the_text_without_its_words_table_or_the_database() {
+        let path = fixture();
+        with_text(&path);
+        rusqlite::Connection::open(&path).unwrap().execute_batch("DROP TABLE paras_fts").unwrap();
+        let (app, _) = app_with_ministry(&path);
+        for uri in ["/ministry/text?q=sealed%20with%20the%20spirit", "/ministry/text?q=sealed%20with%20the%20spirit&author=darby"] {
+            assert_eq!(call(&app, "GET", uri, None, Value::Null).await, (200, nothing("sealed with the spirit")), "{uri}");
+        }
+        assert_eq!(call(&app, "GET", "/ministry/text?q=sealed&author=kelly", None, Value::Null).await.0, 404);
+        let (app, _) = crate::testkit::app();
+        assert_eq!(call(&app, "GET", "/ministry/text?q=loved", None, Value::Null).await, (200, nothing("loved")));
+    }
+
+    #[test]
+    fn authors_merge_by_their_share() {
+        let lists = vec![vec![1, 2, 3, 4, 5, 6], vec![10, 11], vec![], vec![20, 21, 22]];
+        assert_eq!(merge_by_share(&lists), [1, 20, 2, 10, 3, 21, 4, 5, 11, 22, 6]);
+        assert_eq!(merge_by_share(&[vec!['a', 'b'], vec!['c', 'd']]), ['a', 'c', 'b', 'd']);
+        assert_eq!(merge_by_share::<i32>(&[]), Vec::<i32>::new());
+        let big: Vec<Vec<i64>> = vec![(0..50).collect(), (100..103).collect(), (200..220).collect()];
+        let out = merge_by_share(&big);
+        let mut every = out.clone();
+        every.sort();
+        assert_eq!(every, big.concat(), "every element once");
+        for l in &big { assert_eq!(out.iter().filter(|x| l.contains(x)).copied().collect::<Vec<_>>(), *l, "each list's order kept") }
+        let first: Vec<usize> = big.iter().map(|l| out[..30].iter().filter(|x| l.contains(x)).count()).collect();
+        assert_eq!(first, [21, 1, 8], "the first 30 by share of 73 (20.5, 1.2, 8.2)");
+    }
+
+    #[test]
+    fn text_queries_as_fts5() {
+        let q = |s: &str| TextQuery::read(&looked_for(s)).map(|w| (w.exact, w.apart));
+        assert_eq!(q("sealed with the Spirit"), Some(("\"sealed with the spirit\" *".into(), Some("NEAR(\"sealed\" \"spirit\" *, 8)".into()))));
+        assert_eq!(q("Lords supper"), Some(("\"lords supper\" * OR \"lord s supper\" *".into(), Some("NEAR(\"lords\" \"supper\" *, 8) OR NEAR(\"lord s\" \"supper\" *, 8)".into()))));
+        assert_eq!(q("the Lord's"), Some(("\"the lord s\"".into(), None)), "an apostrophe typed parts the word as the index does, and that is no word start");
+        assert_eq!(q("the Lords"), Some(("\"the lords\" * OR \"the lord s\"".into(), None)), "the parted reading is no word start");
+        assert_eq!(q("Moses's rod"), Some(("\"moses s rod\" *".into(), Some("NEAR(\"moses s\" \"rod\" *, 8)".into()))));
+        assert_eq!(q("verily verily"), Some(("\"verily verily\" *".into(), None)), "apart needs two different words");
+        assert_eq!(q("Spirit sealed spirit"), Some(("\"spirit sealed spirit\" *".into(), Some("NEAR(\"spirit\" \"sealed\", 8)".into()))));
+        assert_eq!(q("believed believe"), Some(("\"believed believe\" *".into(), Some("NEAR(\"believed\" \"believe\", 8)".into()))), "a word start that begins another of the words would be found in that one: it is looked for whole");
+        assert_eq!(q("believed truly believe"), Some(("\"believed truly believe\" *".into(), Some("NEAR(\"believed\" \"truly\" \"believe\", 8)".into()))));
+        assert_eq!(q("boy's boys"), Some(("\"boy s boys\" *".into(), Some("NEAR(\"boy s\" \"boys\" *, 8)".into()))), "the word typed without the apostrophe is read as typed");
+        let hl = |query: &str, plain: &str| hl_text(plain, TextQuery::read(&looked_for(query)).unwrap().at(plain, Tier::Apart));
+        assert_eq!(hl("boy's boys", "Boysenberry and boysenberry for the boy’s friend."), "boysenberry for the boy’s", "the run has the word itself for the word typed whole");
+        assert_eq!(hl("sealed spi", "The Spirit is given, and we are sealed."), "Spirit is given, and we are sealed");
+        assert_eq!(q("Lord's lord"), Some(("\"lord s lord\" *".into(), None)), "the index's \"lord\" of \"Lord's\" would answer for both");
+        assert_eq!(q("disciples disciple"), Some(("\"disciples disciple\" * OR \"disciple s disciple\" *".into(), Some("NEAR(\"disciples\" \"disciple\", 8)".into()))), "the parted reading is not looked for apart");
+        assert_eq!(q("class of 1890"), Some(("\"class of 1890\"".into(), Some("NEAR(\"class\" \"1890\", 8)".into()))), "'class' ends in ss; a number is no word start");
+        assert_eq!(q("NEAR(\"x\" OR y*"), Some(("\"near x or y\"".into(), Some("NEAR(\"near\" \"x\" \"y\", 8)".into()))));
+        assert_eq!(looked_for(&"a ".repeat(14)), "a ".repeat(12).trim_end());
+        assert_eq!(looked_for("  one, two’s  3–4 "), "one, two’s 3–4");
     }
 }
