@@ -1,7 +1,7 @@
 import { BRAND } from '@shared/brand'
 import { onLangChange, peekLang, t } from '@shared/i18n'
 import { formatRef } from '@shared/ref'
-import { textOf } from '@shared/texts'
+import { TEXT_SHORT, textOf } from '@shared/texts'
 import { langOf, loadLanguage } from '../i18n'
 import { localPosition } from '../hooks/usePosition'
 import { playerEngine, type PlayerState } from '../store/player'
@@ -47,9 +47,11 @@ export function registerCar(): void {
     const speed = prefsStore.get().ttsSpeed
     // the chapter and what the player is doing with it, never how far in it is: the reading goes by verses with their
     // pauses and their numbers, and a clock for it shown to a driver would be a guess
+    // beside the app's name, the Bible the chapter in hand is read from, by its short name: Darby's is not the only
+    // one, and the Bible shown may have changed since the chapter was loaded
     const d: Described = {
       status: s.status, art, speed, speedLabel: `${t('Speed')} ${speed}×`, ack,
-      ...(s.book ? { id: chapterId(s.book, s.chapter), title: formatRef({ book: s.book, chapter: s.chapter }), subtitle: `${BRAND.name} · Darby` } : {}),
+      ...(s.book ? { id: chapterId(s.book, s.chapter), title: formatRef({ book: s.book, chapter: s.chapter }), subtitle: `${BRAND.name} · ${TEXT_SHORT[s.text]}` } : {}),
       ...(s.error ? { error: s.error } : {}),
     }
     const json = JSON.stringify(d)

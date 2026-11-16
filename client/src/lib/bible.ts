@@ -11,7 +11,7 @@ import { listChapterFiles, readChapterFile, removeAllChapterFiles, writeChapterF
 import { bundledChapter, bundledKeys, hasBundledBible } from './bundledBible'
 import { archivePath, chapterEdition, chapterPath, chapterStoreKey, type Meta1890, type Source } from './editionCore'
 import { onSourceChange, peekSource, TEXT_VERSION } from './text'
-import { WORD_RE_EN, WORD_RE_INTL } from '@shared/texts'
+import { WORD_RE_EN, WORD_RE_INTL, type OwnText } from '@shared/texts'
 import meta1890 from '../../public/bible1890/meta.json'
 
 /** The 1890 data's version (client/public/bible1890/meta.json): in its URLs, and a change sweeps its stored chapters. */
@@ -26,8 +26,8 @@ const listeners = new Set<() => void>()
 export const onOfflineChange = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } }
 const notify = () => listeners.forEach(l => l())
 
-/** The version in a source's URLs: the 1890 data's or a language's (a new one is a new address no cache holds). */
-const versionOf = (e: Source): string => (e === 'fr' || e === 'de' ? TEXT_VERSION[e] : V1890)
+/** The version in a source's URLs: the 1890 data's or another Bible's (a new one is a new address no cache holds). */
+const versionOf = (e: Source): string => (e === '1961' || e === '1890' ? V1890 : TEXT_VERSION[e] ?? '0')
 export const chapterUrl = (b: number, c: number, e: Source = peekSource()) => `${getApiBase()}${chapterPath(e, b, c, versionOf(e))}`
 export const key = (b: number, c: number) => `${b}.${c}`
 
@@ -49,9 +49,9 @@ function ensureDataVersion(): Promise<void> {
       const have = await AsyncStorage.getItem(DATA_VERSION_KEY)
       if (have !== String(BIBLE_DATA_VERSION)) { await removeAllChapterFiles(); await AsyncStorage.setItem(DATA_VERSION_KEY, String(BIBLE_DATA_VERSION)) }
       if (await AsyncStorage.getItem(DATA_VERSION_1890_KEY) !== V1890) { await removeAllChapterFiles('1890'); await AsyncStorage.setItem(DATA_VERSION_1890_KEY, V1890) }
-      for (const l of ['fr', 'de'] as const) {
+      for (const [l, v] of Object.entries(TEXT_VERSION) as [OwnText, string][]) {
         const k = `berean_bible_${l}_version`
-        if (await AsyncStorage.getItem(k) !== TEXT_VERSION[l]) { await removeAllChapterFiles(l); await AsyncStorage.setItem(k, TEXT_VERSION[l]) }
+        if (await AsyncStorage.getItem(k) !== v) { await removeAllChapterFiles(l); await AsyncStorage.setItem(k, v) }
       }
     } catch { /* storage unavailable: nothing to sweep */ }
   })()

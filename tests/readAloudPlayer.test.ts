@@ -231,6 +231,20 @@ describe('the player with no screen mounted', () => {
     expect(fx.begun).toEqual(['chapter/adam/19/117', 'chapter/adam/19/118'])
   })
 
+  it('knows which Bible the chapter in hand was read from, whatever is shown since', async () => {
+    const { setShownText } = await import('../shared/texts')
+    recorded(19, 117, 2)
+    engine.start(19, 117)
+    await until(() => engine.getState().status === 'playing')
+    expect(engine.getState().text).toBe('en')
+    setShownText('kjv')
+    engine.toggle()
+    expect(engine.getState()).toMatchObject({ status: 'paused', text: 'en' })
+    engine.start(19, 117, 2)
+    expect(engine.getState()).toMatchObject({ status: 'loading', text: 'kjv' })
+    setShownText('en')
+  })
+
   it('asks for the reader\'s path at each start, and reads without waiting for the answer', async () => {
     recorded(19, 117, 2); recorded(19, 118, 2)
     fx.prefs.ttsAutoNext = true

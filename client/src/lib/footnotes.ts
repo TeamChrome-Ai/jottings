@@ -18,7 +18,8 @@ const INDEX_CHUNKS: Record<Edition, () => Promise<{ default: FootnoteIndexFile }
 }
 const built = new Map<Edition, FootnoteIndex>()
 
-const englishEdition = (s: Source): Edition | null => (s === 'fr' || s === 'de' ? null : s)
+/** The footnotes are the English Darby's: another Bible (another language's, or another English one) has no index. */
+const englishEdition = (s: Source): Edition | null => (s === '1961' || s === '1890' ? s : null)
 
 function useIndex(e: Edition | null): FootnoteIndex | null {
   const [, setLoaded] = useState(0)

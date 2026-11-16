@@ -40,6 +40,8 @@ export const HAND = {
   ref: { book: 19, chapter: 119, v1: 105 },
   sample: {
     en: 'Thy word is a lamp unto my feet, and a light unto my path.',
+    kjv: 'Thy word is a lamp unto my feet, and a light unto my path.',
+    ylt: '[Nun.] A lamp to my foot [is] Thy word, And a light to my path.',
     fr: 'Ta parole est une lampe à mon pied, et une lumière à mon sentier.',
     de: 'Dein Wort ist Leuchte meinem Fuße und Licht für meinen Pfad.',
   } satisfies Record<BibleText, string>,

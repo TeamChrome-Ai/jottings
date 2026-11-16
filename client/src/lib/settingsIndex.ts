@@ -4,7 +4,7 @@
  * `Facts` from its hooks and everything here is a function of them (tests/settingsIndex.test.ts).
  */
 import { LANG_NAMES, N_, t, tc, type Lang } from '@shared/i18n'
-import { TEXT_NAMES, type BibleText } from '@shared/texts'
+import { TEXT_NAMES, secondText, voicesFor, type BibleText } from '@shared/texts'
 import type { IconName } from '../components/Icon'
 import type { Font, Prefs } from '../store/prefs'
 import { customKey } from './customFonts'
@@ -67,8 +67,10 @@ function daily({ prefs, signedIn, native }: Facts): string {
   return prefs.verseNotify.items.length ? t('Verse of the day: {detail}', { detail: verseNotifyDetail(prefs.verseNotify) }) : t('No verse of the day')
 }
 
-function listening({ prefs, voiceName: voice }: Facts): string {
+function listening({ prefs, voiceName: voice, text }: Facts): string {
   const pause = { none: t('no pause'), short: t('short pauses'), long: t('long pauses') }[prefs.ttsPause]
+  // an English Bible beside Darby's is read by the device's voice alone: no recorded voice is named as if it read it
+  if (voicesFor(text) === 'device') return t('Device voice at {speed}×, {pause}', { speed: prefs.ttsSpeed, pause })
   return prefs.ttsDevice ? t('{voice} at {speed}×, {pause}, device voice', { voice, speed: prefs.ttsSpeed, pause }) : t('{voice} at {speed}×, {pause}', { voice, speed: prefs.ttsSpeed, pause })
 }
 
@@ -82,7 +84,7 @@ const CARDS: readonly (readonly Group[])[] = [
   [
     { id: 'listening', title: N_('Listening'), open: { kind: 'sheet', sheet: 'listening' }, mark: { icon: 'voice' }, target: 'settings-listening', summary: listening },
     { id: 'daily', ...page('daily'), mark: { icon: 'clock' }, target: 'settings-daily', summary: daily, shown: f => f.native || f.signedIn },
-    { id: 'language', title: N_('Language'), open: { kind: 'sheet', sheet: 'language' }, mark: { icon: 'dictionary' }, summary: ({ prefs, lang, text }) => prefs.bible2 ? `${LANG_NAMES[lang]} · ${TEXT_NAMES[text]} + ${TEXT_NAMES[prefs.bible2]}` : `${LANG_NAMES[lang]} · ${TEXT_NAMES[text]}` },
+    { id: 'language', title: N_('Language'), open: { kind: 'sheet', sheet: 'language' }, mark: { icon: 'dictionary' }, summary: ({ prefs, lang, text }) => { const second = secondText(prefs.bible2); return second ? `${LANG_NAMES[lang]} · ${t(TEXT_NAMES[text])} + ${t(TEXT_NAMES[second])}` : `${LANG_NAMES[lang]} · ${t(TEXT_NAMES[text])}` } },
   ],
   [
     { id: 'motion', ...page('motion'), mark: { icon: 'motion' }, summary: ({ prefs: p }) => p.reduceMotion ? tc('animation', 'Reduced') : t('{speed}× speed', { speed: p.motionSpeed.toFixed(1) }) },

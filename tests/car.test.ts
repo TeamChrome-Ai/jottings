@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * told. No screen is mounted anywhere here, as none is when a car starts the app.
  */
 type Command = { seq: number; type: string; id?: string; query?: string; speed?: number; ms?: number }
-type State = { status: string; book: number; chapter: number; spoken: { book: number; chapter: number; v: number; off: null } | null; error: string | null; source: null }
+type State = { status: string; book: number; chapter: number; spoken: { book: number; chapter: number; v: number; off: null } | null; error: string | null; source: null; text: string }
 
 const fx = vi.hoisted(() => {
   const fx = {
@@ -19,10 +19,11 @@ const fx = vi.hoisted(() => {
     place: null as string | null,
     listening: 0,
     calls: [] as string[],
-    state: { status: 'idle', book: 0, chapter: 0, spoken: null, error: null, source: null } as unknown,
+    state: { status: 'idle', book: 0, chapter: 0, spoken: null, error: null, source: null, text: 'en' } as unknown,
     settled: [] as ((s: unknown) => void)[],
     prefs: { ttsSpeed: 1, lang: 'en', bible: 'auto' } as Record<string, unknown>,
     prefsHeard: [] as (() => void)[],
+    sourceHeard: [] as (() => void)[],
     position: null as { book: number; chapter: number; verse: number } | null,
     woken: 0,
     outside: false,
@@ -64,7 +65,7 @@ vi.mock('../client/src/store/prefs', () => ({
 vi.mock('../client/src/i18n', async () => ({ ...(await import('../shared/i18n')), langOf: () => 'en', loadLanguage: async () => {} }))
 vi.mock('../client/src/lib/api', () => ({ loadApiBase: async () => '' }))
 vi.mock('../client/src/lib/edition', () => ({ loadEdition: async () => 'darby' }))
-vi.mock('../client/src/lib/text', () => ({ setText: () => {}, onSourceChange: () => () => {} }))
+vi.mock('../client/src/lib/text', () => ({ setText: () => {}, onSourceChange: (f: () => void) => { fx.sourceHeard.push(f); return () => {} } }))
 vi.mock('../client/src/lib/mediaArt', () => ({ mediaArt: async () => 'file:///art.png' }))
 vi.mock('../client/src/lib/readAloudClock', () => ({ wakeClock: () => { fx.woken++ } }))
 vi.mock('../client/src/lib/tts', () => ({ SPEEDS: [0.8, 0.9, 1, 1.1, 1.25, 1.5] }))
@@ -86,8 +87,8 @@ const last = () => fx.described[fx.described.length - 1]
 beforeEach(async () => {
   vi.resetModules()
   seq = 0
-  Object.assign(fx, { described: [], published: [], places: [], found: [], onFile: null, place: null, listening: 0, calls: [], settled: [], prefsHeard: [], position: null, woken: 0, outside: false })
-  fx.state = { status: 'idle', book: 0, chapter: 0, spoken: null, error: null, source: null }
+  Object.assign(fx, { described: [], published: [], places: [], found: [], onFile: null, place: null, listening: 0, calls: [], settled: [], prefsHeard: [], sourceHeard: [], position: null, woken: 0, outside: false })
+  fx.state = { status: 'idle', book: 0, chapter: 0, spoken: null, error: null, source: null, text: 'en' }
   fx.prefs = { ttsSpeed: 1, lang: 'en', bible: 'auto' }
   const { registerCar } = await import('../client/src/lib/car')
   registerCar()
@@ -212,6 +213,32 @@ describe('what the session is told', () => {
     expect(last()).toMatchObject({ status: 'playing', ack: 1 })
     await ask('speed')
     expect(last()).toMatchObject({ speed: 1.1, speedLabel: 'Speed 1.1×', ack: 2 })
+  })
+
+  it('the Bible the chapter in hand is read from, by its own short name: Darby for his, not for the King James Version, Young\'s or the Elberfelder', async () => {
+    const { BRAND } = await import('../shared/brand')
+    await ask('play', { id: 'c/43/3' })
+    expect(last()).toMatchObject({ subtitle: `${BRAND.name} · Darby` })
+    for (const [text, name] of [['kjv', 'KJV'], ['ylt', 'YLT'], ['de', 'Elberfelder'], ['fr', 'Darby']] as const) {
+      set({ status: 'loading', text })   // a chapter started with that Bible shown (store/player.tsx start)
+      expect(last()).toMatchObject({ subtitle: `${BRAND.name} · ${name}` })
+    }
+  })
+
+  it('a change of Bible with a chapter in hand: the player goes on with the chapter it loaded, so the session keeps that Bible\'s name until a chapter is started in the new one', async () => {
+    const { setShownText } = await import('../shared/texts')
+    const { BRAND } = await import('../shared/brand')
+    await ask('play', { id: 'c/43/3' })
+    set({ status: 'paused' })
+    const { prefsStore } = await import('../client/src/store/prefs')
+    prefsStore.set({ bible: 'kjv' })          // the Language sheet: the setting, heard at once
+    setShownText('kjv')                        // the root layout's effect, after it
+    fx.sourceHeard.forEach(f => f())
+    expect(last()).toMatchObject({ status: 'paused', subtitle: `${BRAND.name} · Darby` })
+    set({ status: 'playing' })                 // Play goes on with Darby's chapter
+    expect(last()).toMatchObject({ status: 'playing', subtitle: `${BRAND.name} · Darby` })
+    set({ status: 'loading', text: 'kjv' })    // the next start reads the Bible now shown
+    expect(last()).toMatchObject({ status: 'loading', subtitle: `${BRAND.name} · KJV` })
   })
 
   it('nothing that claims a place in time: no length, no position, for a recording as for the device voice', async () => {

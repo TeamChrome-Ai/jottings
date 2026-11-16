@@ -1,6 +1,6 @@
 import { BOOKS, findBook, findBookFuzzy, peekNamesLang, type BookMeta } from './books.js'
 import type { NamesLang } from './bookNames.js'
-import { englishNumber, ownNumber, peekShownText, type Own } from './texts.js'
+import { TEXT_LANG, englishNumber, ownNumber, peekShownText, type Own } from './texts.js'
 import { VERSE_COUNTS } from './verseCounts.js'
 
 const verseCount = (b: number, c: number): number => VERSE_COUNTS[b - 1]?.[c - 1] ?? 1
@@ -143,7 +143,7 @@ export function scanRefs(text: string, ctxIn?: RefContext, opts: { english?: boo
   // text by or for a reader of another Bible is in its numbering ("Psaume 51:3", German "Joh 3,16"): read in it, kept in English
   const convert = !opts.english && !opts.englishNumbers && peekShownText() !== 'en'
   const ctx = ctxIn && convert ? { book: ctxIn.book, chapter: ownNumber(ctxIn.book, ctxIn.chapter, 1).c } : ctxIn
-  const comma = !opts.english && (peekShownText() === 'de' || peekNamesLang() === 'de')
+  const comma = !opts.english && (TEXT_LANG[peekShownText()] === 'de' || peekNamesLang() === 'de')
   const spans = scanOwn(text, ctx, convert ? 1 : 0, comma ? SCAN_DE : convert || peekNamesLang() !== 'en' ? SCAN_INTL : SCAN_EN, comma)
   if (!convert) return spans
   return spans.flatMap(s => {
@@ -201,7 +201,7 @@ const OWN_NUMBER: Record<NamesLang, { words: Set<string>; short: Set<string>; st
 function ownsItsFigure(written: string): boolean {
   const stop = written.endsWith('.')
   const word = (stop ? written.slice(0, -1) : written).toLocaleLowerCase()
-  for (const l of ['en', peekNamesLang(), peekShownText()] as const) {
+  for (const l of ['en', peekNamesLang(), TEXT_LANG[peekShownText()]] as const) {
     const o = OWN_NUMBER[l]
     if (o.short.has(word) || (stop ? o.stopped : o.words).has(word)) return true
   }

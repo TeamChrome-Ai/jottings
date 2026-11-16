@@ -75,13 +75,16 @@ pub fn has_text_1890(conn: &Connection) -> bool {
 pub fn tables(conn: &Connection, ed: Edition) -> Tables {
     match ed { Edition::E1961 => T1961, Edition::E1890 if has_text_1890(conn) => T1890_TEXT, Edition::E1890 => T1890_NOTES }
 }
-/// The French and German Bibles' tables (docs/LANGUAGES.md, db.rs LANG_TEXTS), kept in the English verses.
-const TFR: Tables = Tables { verses: "verses_fr", fts: "verses_fr_fts", tri: "verses_fr_tri", chapters: "chapters_fr", words: "verse_words_fr", notes: "notes_fr" };
-const TDE: Tables = Tables { verses: "verses_de", fts: "verses_de_fts", tri: "verses_de_tri", chapters: "chapters_de", words: "verse_words_de", notes: "notes_de" };
-/// The tables of the Bible a request asks for with `tx` (a client reading the French or German sends it), when this
-/// server's data has it; otherwise the edition's English.
+/// One other Bible's tables (docs/LANGUAGES.md), kept in the English verses, named by the Bible's id.
+macro_rules! text {
+    ($id:literal) => { ($id, Tables { verses: concat!("verses_", $id), fts: concat!("verses_", $id, "_fts"), tri: concat!("verses_", $id, "_tri"), chapters: concat!("chapters_", $id), words: concat!("verse_words_", $id), notes: concat!("notes_", $id) }) };
+}
+/// The other Bibles' tables, one entry for each id of db.rs TEXTS.
+const TEXT_TABLES: [(&str, Tables); 4] = [text!("fr"), text!("de"), text!("kjv"), text!("ylt")];
+/// The tables of the Bible a request asks for with `tx` (a client reading another Bible than the English Darby sends
+/// its id: `fr`, `de`, `kjv`, `ylt`), when this server's data has it; otherwise the edition's English.
 pub fn text_tables(conn: &Connection, tx: Option<&str>, ed: Edition) -> Tables {
-    let own = match tx { Some("fr") => Some(TFR), Some("de") => Some(TDE), _ => None };
+    let own = TEXT_TABLES.iter().find(|(id, _)| Some(*id) == tx).map(|(_, t)| *t);
     let present = |t: &Tables| conn.prepare_cached("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1").and_then(|mut st| st.exists([t.verses])).unwrap_or(false);
     match own { Some(t) if present(&t) => t, _ => tables(conn, ed) }
 }
@@ -380,6 +383,25 @@ mod tests {
         assert_eq!(call(&app, "GET", &format!("{uri}&author=coates"), None, Value::Null).await.0, 404);
         flip(&pool, Edition::E1961);
         assert_eq!(call(&app, "GET", uri, None, Value::Null).await.1["total"], 5);
+    }
+
+    #[test]
+    fn a_bible_is_asked_for_by_its_id_which_need_not_be_a_language() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(crate::db::SCHEMA).unwrap();
+        // not in this server's data: the edition's English, as for the French and German
+        const IDS: [&str; 4] = ["fr", "de", "kjv", "ylt"];
+        for id in IDS { assert_eq!(text_tables(&conn, Some(id), Edition::E1961), T1961, "{id}") }
+        for id in IDS { conn.execute_batch(&crate::db::schema_text(id)).unwrap(); }
+        for id in IDS {
+            let t = text_tables(&conn, Some(id), Edition::E1890);
+            assert_eq!((t.verses.to_string(), t.fts.to_string(), t.tri.to_string(), t.chapters.to_string(), t.words.to_string(), t.notes.to_string()),
+                (format!("verses_{id}"), format!("verses_{id}_fts"), format!("verses_{id}_tri"), format!("chapters_{id}"), format!("verse_words_{id}"), format!("notes_{id}")));
+        }
+        assert_eq!(crate::db::TEXTS, IDS);
+        assert_eq!(TEXT_TABLES.map(|(id, _)| id), IDS);
+        // English is a language, not a Bible's id here; neither is anything else a request may send
+        for tx in [None, Some("en"), Some("kjv2"), Some("verses"), Some("")] { assert_eq!(text_tables(&conn, tx, Edition::E1961), T1961, "{tx:?}") }
     }
 
     #[test]

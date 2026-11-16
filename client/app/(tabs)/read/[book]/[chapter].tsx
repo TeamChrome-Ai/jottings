@@ -17,7 +17,7 @@ import type { Group, Outline } from '@shared/types'
 import { formatRef, formatVerseRuns, type Ref } from '@shared/ref'
 import { book as bookMeta, chapterIndex, fetchChapter, key as chapterKeyOf, nextChapter, peekChapter, prevChapter, validRef, verseId, warmAround, type ChapterData } from '../../../../src/lib/bible'
 import { useText } from '../../../../src/lib/text'
-import { TEXT_SHORT, peekShownText } from '@shared/texts'
+import { TEXT_LANG, TEXT_SHORT, peekShownText } from '@shared/texts'
 import { cachedGet, get, getApiBase, isNetworkError } from '../../../../src/lib/api'
 import { addBookmark, listBookmarks, removeBookmark } from '../../../../src/lib/library'
 import { bookmarkIds, bookmarkKey, bookmarkTitle, markedVerses, type BookmarkTarget } from '../../../../src/lib/bookmarks'
@@ -167,13 +167,16 @@ function ReadScreenPage() {
   }, [user?.id])  // eslint-disable-line react-hooks/exhaustive-deps
   const [allNotes, setAllNotes] = useState(false)
   const [wordAsked, setWordAsked] = useState(false)
-  // Strong's tags and Morrish's headwords are the English text's words: another Bible has no word lookup (docs/LANGUAGES.md)
-  const english = useText() === 'en'
+  // Strong's tags and Morrish's headwords are the English Darby's words: another Bible has no word lookup, and says
+  // so in words that are true of it (an English Bible beside Darby's is English too) (docs/LANGUAGES.md)
+  const text = useText()
+  const english = text === 'en'
   const wordMode = wordAsked && english
+  const lookupElsewhere = english ? null : TEXT_LANG[text] === 'en' ? t('Word lookup follows Darby’s text') : t('Word lookup is for the English text')
   const setWordMode = useCallback((on: boolean | ((w: boolean) => boolean)) => {
-    if (!english) { toast.show(t('Word lookup is for the English text')); return }
+    if (lookupElsewhere) { toast.show(lookupElsewhere); return }
     setWordAsked(on)
-  }, [english, toast])
+  }, [lookupElsewhere, toast])
   const [wordTags, setWordTags] = useState<WordTags | null>(null)
   /** Ministry on the selected verses or on this chapter (opened at the first verse selected, else the one at the top). */
   const [ministry, setMinistry] = useState<{ open: boolean; scope: MinistryScope | null }>({ open: false, scope: null })
@@ -860,7 +863,8 @@ function ReadScreenPage() {
             <T muted style={{ minWidth: 28, textAlign: 'center' }}>{prefs.fontSize}</T>
             <Button icon title="A+" accessibilityLabel={t('Larger text')} disabled={prefs.fontSize >= FONT_MAX} onPress={() => set({ fontSize: prefs.fontSize + 1 })} textStyle={{ fontSize: 18 }} />
           </View> : null}
-          {compact ? <View ref={tourRef('more-lookup')}><SwitchRow label={t('Word lookup')} hint={t('Tap a word: Strong’s concordance and Morrish')} value={wordMode} onChange={setWordMode} /></View> : null}
+          {compact ? <View ref={tourRef('more-lookup')}>{/* on a phone the toast rises behind this sheet: the row itself says why it stays off with another Bible read */}
+            <SwitchRow label={t('Word lookup')} hint={lookupElsewhere ?? t('Tap a word: Strong’s concordance and Morrish')} value={wordMode} onChange={setWordMode} /></View> : null}
           {/* what is done to the chapter, as quiet rows: the two controls above are set here, these lead somewhere */}
           <View>
             {compact ? <ListRow ref={tourRef('more-bookmark')} icon="bookmark" label={chapterMarked ? t('Remove chapter bookmark') : t('Bookmark this chapter')} onPress={() => { setMore(false); void toggleMark({ book: bookN, chapter: chapterN }) }} /> : null}

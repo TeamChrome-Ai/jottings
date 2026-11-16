@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0, 16 November 2026
+
+The source of the app's 2.1.0 release.
+
+## 2.0.1, 15 November 2026
+
+The source of the app's 2.0.1 release.
+
 ## 2.0.0, 14 November 2026
 
 The source of the app's 2.0.0 release.

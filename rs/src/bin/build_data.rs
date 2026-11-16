@@ -20,7 +20,8 @@ use std::{collections::HashMap, fs, io::Write};
 #[derive(Deserialize, Clone)] struct RawNote { m: String, i: i64, #[serde(default)] w: String, t: String }
 #[derive(Deserialize)] struct StrongsEntry { lemma: String, translit: String, pron: String, kjv: String }
 
-/// A Bible in another language, kept in the English Darby's chapters and verses (docs/LANGUAGES.md): data/text_<lang>.json.
+/// Another Bible, kept in the English Darby's chapters and verses (docs/LANGUAGES.md): data/text_<id>.json. Its id is
+/// its own (`fr`, `de`, `kjv`, `ylt`), not always a language's: the King James Version and Young's are English.
 #[derive(Deserialize)] struct LangNote { marker: String, pos: i64, text: String }
 /// A printed verse that begins inside a slot, at word `pos` (the German's Numbers 30:2 inside English 30:1).
 #[derive(Deserialize)] struct LangInner { nv: i64 }
@@ -28,8 +29,11 @@ use std::{collections::HashMap, fs, io::Write};
 #[derive(Deserialize)] struct LangChapter { c: i64, title: Option<String>, nc: Option<i64>, verses: Vec<LangVerse> }
 #[derive(Deserialize)] struct LangBook { n: i64, chapters: Vec<LangChapter> }
 #[derive(Deserialize)] struct LangText { books: Vec<LangBook> }
-/// The Bibles other than the English the data build knows.
-const LANGS: [&str; 2] = ["fr", "de"];
+/// The Bibles beside the English Darby that this run builds: every one of db.rs TEXTS but those the environment `env`
+/// reads leaves out (BEREAN_WITHOUT_KJV=1, BEREAN_WITHOUT_YLT=1: docs/LANGUAGES.md, "Leaving a text out").
+fn texts_built(env: impl Fn(&str) -> Option<String>) -> Vec<&'static str> {
+    db::TEXTS.into_iter().filter(|id| !db::text_left_out(id, &env)).collect()
+}
 
 #[derive(Deserialize)] struct Move { from: String, to: String, text: String, r#as: Option<String> }
 #[derive(Deserialize)] struct Replace { r#ref: String, from: String, to: String }
@@ -311,9 +315,9 @@ fn lang_slots_match(english: &Raw, t: &LangText) -> Vec<String> {
     bad
 }
 
-/// The text's tables for the server's search: verses_<lang> (with its full-text indexes), chapters_<lang>, notes_<lang>.
+/// The text's tables for the server's search: verses_<id> (with its full-text indexes), chapters_<id>, notes_<id>.
 fn write_lang_db(tx: &rusqlite::Transaction, lang: &str, t: &LangText) -> Result<usize> {
-    tx.execute_batch(&db::schema_text_lang(lang))?;
+    tx.execute_batch(&db::schema_text(lang))?;
     let mut ins_v = tx.prepare(&format!("INSERT INTO verses_{lang} (id, book, chapter, verse, text, html, para, strophe, head) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,NULL)"))?;
     let mut ins_c = tx.prepare(&format!("INSERT INTO chapters_{lang} (book, chapter, title, division, words, verse_count) VALUES (?1,?2,?3,0,?4,?5)"))?;
     let mut ins_n = tx.prepare(&format!("INSERT INTO notes_{lang} (verse_id, marker, word_index, text) VALUES (?1,?2,?3,?4)"))?;
@@ -328,11 +332,11 @@ fn write_lang_db(tx: &rusqlite::Transaction, lang: &str, t: &LangText) -> Result
         }
         ins_c.execute(params![b.n, ch.c, ch.title, words, ch.verses.len() as i64])?;
     } }
-    tx.execute_batch(&db::fts_rebuild_lang(lang))?;
+    tx.execute_batch(&db::fts_rebuild_text(lang))?;
     Ok(total)
 }
 
-/// The reader's chapter files of the text (client/public/bible-<lang>/B/C.json), marked `tx` so a stored copy says which
+/// The reader's chapter files of the text (client/public/bible-<id>/B/C.json), marked `tx` with its id so a stored copy says which
 /// Bible it is; each verse's own printed numbers where they differ, and `m` on an English verse whose words this Bible
 /// gives with its neighbour's (the reader shows nothing for it, where an English verse Darby omits says so).
 fn lang_chapter_files(lang: &str, t: &LangText, english: &Raw) -> Vec<serde_json::Value> {
@@ -437,9 +441,11 @@ fn main() -> Result<()> {
     let (notes_1890, glyphs_1890) = edition_notes(raw_1890.as_ref().unwrap_or(&raw), &base, own);
     println!("notes 1961: {lettered_1961} lettered (notes_bf.json) + {glyphs} El/Eloah glosses from the printed glyphs");
     println!("notes 1890: {lettered_1890} lettered (notes_1890.json{}) + {glyphs_1890} glosses; text: {}", if lettered_1890 == 0 { ": none yet" } else { "" }, if raw_1890.is_some() { "darby_1890.json" } else { "the same as 1961" });
-    // the other languages' Bibles (docs/LANGUAGES.md), each refused whole if it does not fill the English slots exactly
+    // the other Bibles (docs/LANGUAGES.md), each refused whole if it does not fill the English slots exactly; one that is
+    // left out is not read: its tables are not in the database and its chapter files are not written
     let mut texts: Vec<(&str, LangText)> = Vec::new();
-    for lang in LANGS {
+    for id in db::TEXTS { if db::text_left_out(id, |k| std::env::var(k).ok()) { println!("{id} text: left out (BEREAN_WITHOUT_{}=1)", id.to_uppercase()); } }
+    for lang in texts_built(|k| std::env::var(k).ok()) {
         let Ok(s) = fs::read_to_string(format!("{data}/text_{lang}.json")) else { continue };
         let t: LangText = serde_json::from_str(&s).with_context(|| format!("data/text_{lang}.json"))?;
         let bad = lang_slots_match(&raw, &t);
@@ -522,7 +528,7 @@ fn main() -> Result<()> {
     fs::write(format!("{dir_1890}/meta.json"), serde_json::to_vec(&serde_json::json!({ "v": version, "text": raw_1890.is_some(), "notices": notices.is_some() }))?)?;
     println!("1890 bundle: {} KB of chapter JSON in {dir_1890}; app overlay {} KB; version {version}", total_1890 / 1024, overlay_bytes / 1024);
 
-    // The other languages' Bibles (docs/LANGUAGES.md): the same files under bible-<lang>/ for the web, the server and the
+    // The other Bibles (docs/LANGUAGES.md): the same files under bible-<id>/ for the web, the server and the
     // apps' bundle, with map.json (where their numbers differ) and meta.json (a version, in their URLs).
     for (lang, t) in &texts {
         let dir = format!("{out_dir}-{lang}");
@@ -614,6 +620,30 @@ mod tests {
         assert!(serde_json::to_string(&files).unwrap().contains("1961 editors") && files[0].get("ed").is_none());
         let index = footnote_index(b.raw, b.notes);
         assert!(index.words.contains_key("the") && !index.words.contains_key("earth"), "the 1961 bundle's index has the 1961 note's word: {index:?}");
+    }
+
+    #[test]
+    fn a_text_keeps_its_id_in_its_files_and_its_own_number_where_it_differs() {
+        // the King James Version's 13:1 lies over Darby's 12:18 and 13:1 (tools/import_text.py)
+        let english = Raw { books: vec![RawBook { n: 66, chapters: vec![
+            RawChapter { c: 12, title: None, division: None, verses: vec![verse(1, "And a great sign"), verse(2, "And I stood upon the sand of the sea;")] },
+            RawChapter { c: 13, title: None, division: None, verses: vec![verse(1, "and I saw a beast rising out of the sea")] }] }] };
+        let t: LangText = serde_json::from_str(r#"{"id":"kjv","lang":"en","books":[{"n":66,"chapters":[
+            {"c":12,"verses":[{"v":1,"t":"And there appeared a great wonder","p":1},{"v":2,"t":"And I stood upon the sand of the sea,","nv":1,"nc":13}]},
+            {"c":13,"verses":[{"v":1,"t":"and saw a beast rise up","h":"and saw <i>a beast</i> rise up"}]}]}]}"#).unwrap();
+        assert!(lang_slots_match(&english, &t).is_empty());
+        let files = lang_chapter_files("kjv", &t, &english);
+        assert_eq!((files[0]["tx"].as_str(), files[1]["tx"].as_str()), (Some("kjv"), Some("kjv")));
+        assert_eq!(files[0]["verses"][1], serde_json::json!({ "v": 2, "t": "And I stood upon the sand of the sea,", "nv": 1, "nc": 13 }));
+        assert_eq!(files[1]["verses"][0], serde_json::json!({ "v": 1, "t": "and saw a beast rise up", "h": "and saw <i>a beast</i> rise up" }));
+        assert_eq!(serde_json::Value::Object(lang_verse_map(&t)), serde_json::json!({ "66.12": [[2, 1, 13, 1]] }));
+    }
+
+    #[test]
+    fn a_text_left_out_is_not_built() {
+        assert_eq!(texts_built(|k| (k == "BEREAN_WITHOUT_KJV").then(|| "1".to_string())), ["fr", "de", "ylt"]);
+        assert_eq!(texts_built(|k| (k == "BEREAN_WITHOUT_YLT").then(|| "1".to_string())), ["fr", "de", "kjv"]);
+        assert_eq!(texts_built(|_| None), ["fr", "de", "kjv", "ylt"]);
     }
 
     fn note(m: &str, i: i64, w: &str, t: &str) -> RawNote { RawNote { m: m.into(), i, w: w.into(), t: t.into() } }

@@ -64,6 +64,11 @@ describe('the summaries', () => {
   it('say the voice, its speed and pauses, and the device voice', () => {
     expect(say('listening', facts({ ttsSpeed: 1.25, ttsPause: 'long', ttsDevice: true }, { voiceName: 'Beatrice' }))).toBe('Beatrice at 1.25×, long pauses, device voice')
   })
+  it('name the device’s voice, not a recorded one, while an English Bible beside Darby’s is read', () => {
+    for (const text of ['kjv', 'ylt'] as const) expect(say('listening', facts({ ttsSpeed: 1.25, ttsPause: 'long' }, { voiceName: 'Beatrice', text }))).toBe('Device voice at 1.25×, long pauses')
+    // Darby's own Bibles, as before
+    for (const text of ['en', 'fr', 'de'] as const) expect(say('listening', facts({ ttsSpeed: 1.25, ttsPause: 'long' }, { voiceName: 'Beatrice', text }))).toBe('Beatrice at 1.25×, long pauses')
+  })
   it('give the language and both Bibles when there is a second', () => {
     expect(say('language', facts({ bible2: 'fr' }, { lang: 'de', text: 'de' }))).toBe('Deutsch · Elberfelder (Deutsch) + Darby (français)')
   })

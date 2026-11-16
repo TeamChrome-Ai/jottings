@@ -3,12 +3,14 @@
  * by scripts/credits-html.mjs into public/credits.html (and credits-1890.html, which the server serves in its place
  * while the 1890 edition is on). Keep them in sync by editing only this file. Two sets: the 1961 edition's (CREDITS)
  * and the 1890 edition's (docs/EDITION.md), which has no 1961, CCEL or Coates entry.
- * Its imports are type-only but for the brand (shared/brand.ts) and the words (shared/i18n.ts): scripts/credits-html.mjs
+ * Its imports are type-only but for the brand (shared/brand.ts), the words (shared/i18n.ts) and the texts a build leaves
+ * out (shared/textsOut.ts): scripts/credits-html.mjs
  * runs this file in node, with scripts/brand.mjs resolving those. The font licences ship as text too:
  * client/assets/fonts/Literata-OFL.txt and OpenDyslexic-OFL.txt (the same OFL 1.1 body under each face's own notice).
  */
 import { BRAND, NOUN, possessive } from '@shared/brand'
 import { N_, peekLang, t, tc } from '@shared/i18n'
+import { OPTIONAL_TEXTS, TEXTS_OUT } from '@shared/textsOut'
 import type { Edition } from './editionCore'
 
 /** The brand in the credits' words: `{brands}` is the English possessive; a translation names the app with `{brand}`. */
@@ -42,12 +44,20 @@ const shown = ({ name, what, licence, note, ...links }: Credit): Credit => ({
 /** Mr. Darby's own notices, credited to the printings; shared by both editions' lists. */
 const NOTICES: Credit = { name: N_('J. N. Darby’s introductory notices (1871, 1884, 1890)'), what: N_('His notices to the New Testament of 1884 and the Old Testament of 1890, and his preface to the New Testament of 1871, as the printings give them.'), licence: N_('Public domain') }
 
+/** The English Bibles read beside Darby's (docs/LANGUAGES.md), each credited only in a build that carries it
+ *  (@shared/textsOut: BEREAN_WITHOUT_KJV=1, BEREAN_WITHOUT_YLT=1). LICENSING.md records each source's own words. */
+const ADDED_TEXTS: Record<typeof OPTIONAL_TEXTS[number], Credit> = {
+  kjv: { name: 'King James Version (the standardized text of 1769)', what: N_('An English Bible to read beside Darby’s: the words of the verses only, from eBible.org’s text (eng-kjv2006), courtesy of the CrossWire Bible Society and eBible.org, kept in the English verses with its own numbering.'), licence: N_('Public domain'), url: 'https://ebible.org/find/details.php?id=eng-kjv2006', note: N_('In the United Kingdom the Crown’s letters patent reserve the printing of this translation; everywhere else it is in the public domain.') },
+  ylt: { name: 'Robert Young, Young’s Literal Translation of the Holy Bible', what: N_('An English Bible to read beside Darby’s: the words of the verses only, from eBible.org’s text (engylt), kept in the English verses with its own numbering.'), licence: N_('Public domain'), url: 'https://ebible.org/find/details.php?id=engylt' },
+}
+
 /** The 1961 edition's Scripture and notes, in English: the 1890 edition's list is cut from it by its words. */
 const SCRIPTURE: Credit[] = [
   { name: 'J. N. Darby, The Holy Scriptures: A New Translation from the Original Languages', what: N_('The Bible text: the 1890 edition’s wording (New Testament 1884, Old Testament 1890).'), licence: N_('Public domain'), note: N_('Taken from a published digital copy of the text and checked verse by verse against a second copy; words split across lines are rejoined and four verse divisions follow the usual numbering.') },
   { name: 'ebible.org, engDBY', what: N_('The Strong’s numbers on the words, moved onto the words of this edition when the data is built.'), licence: N_('Public domain'), url: 'https://ebible.org/find/details.php?id=engDBY' },
   { name: 'La Sainte Bible, traduction J. N. Darby (JND v2.0, édition 2024)', what: N_('The French Bible and Darby’s French notes, from Bibles et Publications Chrétiennes’ public-domain edition, kept in the English verses with its own numbering.'), licence: N_('Public domain'), url: 'https://www.editeurbpc.com/telechargements/JND' },
   { name: 'Elberfelder Bibel, unrevidierte Ausgabe (J. N. Darby, Carl Brockhaus u. a.)', what: N_('The German Bible: the unrevised Elberfelder text of 1905 from eBible (deuelo), its footnotes from CrossWire’s GerElb1871, kept in the English verses with its own numbering.'), licence: N_('Public domain'), url: 'https://ebible.org/find/details.php?id=deuelo' },
+  ...OPTIONAL_TEXTS.filter(id => !TEXTS_OUT.includes(id)).map(id => ADDED_TEXTS[id]),
   { name: N_('The 1961 edition: footnotes'), what: FOOTNOTES, licence: N_('Darby’s notes are public domain; the rights in the 1961 editors’ revisions and additions are the edition’s'), url: 'https://web.archive.org/web/19980514181543/http://bf.org/etexts/bibles/darbybib.zip', note: N_('The 8,834 lettered notes, from the Bible Foundation (bf.org) electronic text of 1998, acknowledged with thanks.') },
   { name: N_('The 1961 edition: introductory notice and chronological table, via the Christian Classics Ethereal Library (CCEL)'), what: N_('The 1961 edition’s own introductory notice, its chronological table of the kings and prophets, and its order of the prophets, as published by CCEL.'), licence: N_('Text of the 1961 edition; CCEL’s edition acknowledged with thanks'), url: 'https://www.ccel.org/bible/jnd/darby.htm' },
   NOTICES,

@@ -74,10 +74,15 @@ fn previous(path: &str, h: &HeaderMap) -> Option<Response> {
     Some(respond(path, Body::from(bytes), &hash, true, false, h))
 }
 
+/// A file that never changes at its address: expo export hashes everything under _expo/ and assets/; chapter bundles
+/// (the English Darby's, the 1890 edition's, and every other Bible's under `bible-<id>/`) only change with a data
+/// rebuild; a changed face in fonts/ takes a new file name (client/src/lib/appFonts.web.ts).
+fn immutable(path: &str) -> bool {
+    ["_expo/", "assets/", "bible/", "bible1890/", "bible-", "fonts/"].iter().any(|p| path.starts_with(p))
+}
+
 fn lookup(path: &str, accepts_br: bool, h: &HeaderMap) -> Option<Response> {
-    // expo export hashes everything under _expo/ and assets/; chapter bundles only change with a data rebuild; a
-    // changed face in fonts/ takes a new file name (client/src/lib/appFonts.web.ts)
-    let immutable = path.starts_with("_expo/") || path.starts_with("assets/") || path.starts_with("bible/") || path.starts_with("bible1890/") || path.starts_with("bible-fr/") || path.starts_with("bible-de/") || path.starts_with("fonts/");
+    let immutable = immutable(path);
     if accepts_br {
         if let Some(f) = Assets::get(&format!("{path}.br")) { return Some(file_response(path, f, immutable, true, h)); }
     }
@@ -114,6 +119,12 @@ fn respond(path: &str, body: Body, hash: &[u8], immutable: bool, br: bool, h: &H
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn every_bibles_chapter_files_are_kept_as_long_as_their_address_stands() {
+        for p in ["bible/43/3.json", "bible1890/43/3.json", "bible-fr/43/3.json", "bible-de/all.json", "bible-kjv/43/3.json", "bible-ylt/19/23.json", "bible-kjv/map.json", "_expo/static/js/web/x.js", "assets/a.png", "fonts/L.ttf"] { assert!(immutable(p), "{p}") }
+        for p in ["index.html", "credits.html", "bibles/x.json", "sw.js", "manifest.json"] { assert!(!immutable(p), "{p}") }
+    }
+
     #[test]
     fn the_1890_edition_serves_its_own_chapters_and_credits() {
         assert_eq!(edition_path("bible/43/3.json", Edition::E1890).as_deref(), Some("bible1890/43/3.json"));

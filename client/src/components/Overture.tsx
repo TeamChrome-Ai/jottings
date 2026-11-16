@@ -43,6 +43,8 @@ const VERSES: Record<BibleText, { words: string[]; god: number; note: NoteRun[] 
     words: ['In', 'the', 'beginning', 'God', 'created', 'the', 'heavens', 'and', 'the', 'earth.'], god: 3,
     note: [{ t: 'Heb. ' }, { t: 'Elohim', i: true }, { t: ', the plural of ' }, { t: 'Eloah', i: true }, { t: ', ‘the Supreme’. It is Deity in the absolute sense.' }],
   },
+  kjv: { words: ['In', 'the', 'beginning', 'God', 'created', 'the', 'heaven', 'and', 'the', 'earth.'], god: 3, note: null },
+  ylt: { words: ['In', 'the', 'beginning', 'of', 'God\'s', 'preparing', 'the', 'heavens', 'and', 'the', 'earth —'], god: 4, note: null },
   fr: { words: ['Au', 'commencement', 'Dieu', 'créa', 'les', 'cieux', 'et', 'la', 'terre.'], god: 2, note: null },
   de: { words: ['Im', 'Anfang', 'schuf', 'Gott', 'die', 'Himmel', 'und', 'die', 'Erde.'], god: 3, note: null },
 }

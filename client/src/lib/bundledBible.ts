@@ -5,26 +5,30 @@
  * all, once, when it builds its index. bundledBible.web.ts returns null: the web fetches the same files instead.
  *
  * The 1890 edition (docs/EDITION.md) rides along as what differs: client/public/bible1890/notes/<book>.json holds each
- * chapter's notes (or, where its text differs, the whole chapter), laid over the 1961 chapter on first read. The French
- * and German Bibles ride along whole (client/public/bible-<lang>/, docs/LANGUAGES.md).
+ * chapter's notes (or, where its text differs, the whole chapter), laid over the 1961 chapter on first read. The other
+ * Bibles ride along whole (client/public/bible-<id>/, docs/LANGUAGES.md).
  */
 import type { ChapterData } from './bible'
 import { applyOverlay, type OverlayEntry, type Source } from './editionCore'
-import { peekSource } from './text'
+import type { OwnText } from '@shared/texts'
+import { ADDED, peekSource } from './text'
 
 const files = require.context('../../public/bible', true, /^\.\/\d+\/\d+\.json$/)
 const overlays = require.context('../../public/bible1890/notes', false, /^\.\/\d+\.json$/)
-/** The French and German Bibles (docs/LANGUAGES.md), whole, in the same shape. */
-const own = {
+/** The other Bibles (docs/LANGUAGES.md), whole, in the same shape: Darby's French and the Elberfelder, and the two
+ *  read beside Darby's where this build carries them (text.ts ADDED: none of one it leaves out). */
+const own: Partial<Record<OwnText, (file: string) => unknown>> = {
   fr: require.context('../../public/bible-fr', true, /^\.\/\d+\/\d+\.json$/),
   de: require.context('../../public/bible-de', true, /^\.\/\d+\/\d+\.json$/),
+  ...(ADDED.kjv?.chapters ? { kjv: ADDED.kjv.chapters } : {}),
+  ...(ADDED.ylt?.chapters ? { ylt: ADDED.ylt.chapters } : {}),
 }
 const file = (book: number, chapter: number) => `./${book}/${chapter}.json`
 /** Each 1890 chapter made once, so a verse keeps one object (bible.ts caches its tokens by object). */
 const made = new Map<string, ChapterData>()
 
 export function bundledChapter(book: number, chapter: number, e: Source = peekSource()): ChapterData | null {
-  if (e === 'fr' || e === 'de') { try { return own[e](file(book, chapter)) as ChapterData } catch { return null } }
+  if (e !== '1961' && e !== '1890') { try { return (own[e]?.(file(book, chapter)) ?? null) as ChapterData | null } catch { return null } }
   let base: ChapterData & { ed?: string }
   try { base = files(file(book, chapter)) as ChapterData } catch { return null }
   // a neutered build (docs/EDITION.md, "Production build") bundles the 1890 chapters themselves: nothing to lay over

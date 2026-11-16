@@ -204,7 +204,9 @@ page.
 
 Listening sets the voice (AI voices, or the device's own voice, which reads offline), the speed, the pause between
 verses, whether verse numbers and the book and chapter are said, whether each word is highlighted, and whether reading
-continues into the next chapter. Open it from Settings, Listening, or from the player bar while it reads.
+continues into the next chapter. The AI voices read Darby's English translation: while you read the King James Version
+or Young's Literal Translation they are not offered, and your device's own voice reads. Open it from Settings,
+Listening, or from the player bar while it reads.
 
 ## Settings: Daily
 <!-- route: /settings/daily -->
@@ -216,9 +218,12 @@ you choose and up to four morning verses. Open it from Settings, Daily.
 ## Settings: Language
 <!-- setting: language -->
 
-Language sets the app's language and the Bible you read, and a second Bible to show under or beside it. Your
-highlights, notes and reading stay with their verses whichever Bible you read; the ministry is in English. Open it from
-Settings, Language.
+Language sets the app's language and the Bible you read, and a second Bible to show under or beside it, verse for
+verse. The Bibles are listed under their languages: under English, Darby's translation, the King James Version and
+Young's Literal Translation; Darby's French; the German Elberfelder. Darby's is the Bible read unless you choose
+another. Footnotes, word lookup, the recorded voices and the ministry's verse links are Darby's and follow his text
+whichever Bible you read; another Bible is read aloud by your device's own voice. Your highlights, notes and reading
+stay with their verses whichever Bible you read; the ministry is in English. Open it from Settings, Language.
 
 ## Settings: Motion
 <!-- route: /settings/motion -->

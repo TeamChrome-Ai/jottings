@@ -7,25 +7,35 @@ import { usePrefs } from '../store/prefs'
 import { tourRef } from '../store/tour'
 import { Button, Segmented, Sheet, SwitchRow, T } from './ui'
 import { t, tc } from '@shared/i18n'
-import { peekShownText } from '@shared/texts'
+import { peekShownText, voicesFor } from '@shared/texts'
 
-/** How read aloud sounds, in one sheet: opened from the player bar and from Settings → Listening. */
+/**
+ * How read aloud sounds, in one sheet: opened from the player bar and from Settings → Listening. The recorded voices
+ * read the English Darby's words (@shared/texts voicesFor): with Darby's French or the Elberfelder read they are still
+ * listed, with a line saying so; with an English Bible beside Darby's read they are not offered at all, since one
+ * would seem to read the page and read other words, and the sheet has only what is set for the device's own voice.
+ */
 export default function ListeningSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { prefs, set } = usePrefs()
-  const preview = usePreview(open, prefs.ttsVoice)
+  const voices = voicesFor(peekShownText())
+  const preview = usePreview(open && voices !== 'device', prefs.ttsVoice)
   const name = VOICES.find(v => v.id === prefs.ttsVoice)?.name ?? prefs.ttsVoice
   return (
     <Sheet open={open} onClose={onClose} title={t('Listening')}>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
         <View ref={tourRef('listening-sheet')} style={{ gap: 14 }}>
-          <T small muted>{t('Voice')}</T>
-          <Segmented value={prefs.ttsVoice} onChange={ttsVoice => set({ ttsVoice })} options={VOICES.map(v => ({ value: v.id, label: v.name }))} />
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <T small muted style={{ flexShrink: 1 }}>{t(VOICES.find(v => v.id === prefs.ttsVoice)?.blurb ?? '')}</T>
-            <Button small lead={preview.playing ? 'pause' : 'play'} title={preview.playing ? tc('verb', 'Stop') : t('Hear {voice}', { voice: name })} accessibilityLabel={preview.playing ? t('Stop the sample of {voice}', { voice: name }) : t('Hear a sample of {voice}, Psalm 23', { voice: name })} onPress={preview.toggle} />
-          </View>
-          <T small muted>{t('AI voices, powered by Speechify')}</T>
-          {peekShownText() !== 'en' ? <T small>{t('These voices read the English Darby. The Bible you read is read by your device’s own voice, in its language.')}</T> : null}
+          {voices === 'device' ? <T small>{t('Your device’s own voice reads this Bible. The recorded voices read Darby’s words, so they are offered only with his.')}</T> : (
+            <>
+              <T small muted>{t('Voice')}</T>
+              <Segmented value={prefs.ttsVoice} onChange={ttsVoice => set({ ttsVoice })} options={VOICES.map(v => ({ value: v.id, label: v.name }))} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <T small muted style={{ flexShrink: 1 }}>{t(VOICES.find(v => v.id === prefs.ttsVoice)?.blurb ?? '')}</T>
+                <Button small lead={preview.playing ? 'pause' : 'play'} title={preview.playing ? tc('verb', 'Stop') : t('Hear {voice}', { voice: name })} accessibilityLabel={preview.playing ? t('Stop the sample of {voice}', { voice: name }) : t('Hear a sample of {voice}, Psalm 23', { voice: name })} onPress={preview.toggle} />
+              </View>
+              <T small muted>{t('AI voices, powered by Speechify')}</T>
+              {voices === 'stated' ? <T small>{t('These voices read the English Darby. The Bible you read is read by your device’s own voice, in its language.')}</T> : null}
+            </>
+          )}
           <T small muted>{t('Speed')}</T>
           <Segmented value={String(prefs.ttsSpeed)} onChange={s => set({ ttsSpeed: Number(s) })} options={SPEEDS.map(s => ({ value: String(s), label: `${s}×` }))} />
           <T small muted>{t('Pause between verses')}</T>
@@ -37,7 +47,7 @@ export default function ListeningSheet({ open, onClose }: { open: boolean; onClo
           <SwitchRow label={t('Highlight each word')} value={prefs.ttsWord} onChange={ttsWord => set({ ttsWord })} />
           <SwitchRow label={t('Continue into the next chapter')} hint={t('Follows your path while one is on')} value={prefs.ttsAutoNext} onChange={ttsAutoNext => set({ ttsAutoNext })} />
           <SwitchRow label={t('Stop after the selected verse')} value={prefs.ttsStopAtSelection} onChange={ttsStopAtSelection => set({ ttsStopAtSelection })} />
-          <SwitchRow label={t('Use the device voice')} hint={t('Reads offline; no word timings')} value={prefs.ttsDevice} onChange={ttsDevice => set({ ttsDevice })} />
+          {voices === 'device' ? null : <SwitchRow label={t('Use the device voice')} hint={t('Reads offline; no word timings')} value={prefs.ttsDevice} onChange={ttsDevice => set({ ttsDevice })} />}
         </View>
         <T small muted>{t('Voice, speed, numbers and heading apply from the next verse; the rest at once.')}</T>
         <Button title={t('Done')} primary onPress={onClose} />

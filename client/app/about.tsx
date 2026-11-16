@@ -15,6 +15,7 @@ import { hasChronology, noticeSections, type Meta1890, type NoticeSection } from
 import { Card, Enter, H, RADIUS, Screen, T, Tap } from '../src/components/ui'
 import { easeNextLayout, useReduceMotion } from '../src/components/motion/nav'
 import { t, tc } from '@shared/i18n'
+import { TEXT_LANG, type BibleText } from '@shared/texts'
 import { tr } from '../src/i18n'
 
 // shipped in this route's chunk (no network); the server's /api/intro serves the same files: the 1961 edition's notices,
@@ -169,6 +170,17 @@ function SectionBody({ s, ink, bg }: { s: IntroSection; ink: Ink; bg: string }) 
   )
 }
 
+/** What a reader of another Bible than the English Darby is reading, in a sentence. The notices under it are the
+ *  English Darby's whichever it is; the sentence for his French and for the Elberfelder says so itself. */
+function reading(text: Exclude<BibleText, 'en'>): string {
+  switch (text) {
+    case 'fr': return t('You are reading Darby’s French translation (La Sainte Bible, JND v2.0, 2024 edition of Bibles et Publications Chrétiennes, public domain). The notices below are those of his English translation.')
+    case 'de': return t('You are reading the unrevised Elberfelder Bible, made by Darby with Carl Brockhaus and others (public domain). The notices below are those of Darby’s English translation.')
+    case 'kjv': return t('You are reading the King James Version, in the standard text of 1769 (public domain).')
+    case 'ylt': return t('You are reading Young’s Literal Translation, by Robert Young (public domain).')
+  }
+}
+
 export default function About() {
   const router = useRouter()
   const c = useColors()
@@ -201,11 +213,13 @@ export default function About() {
         i: s => <T muted style={face('serif', { italic: true })}>{s}</T>,
         link: s => <T muted style={{ color: c.accent, textDecorationLine: 'underline' }} accessibilityRole="link" onPress={() => router.push('/credits')}>{s}</T>,
       }, { title: 'The Holy Scriptures: A New Translation from the Original Languages' })}</T></Enter>
-      {/* a reader of the French or German Bible: what they read, and that the notices below are the English's */}
+      {/* a reader of another Bible: what they read, and that the notices below are the English Darby's; of an English
+          Bible beside Darby's, also what else is his and follows his text, wherever they meet it */}
       {text !== 'en' ? (
-        <Enter delay={100}><Card><T muted style={{ lineHeight: 22 }}>{text === 'fr'
-          ? t('You are reading Darby’s French translation (La Sainte Bible, JND v2.0, 2024 edition of Bibles et Publications Chrétiennes, public domain). The notices below are those of his English translation.')
-          : t('You are reading the unrevised Elberfelder Bible, made by Darby with Carl Brockhaus and others (public domain). The notices below are those of Darby’s English translation.')}</T></Card></Enter>
+        <Enter delay={100}><Card>
+          <T muted style={{ lineHeight: 22 }}>{reading(text)}</T>
+          {TEXT_LANG[text] === 'en' ? <T muted style={{ lineHeight: 22 }}>{t('The footnotes, word lookup, the recorded voices and the ministry’s verse links are those of Darby’s translation: they follow his text whichever Bible you read. The notices below are his.')}</T> : null}
+        </Card></Enter>
       ) : null}
       {hasChronology(edition) ? (
         <Card>

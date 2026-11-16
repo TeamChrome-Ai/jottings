@@ -30,7 +30,22 @@ if (neutered) {
   neuteredFiles[path.resolve(projectRoot, 'src/lib/buildFlags.ts')] = path.resolve(projectRoot, 'src/lib/buildFlags.neutered.ts')
 }
 
-config.watchFolders = [...(config.watchFolders ?? []), shared, ccel, cbd, glossary, ...(neutered ? [neuteredDir] : [])]
+// BEREAN_WITHOUT_KJV=1, BEREAN_WITHOUT_YLT=1 (docs/LANGUAGES.md, "Leaving a text out"): the bundle carries not a word
+// of that Bible and does not offer it. Its own file, src/lib/texts/<id>.ts with its .native twin (the map, the
+// version, the chapters), resolves to texts/none.ts, and shared/textsOut.ts, which lists the texts left out, to a copy
+// written here under client/.without/ (not committed), since the app cannot read the build's environment where it
+// runs. One variable is the whole switch for a text. Unset, nothing below is touched.
+const without = ['kjv', 'ylt'].filter(id => process.env[`BEREAN_WITHOUT_${id.toUpperCase()}`] === '1')
+const withoutDir = path.resolve(projectRoot, '.without')
+const withoutFiles = {}
+if (without.length) {
+  fs.mkdirSync(withoutDir, { recursive: true })
+  fs.writeFileSync(path.join(withoutDir, 'textsOut.ts'), `export const OPTIONAL_TEXTS = ['kjv', 'ylt'] as const\nexport const TEXTS_OUT: readonly string[] = ${JSON.stringify(without)}\n`)
+  withoutFiles[path.join(shared, 'textsOut.ts')] = path.join(withoutDir, 'textsOut.ts')
+  for (const id of without) for (const twin of ['', '.native']) withoutFiles[path.resolve(projectRoot, `src/lib/texts/${id}${twin}.ts`)] = path.resolve(projectRoot, 'src/lib/texts/none.ts')
+}
+
+config.watchFolders = [...(config.watchFolders ?? []), shared, ccel, cbd, glossary, ...(neutered ? [neuteredDir] : []), ...(without.length ? [withoutDir] : [])]
 config.resolver.nodeModulesPaths = [path.resolve(projectRoot, 'node_modules')]
 config.resolver.extraNodeModules = { '@shared': shared }
 
@@ -47,6 +62,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   }
   const res = upstream ? upstream(context, moduleName, platform) : context.resolveRequest(context, moduleName, platform)
   if (neutered && res && res.type === 'sourceFile' && neuteredFiles[res.filePath]) return { ...res, filePath: neuteredFiles[res.filePath] }
+  if (res && res.type === 'sourceFile' && withoutFiles[res.filePath]) return { ...res, filePath: withoutFiles[res.filePath] }
   return res
 }
 

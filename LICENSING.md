@@ -86,6 +86,8 @@ release can still only be used under the AGPL.
 | 1.3.11 | 13 November 2026 | 13 November 2027 |
 | 1.3.12 | 13 November 2026 | 13 November 2027 |
 | 2.0.0 | 14 November 2026 | 14 November 2027 |
+| 2.0.1 | 15 November 2026 | 15 November 2027 |
+| 2.1.0 | 16 November 2026 | 16 November 2027 |
 
 ## 6. What these licenses do not cover
 
@@ -103,6 +105,41 @@ release can still only be used under the AGPL.
 ## 7. Parts that stay AGPL-only
 
 None.
+
+## 8. Bible texts taken from another publisher
+
+Each text below was taken only after its publisher's own page was read. The page, the day it was read and its words
+are recorded here. Only the words of the verses are taken: no Strong's numbers, no headings, no translators' notes and
+no Apocrypha. The texts are not in the public copy of this repository.
+
+### King James Version
+
+- Source: eBible.org, translation id `eng-kjv2006`, file `https://eBible.org/Scriptures/eng-kjv2006_usfm.zip`
+  (sha256 `b6faa67117ccaba49df9e7df224a553f11758ae7c5d58f0f7979e2b73ac4480b`).
+- Page: `https://ebible.org/find/details.php?id=eng-kjv2006`, and the same words at
+  `https://ebible.org/eng-kjv2006/copyright.htm` and in the file's own `copr.htm`. Read on 15 November 2026.
+- Its words: "The King James Version or Authorized Version of the Holy Bible, using the standardized text of 1769,
+  protocanon only, with Strong's numbers added." "Public Domain". "You may copy the King James Version of the Holy
+  Bible freely." "This free text of the King James Version of the Holy Bible is brought to you courtesy of the
+  Crosswire Bible Society and eBible.org."
+- The United Kingdom. The same page says: "Letters patent issued by King James with no expiration date means that to
+  print this translation in the United Kingdom or import printed copies into the UK, you need permission. Currently,
+  the Cambridge University Press, the Oxford University Press, and Collins have the exclusive right to print this
+  Bible translation in the UK. This royal decree has no effect outside of the UK, where this work is firmly in the
+  Public Domain." The app is offered on Google Play in the United Kingdom, and the letters patent speak of printing
+  and of importing printed copies. The owner decided on 15 November 2026 that the text ships everywhere the app
+  does, the United Kingdom included. The text can still be left out of a build and off a server with one switch,
+  `BEREAN_WITHOUT_KJV=1` (`docs/LANGUAGES.md`, "Leaving a text out").
+
+### Young's Literal Translation
+
+- Source: eBible.org, translation id `engylt`, file `https://eBible.org/Scriptures/engylt_usfm.zip`
+  (sha256 `c526b4e362fef13916a14765a7e331267f6a1227db58549fc61d3288a930a12b`).
+- Page: `https://ebible.org/find/details.php?id=engylt`, and the same words at
+  `https://ebible.org/engylt/copyright.htm` and in the file's own `copr.htm`. Read on 15 November 2026.
+- Its words: "Young's Literal Translation of the Holy Bible". "Public Domain". "Translation by: Robert Young". "This
+  public domain Bible translation is brought to you courtesy of eBible.org."
+- Its switch is `BEREAN_WITHOUT_YLT=1`.
 
 ## The MIT License
 

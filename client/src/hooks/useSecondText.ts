@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useWindowDimensions } from 'react-native'
 import { fetchChapter, peekChapter, type ChapterData } from '../lib/bible'
+import { secondText } from '@shared/texts'
 import { sourceOf, useText } from '../lib/text'
 import { usePref } from '../store/prefs'
 
@@ -13,7 +14,8 @@ const PAIR_MIN_WIDTH = 900
  */
 export function useSecondText(book: number, chapter: number): { second: ChapterData | null; wide: boolean } {
   const main = useText()
-  const pref = usePref('bible2')
+  // a second Bible chosen and since left out of the build is not set beside the first (the choice is kept)
+  const pref = secondText(usePref('bible2'))
   const other = pref && pref !== main ? sourceOf(pref) : null
   const [second, setSecond] = useState<ChapterData | null>(() => (other ? peekChapter(book, chapter, other) ?? null : null))
   useEffect(() => {

@@ -112,7 +112,7 @@ describe('the words', () => {
     }
   })
   // each Bible the app can show, by the folder its chapters are served from; the English one has two editions
-  const BIBLES = [['en', 'bible'], ['en', 'bible1890'], ['fr', 'bible-fr'], ['de', 'bible-de']] as const
+  const BIBLES = [['en', 'bible'], ['en', 'bible1890'], ['kjv', 'bible-kjv'], ['ylt', 'bible-ylt'], ['fr', 'bible-fr'], ['de', 'bible-de']] as const
   it.skipIf(!HAS_TEXTS).each(BIBLES)('shows Psalm 119:105 for the %s Bible exactly as %s has it', (text, dir) => {
     // skipped only in a copy without the texts (tests/_texts.ts). Where they are, a chapter file that is away fails: a
     // line typed by hand must not pass for want of the text to hold it to

@@ -15,12 +15,13 @@ import { prefsStore } from './prefs'
 import { BRAND } from '@shared/brand'
 import { peekLang, t } from '@shared/i18n'
 import { formatRef } from '@shared/ref'
-import { ownNumber, peekShownText } from '@shared/texts'
+import { TEXT_LANG, ownNumber, peekShownText, type BibleText } from '@shared/texts'
 
-/** The recordings are of the English Darby: another Bible is read by the device's own voice, in its language. */
+/** The recordings are of the English Darby: another Bible, another English one too, is read by the device's own
+ *  voice, in the language the Bible is in (not its id: the King James Version is `kjv` and English). */
 const deviceOnly = (chosen: boolean) => chosen || peekShownText() !== 'en'
 const speechLanguage = (): string | undefined => {
-  const x = peekShownText()
+  const x = TEXT_LANG[peekShownText()]
   return x === 'fr' ? 'fr-FR' : x === 'de' ? 'de-DE' : peekLang() === 'en' ? undefined : 'en-GB'
 }
 
@@ -41,7 +42,9 @@ const speechLanguage = (): string | undefined => {
 export type PlayerStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'error'
 export interface Spoken { book: number; chapter: number; v: number; off: number | null }
 type Chapter = { book: number; chapter: number }
-export interface PlayerState { status: PlayerStatus; spoken: Spoken | null; source: 'recording' | 'device' | null; error: string | null; book: number; chapter: number }
+/** `text`: the Bible the chapter in hand was read from. A change of the Bible shown does not change a chapter already
+ *  loaded: the player goes on with it, and the next start reads the Bible shown then. */
+export interface PlayerState { status: PlayerStatus; spoken: Spoken | null; source: 'recording' | 'device' | null; error: string | null; book: number; chapter: number; text: BibleText }
 interface Player {
   /** Start reading a chapter from a verse (1 = the top, heading included). The same start again while it loads is ignored. */
   /** `cue`: load and show the bar paused at that verse, without a sound until Play (the guided tour). */
@@ -129,7 +132,7 @@ type Current = { book: number; chapter: number; verses: Verse[]; marks: ChapterM
 
 function createEngine(): PlayerEngine {
   const prefs = prefsStore
-  let state: PlayerState = { status: 'idle', spoken: null, source: null, error: null, book: 0, chapter: 0 }
+  let state: PlayerState = { status: 'idle', spoken: null, source: null, error: null, book: 0, chapter: 0, text: 'en' }
   /** The state the last turn ended in, and whether this turn's end is already waited for. */
   let settled = state, settling = false
   const listeners = new Set<() => void>()
@@ -432,7 +435,8 @@ function createEngine(): PlayerEngine {
     } else {
       // device voice: verse by verse
       // in the language of the Bible being read, as the voice reads it: the English Darby's heading is English whatever the screens are in
-      if (c.heading && p.ttsHeading) await speakDevice(peekShownText() === 'en' ? `${bookMeta(c.book).nameEn}, chapter ${c.chapter}.` : t('{book}, chapter {chapter}.', { book: bookMeta(c.book).name, chapter: ownNumber(c.book, c.chapter, 1).c }), token)
+      // (an English Bible that is not Darby's has its own chapter number: its Revelation 13 begins at his 12:18)
+      if (c.heading && p.ttsHeading) await speakDevice(TEXT_LANG[peekShownText()] === 'en' ? `${bookMeta(c.book).nameEn}, chapter ${ownNumber(c.book, c.chapter, 1).c}.` : t('{book}, chapter {chapter}.', { book: bookMeta(c.book).name, chapter: ownNumber(c.book, c.chapter, 1).c }), token)
       c.heading = false
       for (; c.index < c.verses.length; c.index++) {
         p = prefs.get()
@@ -488,7 +492,7 @@ function createEngine(): PlayerEngine {
     paused.current = false
     cued.current = false
     Speech.stop(); player.current?.pause(); numbers.current?.pause()
-    setState({ status: 'loading', spoken: null, source: null, error: null, book, chapter })
+    setState({ status: 'loading', spoken: null, source: null, error: null, book, chapter, text: peekShownText() })
     // the chapter's end goes on into the reader's path, which no screen may have loaded (a car started the app)
     void pathForReadAloud().catch(() => {})
     const pr = prefs.get()

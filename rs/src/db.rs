@@ -332,14 +332,22 @@ pub const FTS_REBUILD_1890: &str = "INSERT INTO verses_1890_fts(verses_1890_fts)
 /// main. explicitly: an unqualified DROP of a table main lacks finds the attached seed's and drops that.
 const TEXT_1890_DROP: &str = "DROP TABLE IF EXISTS main.verses_1890_fts; DROP TABLE IF EXISTS main.verses_1890_tri; DROP TABLE IF EXISTS main.verses_1890; DROP TABLE IF EXISTS main.chapters_1890; DROP TABLE IF EXISTS main.verse_words_1890;";
 
-/// The Bibles in other languages (docs/LANGUAGES.md), each in tables of its own named `<table>_<lang>`.
-pub const LANG_TEXTS: [&str; 2] = ["fr", "de"];
-/// One language's tables: the 1890 text's shape, and its notes.
-pub fn schema_text_lang(lang: &str) -> String {
-    format!("{}\nCREATE TABLE notes_{lang} (verse_id INTEGER NOT NULL, marker TEXT NOT NULL, word_index INTEGER NOT NULL, text TEXT NOT NULL);\nCREATE INDEX notes_{lang}_verse ON notes_{lang}(verse_id);", SCHEMA_TEXT_1890.replace("_1890", &format!("_{lang}")))
+/// The Bibles beside the English Darby (docs/LANGUAGES.md), each in tables of its own named `<table>_<id>`. An id names
+/// a Bible, not a language: `fr` and `de` are their languages' only Bibles here, `kjv` and `ylt` are English ones.
+pub const TEXTS: [&str; 4] = ["fr", "de", "kjv", "ylt"];
+/// The texts a build can leave out (docs/LANGUAGES.md, "Leaving a text out"): `BEREAN_WITHOUT_KJV=1`,
+/// `BEREAN_WITHOUT_YLT=1`. Darby's French and the Elberfelder are the app's own Bibles and have no switch.
+const OPTIONAL_TEXTS: [&str; 2] = ["kjv", "ylt"];
+/// Whether the environment `env` reads leaves text `id` out of what is being built.
+pub fn text_left_out(id: &str, env: impl Fn(&str) -> Option<String>) -> bool {
+    OPTIONAL_TEXTS.contains(&id) && env(&format!("BEREAN_WITHOUT_{}", id.to_uppercase())).as_deref() == Some("1")
 }
-pub fn fts_rebuild_lang(lang: &str) -> String { FTS_REBUILD_1890.replace("_1890", &format!("_{lang}")) }
-fn text_lang_drop(lang: &str) -> String { format!("{} DROP TABLE IF EXISTS main.notes_{lang};", TEXT_1890_DROP.replace("_1890", &format!("_{lang}"))) }
+/// One text's tables: the 1890 text's shape, and its notes.
+pub fn schema_text(id: &str) -> String {
+    format!("{}\nCREATE TABLE notes_{id} (verse_id INTEGER NOT NULL, marker TEXT NOT NULL, word_index INTEGER NOT NULL, text TEXT NOT NULL);\nCREATE INDEX notes_{id}_verse ON notes_{id}(verse_id);", SCHEMA_TEXT_1890.replace("_1890", &format!("_{id}")))
+}
+pub fn fts_rebuild_text(id: &str) -> String { FTS_REBUILD_1890.replace("_1890", &format!("_{id}")) }
+fn text_drop(id: &str) -> String { format!("{} DROP TABLE IF EXISTS main.notes_{id};", TEXT_1890_DROP.replace("_1890", &format!("_{id}"))) }
 
 pub fn configure(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
@@ -503,15 +511,15 @@ pub fn reseed_scripture(conn: &Connection, seed: &str) -> Result<i64> {
         }
         conn.execute_batch(FTS_REBUILD)?;
         if text_1890 { conn.execute_batch(FTS_REBUILD_1890)?; }
-        // each other language's Bible: the seed's tables, or none when the seed has none
-        for lang in LANG_TEXTS {
-            conn.execute_batch(&text_lang_drop(lang))?;
-            if !in_seed(&format!("verses_{lang}"))? { continue }
-            conn.execute_batch(&schema_text_lang(lang))?;
+        // each other Bible: the seed's tables, or none when the seed has none (a text its data build left out)
+        for id in TEXTS {
+            conn.execute_batch(&text_drop(id))?;
+            if !in_seed(&format!("verses_{id}"))? { continue }
+            conn.execute_batch(&schema_text(id))?;
             for t in ["verses", "chapters", "verse_words", "notes"] {
-                conn.execute_batch(&format!("INSERT INTO main.{t}_{lang} SELECT * FROM seed.{t}_{lang};"))?;
+                conn.execute_batch(&format!("INSERT INTO main.{t}_{id} SELECT * FROM seed.{t}_{id};"))?;
             }
-            conn.execute_batch(&fts_rebuild_lang(lang))?;
+            conn.execute_batch(&fts_rebuild_text(id))?;
         }
         conn.execute_batch("COMMIT;")?;
         Ok(conn.query_row("SELECT count(*) FROM verses", [], |r| r.get(0))?)
@@ -544,6 +552,47 @@ mod tests {
         assert_eq!(row, (Some("did-as'-kal-os".into()), Some("doctor, master, teacher".into()), None));
         drop(c); drop(pool);
         for p in [live, seed] { let _ = std::fs::remove_file(p); }
+    }
+
+    #[test]
+    fn reseed_carries_each_added_text_only_when_the_seed_has_it() {
+        let dir = std::env::temp_dir();
+        let tag = format!("{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+        let (live, seed) = (dir.join(format!("berean-test-livetexts-{tag}.db")), dir.join(format!("berean-test-seedtexts-{tag}.db")));
+        let s = Connection::open(&seed).unwrap();
+        s.execute_batch(SCHEMA).unwrap();
+        // an English Bible that is not the English Bible: its id is its own, not a language's
+        for (id, words) in [("kjv", "should not perish, but have everlasting life"), ("ylt", "may not perish, but may have life age-during")] {
+            s.execute_batch(&schema_text(id)).unwrap();
+            s.execute(&format!("INSERT INTO verses_{id} (id, book, chapter, verse, text) VALUES (43003016, 43, 3, 16, ?1)"), [words]).unwrap();
+        }
+        drop(s);
+        let pool = open_pool(live.to_str().unwrap(), None).unwrap();
+        let c = pool.get().unwrap();
+        reseed_scripture(&c, seed.to_str().unwrap()).unwrap();
+        let hit = |c: &Connection, id: &str, word: &str| c.query_row(&format!("SELECT rowid FROM verses_{id}_fts WHERE verses_{id}_fts MATCH ?1"), [word], |r| r.get::<_, i64>(0)).ok();
+        assert_eq!((hit(&c, "kjv", "everlasting"), hit(&c, "ylt", "during")), (Some(43003016), Some(43003016)));
+        // a later seed built with the King James Version left out (BEREAN_WITHOUT_KJV=1): its tables go, the other's stay
+        let s = Connection::open(&seed).unwrap();
+        s.execute_batch("DROP TABLE verses_kjv_fts; DROP TABLE verses_kjv_tri; DROP TABLE verses_kjv; DROP TABLE chapters_kjv; DROP TABLE verse_words_kjv; DROP TABLE notes_kjv;").unwrap();
+        drop(s);
+        reseed_scripture(&c, seed.to_str().unwrap()).unwrap();
+        let tables = |like: &str| c.query_row("SELECT count(*) FROM sqlite_master WHERE name LIKE ?1", [like], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!(tables("%\\_kjv%"), 0);
+        assert_eq!(hit(&c, "ylt", "during"), Some(43003016));
+        drop(c); drop(pool);
+        for p in [live, seed] { for suf in ["", "-wal", "-shm"] { let _ = std::fs::remove_file(format!("{}{suf}", p.display())); } }
+    }
+
+    #[test]
+    fn a_text_is_left_out_by_its_own_switch_and_no_other() {
+        let env = |set: &'static [&'static str]| move |k: &str| set.contains(&k).then(|| "1".to_string());
+        assert!(TEXTS.iter().all(|id| !text_left_out(id, env(&[]))));
+        assert!(text_left_out("kjv", env(&["BEREAN_WITHOUT_KJV"])) && !text_left_out("ylt", env(&["BEREAN_WITHOUT_KJV"])));
+        assert!(text_left_out("ylt", env(&["BEREAN_WITHOUT_YLT"])) && !text_left_out("kjv", env(&["BEREAN_WITHOUT_YLT"])));
+        // only "1" switches, and only the added texts have a switch: Darby's French and the Elberfelder are the app's own
+        assert!(!text_left_out("kjv", |_| Some("0".into())) && !text_left_out("kjv", |_| Some(String::new())));
+        assert!(!text_left_out("fr", env(&["BEREAN_WITHOUT_FR"])) && !text_left_out("de", env(&["BEREAN_WITHOUT_DE"])));
     }
 
     #[test]
