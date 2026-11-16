@@ -3,6 +3,7 @@ import { router } from 'expo-router'
 import { setActionHost } from '../lib/assistant'
 import { setHighlight, tintsBefore } from '../lib/highlights'
 import { bookmarkIds, bookmarkKey } from '../lib/bookmarks'
+import { outlinesHost } from '../lib/assistantOutlinesHost'
 import { addBookmark, listBookmarks, removeBookmark } from '../lib/library'
 import { localPosition } from '../hooks/usePosition'
 import { useAuth } from '../store/auth'
@@ -10,9 +11,9 @@ import { usePlayer } from '../store/player'
 import { usePrefsStore } from '../store/prefs'
 
 /**
- * What Ask's app tools act on (lib/assistantActions.ts): the settings, the player, the bookmarks and highlights of
- * whoever is signed in, and the router. Mounted once in the root, so a turn that has opened another screen still
- * finds them.
+ * What Ask's app tools act on (lib/assistantActions.ts): the settings, the player, the bookmarks, highlights and
+ * outlines of whoever is signed in, and the router. Mounted once in the root, so a turn that has opened another screen
+ * still finds them.
  */
 export default function AssistantHost() {
   const prefs = usePrefsStore()
@@ -38,6 +39,7 @@ export default function AssistantHost() {
         get: ids => tintsBefore(now.current.uid, ids),
         set: (id, colour) => setHighlight(now.current.uid, id, colour),
       },
+      jottings: outlinesHost(() => now.current.uid),
     })
     return () => setActionHost(null)
   }, [prefs])

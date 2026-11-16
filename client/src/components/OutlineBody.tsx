@@ -3,7 +3,8 @@ import { Linking, Pressable, Text, View } from 'react-native'
 import type { Outline, OutlineItem } from '@shared/types'
 import { formatRef, refKey, type Ref } from '@shared/ref'
 import { t } from '@shared/i18n'
-import { MAX_DEPTH, itemRef, openRef, type VerseRow } from '../lib/outlines'
+import { MAX_DEPTH, itemRef, openParagraph, openRef, type VerseRow } from '../lib/outlines'
+import { paragraphRoute } from '../lib/paragraphLine'
 import { loadLinkPreview, type LinkPreview } from '../lib/linkPreview'
 import { usePlayer } from '../store/player'
 import { useToast } from '../store/toast'
@@ -133,13 +134,18 @@ function Listen({ passage, label }: { passage: Ref; label: string }) {
 function LinkItem({ url, text }: { url: string; text: string }) {
   const c = useColors()
   const [preview, setPreview] = useState<LinkPreview | null>(null)
+  // the app's own address of a paragraph of the library (a paragraph line, lib/paragraphLine.ts): it opens that
+  // paragraph here, in the app, and is shown by its own words, which name the writer, the work and the section; no
+  // preview of a page is asked for
+  const paragraph = paragraphRoute(url)
+  const inApp = paragraph !== null
   useEffect(() => {
     let live = true
     setPreview(null)
-    loadLinkPreview(url).then(p => { if (live) setPreview(p) })
+    if (!inApp) loadLinkPreview(url).then(p => { if (live) setPreview(p) })
     return () => { live = false }
-  }, [url])
-  const open = () => { Linking.openURL(url).catch(() => {}) }
+  }, [url, inApp])
+  const open = () => { if (paragraph) openParagraph(paragraph); else Linking.openURL(url).catch(() => {}) }
   const own = text.trim() && text.trim() !== url ? text.trim() : ''
   if (!preview) return (
     <Pressable onPress={open} style={{ paddingVertical: 3 }} accessibilityRole="link">

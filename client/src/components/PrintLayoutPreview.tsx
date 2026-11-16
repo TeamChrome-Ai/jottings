@@ -11,6 +11,7 @@ import { alpha, face } from '../theme'
 import { Enter, Grow, RADIUS, SPACE, TYPE } from './ui'
 import { FadeSwap, STAGGER_CAP, STAGGER_STEP } from './motion/nav'
 import { SNAP_SPRING } from '../lib/motionTiming'
+import { printedLink } from '../lib/paragraphLine'
 
 interface Props { outline: Outline; verses: Map<string, VerseRow[]>; settings: PrintSettings }
 
@@ -51,7 +52,12 @@ export default function PrintLayoutPreview({ outline, verses, settings }: Props)
         const text = rows ? rows.length ? rows.map(r => rows.length > 1 ? `${r.v} ${r.t}` : r.t).join(' ') : t('No text found for this reference.') : null
         return [{ kind: 'verse', depth: it.depth, label: formatRef(ref), text }]
       }
-      case 'link': return it.url ? [{ kind: 'link', depth: it.depth, text: it.text || it.url }] : []
+      case 'link': {
+        if (!it.url) return []
+        // as the printed page has it: a paragraph of the library with its address under its words
+        const { words, address } = printedLink(it)
+        return [{ kind: 'link', depth: it.depth, text: words }, ...(address ? [{ kind: 'link' as const, depth: it.depth, text: address }] : [])]
+      }
       case 'heading': case 'note': return [{ kind: it.kind, depth: it.depth, text: it.text ?? '' }]
       default: { const _x: never = it.kind; return _x }
     }

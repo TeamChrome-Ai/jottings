@@ -6,14 +6,15 @@ import { MINISTRY_AUTHORS } from '@shared/ministry'
 import type { Ref } from '@shared/ref'
 import { t, tc } from '@shared/i18n'
 import { dateLocale } from '../src/i18n'
-import { ask, closeDraft, loadConversation, newConversation, placeOf, stop, streamed, undoShown, useAssistantOn, useConversation, useLive, type Shown } from '../src/lib/assistant'
-import { changeText } from '../src/lib/assistantActions'
+import { NOUN } from '@shared/brand'
+import { ask, closeDraft, loadConversation, newConversation, placeOf, stop, streamed, useAssistantOn, useConversation, useLive, type Shown } from '../src/lib/assistant'
 import { ASK_MAX, draftOf, takeDraft } from '../src/lib/askDraft'
 import { sentenceParts } from '../src/lib/askRefs'
 import { paragraphLink } from '../src/lib/libraryNav'
 import { follows } from '../src/lib/askScroll'
 import { sourcesOf } from '../src/lib/askSources'
 import { openRef } from '../src/lib/outlines'
+import { AskProposal, ChangeRow } from '../src/components/AskOutlines'
 import FeedbackSheet from '../src/components/FeedbackSheet'
 import SignInCard from '../src/components/SignInCard'
 import { useBottomInset } from '../src/hooks/useBottomInset'
@@ -58,7 +59,7 @@ export default function Ask() {
   )
 }
 
-const Disclosure = () => <T small muted>{t('Answers come from an AI model reading the library. What you write here is sent to the model’s provider.')}</T>
+const Disclosure = () => <T small muted>{t('Answers come from an AI model reading the library. What you write here is sent to the model’s provider, and so is {a} of yours when you ask Ask about it.', { a: NOUN.a })}</T>
 
 function Conversation({ uid }: { uid: number }) {
   const conv = useConversation()
@@ -109,7 +110,9 @@ function Conversation({ uid }: { uid: number }) {
             <T muted testID="ask-empty" style={{ marginTop: SPACE.l }}>{t('Ask a question about the Bible and the answer comes from the library, with its sources. Ask can also find a verse, open a chapter or change a setting for you.')}</T>
           )}
           {conv.shown.map((s, i) => <View key={i} style={{ marginTop: gapBefore(s.kind, conv.shown[i - 1]?.kind) }}><ShownRow s={s} index={i} /></View>)}
-          {live.asking ? <View style={{ marginTop: SPACE.m }}>{live.words ? <Answer words={streamed(live.words)} /> : <Spinner label={t('Asking')} />}</View> : null}
+          {/* a write the server held waits here for the reader's tap, where the answer's words would come */}
+          {live.proposal ? <View style={{ marginTop: SPACE.m }}><AskProposal p={live.proposal} /></View>
+            : live.asking ? <View style={{ marginTop: SPACE.m }}>{live.words ? <Answer words={streamed(live.words)} /> : <Spinner label={t('Asking')} />}</View> : null}
         </Enter>
       </ScrollView>
       <View testID="ask-composer" style={[column, { flexDirection: 'row', alignItems: 'flex-end', gap: SPACE.s, paddingHorizontal: SPACE.xl, paddingTop: SPACE.s, paddingBottom: cover ? SPACE.s : SPACE.m + foot }]}>
@@ -160,17 +163,13 @@ const ShownRow = memo(function ShownRow({ s, index }: { s: Shown; index: number 
   switch (s.kind) {
     case 'reader': return <Card tone="soft" style={{ alignSelf: 'flex-end', maxWidth: '85%', paddingVertical: SPACE.m }}><T>{s.text}</T></Card>
     case 'answer': return <Answer sentences={s.sentences} />
-    // one line and its Undo on one row, the Undo at the right however long the line; undone, the row keeps its height
-    case 'change': return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: SPACE.m, minHeight: 36 }}>
-        <T small muted style={{ flex: 1 }}>{changeText(s.change.line)}</T>
-        {s.undone ? <T small muted>{t('Undone')}</T> : <Button small title={t('Undo')} onPress={() => void undoShown(index)} />}
-      </View>
-    )
+    case 'change': return <ChangeRow s={s} index={index} />
     case 'cap': {
       const time = new Date(s.resetsAt).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit' })
       return <T muted>{s.cap === 'account' ? t('That is all of today’s questions for your account. Ask answers again at {time}.', { time }) : t('Ask has answered all it can for today. It answers again at {time}.', { time })}</T>
     }
+    // a proposal answered after Ask could go on from it: said quietly, since what the reader chose was done
+    case 'lapsed': return <T small muted>{t('Ask waited too long to go on from here. Send a new message to continue.')}</T>
     case 'error': return <ErrorText>{s.text}</ErrorText>
   }
 })

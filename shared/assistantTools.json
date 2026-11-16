@@ -156,6 +156,139 @@
     "changes": true
   },
   {
+    "name": "list_jottings",
+    "description": "The reader's own {nouns}, newest first, each with its id, its title and the day it last changed: at most fifty, and how many there are in all. With words, only those that hold every word, in the title or in a line. For one the reader names, call read_jotting with its title instead.",
+    "input": { "type": "object", "properties": { "words": { "type": "string", "description": "A few words to find, as prayer. Leave out for the newest fifty." } }, "additionalProperties": false },
+    "runs": "app",
+    "changes": false
+  },
+  {
+    "name": "read_jotting",
+    "description": "One of the reader's own {nouns}: its title and its lines, each with its number, and `updated`, which edit_jotting takes to replace, remove or move a line. Give its id, or, when the reader names one (\"my {noun} on prayer\"), words of its title: do not list first. One that matches is read; several are given by id and title, to read by id; none says so. A long one is cut at 12,000 characters and says so.",
+    "input": { "type": "object", "properties": { "id": { "type": "integer" }, "title": { "type": "string", "description": "Words of its title, as prayer." } }, "additionalProperties": false },
+    "runs": "app",
+    "changes": false
+  },
+  {
+    "name": "open_jotting",
+    "description": "Open one of the reader's own {nouns} on the screen, by its id.",
+    "input": { "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"], "additionalProperties": false },
+    "runs": "app",
+    "changes": false
+  },
+  {
+    "name": "create_jotting",
+    "description": "Make a new private {noun} for the reader from a title and its lines: passages by reference, notes, links, headings, and paragraphs of the library by the id a library tool gave, which the app writes as a link to that paragraph. A note that says what a writer of the library wrote names that writer, one writer to a note, and is followed by the paragraph line it rests on: give a writer no words without one. The reader's own words need none. At most 60 lines, a note at most 2,000 characters; keep the call short, and add more with edit_jotting. Every passage must be a real chapter, or verses of one chapter. If any line is refused nothing is made, and the result says which line and why. The result says whether it was made: made at once, made when the reader tapped Apply on what the app showed them, or not made.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 160 },
+        "lines": {
+          "type": "array",
+          "maxItems": 60,
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": { "type": "string", "enum": ["passage", "note", "link", "heading", "paragraph"] },
+              "reference": { "type": "string", "description": "For a passage: a chapter or verses of one chapter, as Romans 8:1, John 3:16-18 or Psalm 23." },
+              "text": { "type": "string", "maxLength": 2000, "description": "A note's or a heading's words, or a link's label. A passage has none." },
+              "url": { "type": "string", "description": "For a link: an http or https address." },
+              "paragraph": { "type": "integer", "description": "For a paragraph: its id, as a library tool gave it." },
+              "depth": { "type": "integer", "minimum": 0, "maximum": 3, "description": "How far the line sits under the one above: 0 as a line comes." }
+            },
+            "required": ["kind"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["title", "lines"],
+      "additionalProperties": false
+    },
+    "runs": "app",
+    "changes": true
+  },
+  {
+    "name": "edit_jotting",
+    "description": "Change one of the reader's own {nouns}: add lines, replace, remove or move lines, or give it another title. A line is as create_jotting takes one. Every line number is the line's number as read_jotting gave it, before this edit. To replace, remove or move a line, or to add one after a line by its number, give `updated` as read_jotting gave it; to add at the end or at the top (after 0), or to rename, no reading is needed. Put everything you change in one {noun} from one reading into one call: once a call has changed it, the numbers of that reading are refused. If any part is refused nothing is changed, and the result says why. The result says whether it was changed: at once, when the reader tapped Apply on what the app showed them, or not at all.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "updated": { "type": "string", "description": "As read_jotting gave it. Needed to replace, remove or move, and to add after a line by its number." },
+        "title": { "type": "string", "maxLength": 160, "description": "A new title." },
+        "add": {
+          "type": "array",
+          "maxItems": 60,
+          "description": "Lines to add, in order.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "after": { "type": "integer", "minimum": 0, "description": "The number of the line to add it after, as read_jotting gave it; 0 for the top. Leave out to add at the end." },
+              "line": {
+                "type": "object",
+                "properties": {
+                  "kind": { "type": "string", "enum": ["passage", "note", "link", "heading", "paragraph"] },
+                  "reference": { "type": "string" },
+                  "text": { "type": "string", "maxLength": 2000 },
+                  "url": { "type": "string" },
+                  "paragraph": { "type": "integer" },
+                  "depth": { "type": "integer", "minimum": 0, "maximum": 3 }
+                },
+                "required": ["kind"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["line"],
+            "additionalProperties": false
+          }
+        },
+        "replace": {
+          "type": "array",
+          "maxItems": 60,
+          "items": {
+            "type": "object",
+            "properties": {
+              "line": { "type": "integer", "minimum": 1, "description": "The number of the line to replace." },
+              "with": {
+                "type": "object",
+                "properties": {
+                  "kind": { "type": "string", "enum": ["passage", "note", "link", "heading", "paragraph"] },
+                  "reference": { "type": "string" },
+                  "text": { "type": "string", "maxLength": 2000 },
+                  "url": { "type": "string" },
+                  "paragraph": { "type": "integer" },
+                  "depth": { "type": "integer", "minimum": 0, "maximum": 3 }
+                },
+                "required": ["kind"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["line", "with"],
+            "additionalProperties": false
+          }
+        },
+        "remove": { "type": "array", "maxItems": 60, "description": "The numbers of the lines to take out.", "items": { "type": "integer", "minimum": 1 } },
+        "move": {
+          "type": "array",
+          "maxItems": 60,
+          "items": {
+            "type": "object",
+            "properties": {
+              "line": { "type": "integer", "minimum": 1, "description": "The number of the line to move." },
+              "after": { "type": "integer", "minimum": 0, "description": "The number of the line to put it after; 0 for the top." }
+            },
+            "required": ["line", "after"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "runs": "app",
+    "changes": true
+  },
+  {
     "name": "draft_feedback",
     "description": "Open the feedback form with a message to the developer filled in. The reader reads it, changes it if they wish, and sends it themselves; this sends nothing.",
     "input": { "type": "object", "properties": { "message": { "type": "string", "maxLength": 2000 } }, "required": ["message"], "additionalProperties": false },

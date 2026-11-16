@@ -7,9 +7,11 @@
 import type { Href } from 'expo-router'
 import { toolRow, type ParagraphRef, type PropertySchema } from '@shared/assistantTools'
 import { formatRef, parseRef, type Ref } from '@shared/ref'
-import { t, tc } from '@shared/i18n'
+import { t, tc, tn } from '@shared/i18n'
+import { NOUN } from '@shared/brand'
 import { THEMES } from '../theme'
 import type { BookmarkTarget } from './bookmarks'
+import { JOTTING_TOOLS, undoJotting, type JottingLine, type JottingUndo, type OutlinesHost, type Undone } from './assistantOutlines'
 import { isPlace, readPrefs } from './backupFile'
 import { isHlColor } from './hlColours'
 import { settingsPatch } from './settingsPatch'
@@ -29,6 +31,8 @@ export interface ActionContext {
   feedback: (message: string) => void
   /** A paragraph a library tool gave in this conversation. */
   paragraph: (id: number) => ParagraphRef | undefined
+  /** The reader's own outlines, through the functions their screens use (assistantOutlines.ts). */
+  jottings: OutlinesHost
 }
 
 /** What a change line says, translated when it is shown. */
@@ -38,13 +42,16 @@ export type ChangeLine =
   | { kind: 'highlight'; ref: string }
   | { kind: 'listening'; ref: string }
   | { kind: 'stopped' }
-/** What Undo does. */
+  | JottingLine
+/** What Undo does. `none`: what it needed is no longer kept (lib/assistant.ts `trimmed`), so the line offers none. */
 export type Undo =
   | { kind: 'setting'; key: string; before: unknown }
   | { kind: 'bookmark'; id: number }
   | { kind: 'highlight'; verses: { id: number; before: string | null }[] }
   | { kind: 'stop' }
   | { kind: 'resume'; book: number; chapter: number; verse: number }
+  | JottingUndo
+  | { kind: 'none' }
 export interface Change { line: ChangeLine; undo: Undo }
 export interface Outcome { result: unknown; changes: Change[] }
 export type Executor = (args: Record<string, unknown>, ctx: ActionContext) => Promise<Outcome>
@@ -154,16 +161,21 @@ export const APP_TOOLS: Record<string, Executor> = {
     ctx.feedback(message)
     return said({ opened: 'the feedback form, for the reader to read and send' })
   },
+  ...JOTTING_TOOLS,
 }
 
-export async function undo(u: Undo, ctx: ActionContext): Promise<void> {
+/** Undoes a change. Only a write of the reader's own outline can find it changed since, and then does nothing. */
+export async function undo(u: Undo, ctx: ActionContext): Promise<Undone> {
   switch (u.kind) {
-    case 'setting': ctx.prefs.set({ [u.key]: u.before } as Partial<Prefs>); return
-    case 'bookmark': await ctx.bookmarks.remove(u.id); return
-    case 'highlight': for (const v of u.verses) await ctx.highlights.set(v.id, v.before); return
-    case 'stop': ctx.player.stop(); return
-    case 'resume': ctx.player.start(u.book, u.chapter, u.verse); return
+    case 'setting': ctx.prefs.set({ [u.key]: u.before } as Partial<Prefs>); break
+    case 'bookmark': await ctx.bookmarks.remove(u.id); break
+    case 'highlight': for (const v of u.verses) await ctx.highlights.set(v.id, v.before); break
+    case 'stop': ctx.player.stop(); break
+    case 'resume': ctx.player.start(u.book, u.chapter, u.verse); break
+    case 'jotting-created': case 'jotting-edited': return undoJotting(u, ctx)
+    case 'none': return { did: 'failed' }
   }
+  return { did: 'undone' }
 }
 
 /** Each setting's name on a change line: the Settings pages' own words where they have them. */
@@ -229,5 +241,16 @@ export function changeText(line: ChangeLine): string {
     case 'highlight': return t('Highlighted {ref}', { ref: line.ref })
     case 'listening': return t('Reading {ref} aloud', { ref: line.ref })
     case 'stopped': return t('Stopped reading aloud')
+    case 'jotting-created': return t('Made the {one} “{title}”', { one: NOUN.one, title: line.title })
+    case 'jotting-edited': {
+      const what = [
+        line.added ? tn(line.added, '{n} line added', '{n} lines added') : '',
+        line.replaced ? tn(line.replaced, '{n} line replaced', '{n} lines replaced') : '',
+        line.removed ? tn(line.removed, '{n} line removed', '{n} lines removed') : '',
+        line.moved ? tn(line.moved, '{n} line moved', '{n} lines moved') : '',
+        line.renamed ? t('new title') : '',
+      ].filter(Boolean).join(', ')
+      return t('Changed “{title}”: {what}', { title: line.title, what })
+    }
   }
 }

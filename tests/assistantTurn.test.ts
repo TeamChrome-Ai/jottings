@@ -39,6 +39,7 @@ function host() {
     navigate: () => {}, player: { start: () => {}, stop: () => {}, now: () => null }, place: async () => null,
     bookmarks: { find: async () => null, add: async b => { added.push(b); if (added.length === 1) { reached(); await first } return added.length }, remove: async () => {} },
     highlights: { get: async () => new Map(), set: async () => {} },
+    jottings: { uid: () => 1, list: async () => [], get: async () => { throw new Error('none') }, create: async () => { throw new Error('none') }, save: async () => undefined, rename: async () => undefined, remove: async () => {}, settle: async () => true, settleAll: async () => [], hold: async () => () => {} },
   }
   return { h, added, release, waiting }
 }
@@ -53,6 +54,29 @@ beforeEach(() => {
 })
 
 describe('the tools a turn handed over', () => {
+  // a tool that was running when the reader started a new conversation finishes: what it changed keeps its line and
+  // its Undo, in the new conversation, and nothing else of that turn is kept (a result there would answer no call)
+  it('keep nothing in a new conversation but the line of the change that was being made', async () => {
+    const app = host()
+    setActionHost(app.h)
+    await loadConversation(1)
+    const turn = ask('bookmark John 3:16 and 17')
+    await app.waiting
+    newConversation()
+    app.release()
+    await turn
+    const kept = JSON.parse(h.store.get('berean_assistant') ?? '{"messages":[],"shown":[]}')
+    expect([app.added.length, h.posts.length, kept.messages, kept.shown.map((s: { kind: string }) => s.kind)]).toEqual([1, 1, [], ['change']])
+  })
+  // a device may hold such a conversation from a build before this one: it is mended when it is loaded
+  it('are not answered in a conversation kept without their calls: its messages are dropped when it is loaded', async () => {
+    setActionHost(host().h)
+    h.store.set('berean_assistant', JSON.stringify({ uid: 7, messages: [{ role: 'tool', tool_call_id: 'c9', content: '{"opened":"John 3"}' }], shown: [{ kind: 'error', text: 'Ask could not answer just now. Try again in a moment.' }], places: {} }))
+    await loadConversation(7)
+    h.answers = [sse([['message', { role: 'assistant', content: 'Hello.' }], ['answer', { sentences: [] }], ['done', {}]])]
+    await ask('hello')
+    expect((h.posts[0] as { messages: { role: string }[] }).messages.map(m => m.role)).toEqual(['user'])
+  })
   it('stop running when the reader stops, and nothing goes back to the server', async () => {
     const app = host()
     setActionHost(app.h)

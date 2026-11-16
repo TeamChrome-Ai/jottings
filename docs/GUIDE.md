@@ -67,9 +67,13 @@ and add a bookmark for you.
 
 {Nouns} are your own studies and notes. Open them from Home, Library. New starts one with a title; or select verses in
 the reader and tap + {Noun}. In the editor, add a passage by its reference, a note, a link or a heading; lines move up,
-down and in, so points can sit under points. Visibility makes one private or shared by its link; Print style and
+down and in, so points can sit under points. If the editor says the {noun} was changed somewhere else (on another
+device, say), it has stopped saving so that nothing is written over: what you typed is still in front of you, and
+Load it again shows the {noun} as it now is. Visibility makes one private or shared by its link; Print style and
 Print / PDF print it at Bible-insert size or larger. A shared {noun} opens from its link for anyone; Publish puts it
-among the public {nouns}. Signed out, {nouns} are kept on this device until you sign in to share them.
+among the public {nouns}. Signed out, {nouns} are kept on this device until you sign in to share them. Signed in, Ask
+can list your {nouns}, read one, open one, make a new private one and change one for you; publishing, sharing by link
+and deleting stay with you, on this screen and in the editor.
 
 ## Ministry
 <!-- route: /companion -->
@@ -93,6 +97,21 @@ at the bottom of the screen and tap Send; Stop ends an answer on its way. Open i
 Search. It needs an account, and answers a limited number of messages a day. What you write is sent to the AI model's
 provider. New conversation, at the top of the screen, clears the conversation from the device. Ask cannot sign you
 out, delete your account or data, or do anything about another person.
+
+Ask also works with your own {nouns}, the ones kept with your account: ask what {nouns} you have on a subject, to
+read one back or open it, to make a new one, or to add, change, move or take out lines of one. A new {noun} is
+private. When you ask for one in your own words it is made at once. When Ask has read something first (the library,
+the Bible, the dictionary, or one of your {nouns}), it shows you what it would make or change, each passage with its
+words, and writes it only when you tap Apply; Not now writes nothing. When a note in it says what one of the
+library's writers wrote, the line under the note is a link to the paragraph it rests on, named by its writer, its
+work and its section: tap it, in what Ask shows you or later in the {noun}, to read the paragraph itself. Take your time over it: if you answer more than
+an hour later, what you chose is still done, and Ask says it will not go on from there, so send a new message. Each {noun} it makes or changes shows a line
+with Undo, and tapping the line opens the {noun}. Undo works while the {noun} is as Ask left it: once you have changed
+it yourself, Undo says so and leaves your work alone. If the {noun} is open in the editor, you cannot type in it for the
+moment Ask is writing to it: the editor says so, nothing you typed before is lost, and Ask's lines then appear with
+yours. A {noun} that Ask reads is sent to the AI model's provider, as
+its title is when Ask lists your {nouns}; if you never ask about them, none is sent. Ask cannot publish a {noun}, share
+it by link, copy someone else's or delete one: do those from Home, Library, {Nouns}.
 
 ## Dictionary and concordance
 <!-- route: /dictionary -->

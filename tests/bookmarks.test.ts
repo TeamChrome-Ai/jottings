@@ -6,7 +6,8 @@ const store = new Map<string, string>()
 vi.mock('../client/node_modules/@react-native-async-storage/async-storage', () => ({
   default: { getItem: async (k: string) => store.get(k) ?? null, setItem: async (k: string, v: string) => { store.set(k, v) } },
 }))
-vi.mock('../client/src/lib/api', () => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }))
+// signed in: a run of the merge is of the session it began in (client/src/lib/localLibrary.ts), and this one lasts
+vi.mock('../client/src/lib/api', () => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), getToken: () => 'a session' }))
 vi.mock('../client/src/lib/highlights', () => ({ adoptLocalHighlights: vi.fn(), localHighlightChapters: async () => [] }))
 
 import { get, post } from '../client/src/lib/api'

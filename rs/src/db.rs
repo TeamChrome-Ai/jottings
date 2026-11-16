@@ -448,7 +448,9 @@ pub fn open_pool(path: &str, key: Option<String>) -> Result<DbPool> {
         // the admin took this account's name away (feedback.rs admin_rename): the app asks for a new name and handle
         ("users", "must_rename", "INTEGER NOT NULL DEFAULT 0"),
         // a credit the reader's own mark wrote (marks.rs, the owner 2026-10-31): no time behind it, one per chapter
-        ("page_credits", "ticked", "INTEGER NOT NULL DEFAULT 0")] {
+        ("page_credits", "ticked", "INTEGER NOT NULL DEFAULT 0"),
+        // who made an outline's last save, when the save said (outlines.rs `changed_since`); none for a save that did not
+        ("outlines", "last_writer", "TEXT")] {
         let has: i64 = conn.query_row(&format!("SELECT count(*) FROM pragma_table_info('{table}') WHERE name='{col}'"), [], |r| r.get(0))?;
         if has == 0 { conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {ddl}"))?; }
     }

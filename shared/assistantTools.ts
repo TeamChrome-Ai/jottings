@@ -4,20 +4,30 @@
  * the app the `app` rows (client/src/lib/assistantActions.ts). No tool exists outside the table, and a test on each side
  * fails when a row has no executor there.
  *
- * `changes`: the tool changes something of the reader's (a setting, a bookmark, what is playing). Such a call is honoured
- * only when the model asked for it before any server tool's result but the guide's came back for the reader's message,
- * and each one shows a line with Undo.
+ * `changes`: the tool changes something of the reader's (a setting, a bookmark, what is playing, a line of their own
+ * study). Such a call is honoured only when the model asked for it before any text that is not the app's own came back
+ * for the reader's message, and each one shows a line with Undo. The two that write one of the reader's own studies
+ * (`WRITES`) are held instead of refused: the server says so with the calls it hands over, and the app writes only on
+ * the reader's tap.
+ *
+ * A description may name the reader's studies as `{noun}` and `{nouns}`: the server puts the brand's words there
+ * before the model sees it.
  */
 import rows from './assistantTools.json'
 
 export type ToolSide = 'server' | 'app'
 export interface PropertySchema {
-  type: 'string' | 'number' | 'integer' | 'boolean'
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'
   description?: string
   enum?: readonly (string | number)[]
   minimum?: number
   maximum?: number
   maxLength?: number
+  maxItems?: number
+  items?: PropertySchema
+  properties?: Record<string, PropertySchema>
+  required?: readonly string[]
+  additionalProperties?: false
 }
 export interface InputSchema { type: 'object'; properties: Record<string, PropertySchema>; required?: readonly string[]; additionalProperties: false }
 export interface ToolRow { name: string; description: string; input: InputSchema; runs: ToolSide; changes: boolean }
@@ -46,15 +56,23 @@ export interface ParagraphRef { id: number; author: string; work: { id: string; 
  *  conversation; `supported` is false for a sentence of an answer from the library that rests on none. */
 export interface Sentence { text: string; ids: number[]; supported: boolean }
 
-/** `POST /api/assistant/turn`: the conversation, and to go on after the app has run tools, the token the server gave. */
-export interface TurnRequest { messages: ChatMessage[]; token?: string }
+/** The tools that write one of the reader's own studies: held for the reader's tap where another change is refused. */
+export const WRITES: readonly string[] = ['create_jotting', 'edit_jotting']
+/** What an app says it can do beyond the tools of the first release with Ask; the server offers the model the tools
+ *  for the reader's own studies only to an app that says `jottings`. */
+export const CAN: readonly string[] = ['jottings']
+
+/** `POST /api/assistant/turn`: the conversation, and to go on after the app has run tools, the token the server gave.
+ *  `can`: what this app can do (`CAN`). */
+export interface TurnRequest { messages: ChatMessage[]; token?: string; can?: readonly string[] }
 /** The server-sent events of a turn, in order: words as they come, messages to keep, then one of answer, pending or
- *  error, then done. */
+ *  error, then done. `held`: the ids of the calls among `calls` that the app shows the reader as a proposal and runs
+ *  only on their tap; the server decides it, and nothing the model wrote can. */
 export type TurnEvent =
   | { event: 'text'; data: { t: string } }
   | { event: 'message'; data: ChatMessage }
   | { event: 'answer'; data: { sentences: Sentence[] } }
-  | { event: 'pending'; data: { calls: ToolCall[]; token: string } }
+  | { event: 'pending'; data: { calls: ToolCall[]; token: string; held?: string[] } }
   | { event: 'error'; data: { error: string } }
   | { event: 'done'; data: Record<string, never> }
 

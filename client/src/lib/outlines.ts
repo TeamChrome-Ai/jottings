@@ -17,6 +17,7 @@ import { BRAND, NOUN } from '@shared/brand'
 import { t, tc } from '@shared/i18n'
 import { dateLocale } from '../i18n'
 import { scanMinistry, scanTypedRefs, type MinistryAuthor, type MinistryTarget } from './noteLinks'
+import { printedLink, type ParagraphRoute } from './paragraphLine'
 
 export type OutlineItemInput = Omit<OutlineItem, 'id' | 'outline_id' | 'position'>
 export const strip = (i: OutlineItem): OutlineItemInput => ({ kind: i.kind, book: i.book ?? null, chapter: i.chapter ?? null, v1: i.v1 ?? null, v2: i.v2 ?? null, text: i.text ?? null, url: i.url ?? null, depth: i.depth })
@@ -154,6 +155,8 @@ export const outlineApiPath = (p: { id?: string; code?: string }): string | null
 
 /** The reader accepts the verse as a `v` query param (it scrolls once, then clears it), not the web `#v` hash; a range
  *  ("Rom. 8:1-4") gives its last verse as `v2`, as Search does, and the reader marks them all. */
+/** Opens a paragraph of the library in its reader: where a paragraph line of an outline leads (lib/paragraphLine.ts). */
+export const openParagraph = (to: ParagraphRoute) => router.push(to)
 export const openRef = (r: Ref) => router.push({ pathname: '/read/[book]/[chapter]', params: { book: String(r.book), chapter: String(r.chapter), v: r.v1 !== undefined ? String(r.v1) : '', v2: r.v1 !== undefined && r.v2 !== undefined && r.v2 > r.v1 ? String(r.v2) : '' } })
 
 /**
@@ -328,7 +331,12 @@ function itemHtml(it: OutlineItem, style: Outline['print_style'], verses: Map<st
       return `<div class="${cls}"><div class="ref-link">${label}</div>${rowsHtml(rows, false)}</div>`
     }
     case 'note': return `<div class="${cls}"><div class="note">${noteHtml(it.text ?? '')}</div></div>`
-    case 'link': return it.url ? `<div class="${cls}"><a class="ext-link" href="${esc(it.url)}">${esc(it.text || it.url)}</a></div>` : ''
+    case 'link': {
+      if (!it.url) return ''
+      // a paragraph of the library is printed with its address under its words: nobody can tap paper
+      const { words, address } = printedLink(it)
+      return `<div class="${cls}"><a class="ext-link" href="${esc(it.url)}">${esc(words)}</a>${address ? `<div class="ext-link muted">${esc(address)}</div>` : ''}</div>`
+    }
     case 'heading': return `<div class="${cls}"><div class="hd">${esc(it.text ?? '')}</div></div>`
     default: { const _x: never = it.kind; return _x }
   }

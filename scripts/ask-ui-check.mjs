@@ -178,7 +178,7 @@ const rects = loc => loc.evaluateAll(els => els.flatMap(el => [...el.getClientRe
 const colour = loc => loc.first().evaluate(el => getComputedStyle(el).color)
 /** The colour of the sentence that reads `text` (its words and its links together). */
 const sentenceColour = (page, text) => page.evaluate(t => { const el = [...document.querySelectorAll('div, span')].filter(e => e.textContent.trim().startsWith(t)).pop(); return el ? getComputedStyle(el).color : null }, text)
-const DISCLOSURE = 'Answers come from an AI model reading the library. What you write here is sent to the model’s provider.'
+const DISCLOSURE = 'Answers come from an AI model reading the library. What you write here is sent to the model’s provider, and so is a jotting of yours when you ask Ask about it.'
 /** The scroll the conversation is in: where it is, how far it goes, and where it stands on the screen. */
 const scroller = page => page.getByText(DISCLOSURE).first().evaluate(el => { let s = el.parentElement; while (s && !/auto|scroll/.test(getComputedStyle(s).overflowY)) s = s.parentElement; if (!s) return null; const r = s.getBoundingClientRect(); return { top: Math.round(s.scrollTop), room: Math.round(s.scrollHeight - s.clientHeight), from: r.top, to: r.bottom } })
 const scrollTo = (page, y) => page.getByText(DISCLOSURE).first().evaluate((el, y) => { let s = el.parentElement; while (s && !/auto|scroll/.test(getComputedStyle(s).overflowY)) s = s.parentElement; if (s) s.scrollTop = y === 'end' ? s.scrollHeight : y }, y)

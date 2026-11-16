@@ -4,6 +4,7 @@ import { View } from 'react-native'
 import { Stack, useRouter } from 'expo-router'
 import { ApiError } from '../lib/api'
 import { forkOutline } from '../lib/library'
+import { editorMounted } from '../lib/outlineEditors'
 import type { ReportTarget } from '../lib/moderation'
 import { copyText, fmtDateLong, isLocalOutline, loadErrorText, shareUrl, siteOrigin, useOutlineLoad, useVerseTexts, verseKeys, visibilityLabel } from '../lib/outlines'
 import { useAuth } from '../store/auth'
@@ -79,13 +80,20 @@ export default function OutlineViewScreen({ id, code }: { id?: string; code?: st
     if (r === 'copied') toast.show(t('Link copied')); else if (r === 'failed' && await copyText(link)) toast.show(t('Link copied'))
   }
 
+  // an editor of this one already mounted beneath (its View opened this page) is the editor to go back to: a second
+  // one over it would hold lines of its own, and each would save over the other
+  const edit = () => {
+    const href = { pathname: '/outlines/[id]/edit', params: { id: String(o.id) } } as const
+    if (editorMounted(o.id)) router.dismissTo(href); else router.push(href)
+  }
+
   // one entrance: the title block rises, then the first items follow it in turn
   return (
     <Screen animate={false}>
       <Stack.Screen options={{ title }} />
       <Enter style={{ gap: 12 }}>
         <Row>
-          {owner ? <Button primary small title={t('Edit')} onPress={() => router.push({ pathname: '/outlines/[id]/edit', params: { id: String(o.id) } })} /> : null}
+          {owner ? <Button primary small title={t('Edit')} onPress={edit} /> : null}
           {!owner ? <Button small title={forking ? t('Copying…') : t('Make a copy')} disabled={forking} onPress={() => { void fork() }} /> : null}
           <Button small title={t('Print / PDF')} onPress={() => setPrintOpen(true)} />
           {!local ? <Button small title={t('Share link')} onPress={() => { void share() }} /> : null}

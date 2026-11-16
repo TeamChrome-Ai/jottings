@@ -194,7 +194,7 @@ const fits = async (page, lane) => { const w = await page.evaluate(() => documen
 
 {
   const page = await open(on.root, '/ask', main)
-  ok('the muted line says the answers come from an AI model and what is written goes to its provider', await visible(page, 'Answers come from an AI model reading the library. What you write here is sent to the model’s provider.'))
+  ok('the muted line says the answers come from an AI model, and that what is written, and a jotting asked about, go to its provider', await visible(page, 'Answers come from an AI model reading the library. What you write here is sent to the model’s provider, and so is a jotting of yours when you ask Ask about it.'))
   const before = await chatCalls()
   await send(page, 'What did JND say about grace?')
   const calls = (await (await fetch(`${STUB}/calls`)).json()).slice(before)

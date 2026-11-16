@@ -34,6 +34,8 @@ function context(start: Partial<Prefs> = {}) {
     highlights: { get: async ids => new Map(ids.flatMap(id => seen.highlights.has(id) ? [[id, seen.highlights.get(id)!] as const] : [])), set: async (id, c) => { if (c) seen.highlights.set(id, c); else seen.highlights.delete(id) } },
     feedback: m => { seen.feedback.push(m) },
     paragraph: id => id === 12345 ? { id, author: 'darby', work: { id: 'cw-1', title: 'Collected Writings 1', collection: 'cw' }, n: 2, para: 3, section: 'On grace' } : undefined,
+    // nobody signed in: the tools for the reader's own jottings have tests/assistantOutlines.test.ts
+    jottings: { uid: () => null, list: async () => [], get: async () => { throw new Error('signed out') }, create: async () => { throw new Error('signed out') }, save: async () => undefined, rename: async () => undefined, remove: async () => {}, settle: async () => true, settleAll: async () => [], hold: async () => () => {} },
   }
   return { ctx, seen, prefs: () => prefs }
 }
@@ -184,7 +186,7 @@ describe('listening, marks and feedback', () => {
     expect([seen.feedback, out.changes]).toEqual([['The text is too small on my tablet.'], []])
   })
   it('makes a line with Undo for every row that changes something, and none for the rest', () => {
-    for (const r of TOOLS.filter(r => r.runs === 'app')) expect(r.changes, r.name).toBe(['change_settings', 'start_listening', 'stop_listening', 'add_bookmark', 'add_highlight'].includes(r.name))
+    for (const r of TOOLS.filter(r => r.runs === 'app')) expect(r.changes, r.name).toBe(['change_settings', 'start_listening', 'stop_listening', 'add_bookmark', 'add_highlight', 'create_jotting', 'edit_jotting'].includes(r.name))
   })
 })
 

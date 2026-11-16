@@ -8,25 +8,31 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Platform } from 'react-native'
 import { fetch as expoFetch } from 'expo/fetch'
 import { useSyncExternalStore } from 'react'
-import { callNames, toolRow, type AssistantState, type CapReached, type ChatMessage, type ParagraphRef, type Sentence, type ToolCall, type TurnRequest } from '@shared/assistantTools'
+import { CAN, WRITES, callNames, toolRow, type AssistantState, type CapReached, type ChatMessage, type ParagraphRef, type Sentence, type ToolCall, type TurnRequest } from '@shared/assistantTools'
 import { N_, t } from '@shared/i18n'
 import { cachedGet, getApiBase, getToken, loadApiBase } from './api'
 import { deviceId } from './device'
-import { APP_TOOLS, undo, type ActionContext, type Change } from './assistantActions'
+import { APP_TOOLS, undo, type ActionContext, type Change, type Outcome } from './assistantActions'
+import { applyPlan, notApplied, planWrite, proposalOf, type Proposal } from './assistantOutlines'
 import { withVerses } from './askRefs'
 
-/** What the screen shows, in order. */
+/** What the screen shows, in order. `changed`: Undo found the reader's own later work there, and did nothing.
+ *  `lapsed`: the reader answered a proposal after the server's hand-over of it had run out; what they chose stands,
+ *  and the turn does not go on. */
 export type Shown =
   | { kind: 'reader'; text: string }
   | { kind: 'answer'; sentences: Sentence[] }
-  | { kind: 'change'; change: Change; undone: boolean }
+  | { kind: 'change'; change: Change; undone: boolean; changed?: boolean }
   | { kind: 'cap'; cap: CapReached['cap']; resetsAt: string }
+  | { kind: 'lapsed' }
   | { kind: 'error'; text: string }
 /** `places`: where each paragraph a library tool gave sits in the library, by id, for the citations and open_paragraph
  *  once the messages hold only the ids. */
 export interface Conversation { messages: ChatMessage[]; shown: Shown[]; places: Record<string, ParagraphRef> }
-/** A turn in flight: the words of the answer so far. `draft` is a feedback message waiting for the reader to read. */
-export interface Live { asking: boolean; words: string; draft: string | null }
+/** A turn in flight: the words of the answer so far. `draft` is a feedback message waiting for the reader to read;
+ *  `proposal` is a write the server held, waiting for the reader's tap on Apply. Neither is kept: a proposal the reader
+ *  never taps is never written. */
+export interface Live { asking: boolean; words: string; draft: string | null; proposal: Proposal | null }
 
 const KEY = 'berean_assistant'
 /** Reader messages the screen keeps, and those whose messages are kept and posted: up to SENT_MOST, the most the server
@@ -43,13 +49,21 @@ const SENT_MOST = 12
 const SENT_BYTES = 40_000
 /** The bytes of `s` in UTF-8. */
 const bytes = (s: string) => { let n = 0; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); n += c < 0x80 ? 1 : c < 0x800 || (c >= 0xd800 && c < 0xe000) ? 2 : 3 } return n }
+/** The characters of jottings as they were before Ask's edits that are kept for their Undo, newest first. */
+const UNDO_CHARS = 400_000
 const EMPTY: Conversation = { messages: [], shown: [], places: {} }
+const IDLE: Live = { asking: false, words: '', draft: null, proposal: null }
 
 let conv: Conversation = EMPTY
-let live: Live = { asking: false, words: '', draft: null }
+let live: Live = IDLE
 /** Whose conversation this is: another account signed in on the device starts with none. */
 let owner: number | null = null
 let loaded: Promise<void> | null = null
+/** Which conversation this is: New conversation begins another, and so does another account. Whatever is waited for
+ *  (the stored conversation, a post, a tool, an Undo) belongs to the conversation it began in, and keeps nothing in
+ *  the one that has taken its place: a tool's result there would answer no call, and the server takes no such
+ *  conversation (rs/src/assistant.rs well_formed). */
+let began = 0
 let aborter: AbortController | null = null
 let host: Omit<ActionContext, 'paragraph' | 'feedback'> | null = null
 const listeners = new Set<() => void>()
@@ -63,14 +77,19 @@ function commit(next: Conversation) {
 }
 function setLive(next: Partial<Live>) { live = { ...live, ...next }; emit() }
 
+/** The tools whose result is about one jotting: once the reader has written again, its id is all that is kept of it. */
+const ABOUT_ONE = ['read_jotting', 'open_jotting', ...WRITES]
 /** A tool's result once the reader has written again, as the server shows it to the model (rs/src/assistant.rs
- *  stand_in): the ids of the library paragraphs a server tool gave, or that it was done. */
+ *  stand_in): the ids of the library paragraphs a server tool gave, the id of the one jotting it was about, or that it
+ *  was done. */
 export function standIn(name: string | undefined, content: string): string {
-  let ids: number[] = []
-  if (name && toolRow(name)?.runs === 'server') {
-    try { ids = ((JSON.parse(content) as { paragraphs?: { id?: unknown }[] }).paragraphs ?? []).map(p => p.id).filter((id): id is number => Number.isInteger(id)) } catch { /* none */ }
-  }
-  return JSON.stringify(ids.length ? { paragraphs: ids.map(id => ({ id })) } : { done: true })
+  let v: { paragraphs?: { id?: unknown }[]; id?: unknown; jotting?: { id?: unknown } } | null = null
+  try { v = JSON.parse(content) } catch { /* none */ }
+  const ids = name && toolRow(name)?.runs === 'server' && Array.isArray(v?.paragraphs) ? v.paragraphs.map(p => p?.id).filter((id): id is number => Number.isInteger(id)) : []
+  if (ids.length) return JSON.stringify({ paragraphs: ids.map(id => ({ id })) })
+  // a result kept from an earlier message is its stand-in already: the id is read from that shape too
+  const id = name && ABOUT_ONE.includes(name) ? [v?.id, v?.jotting?.id].find((x): x is number => typeof x === 'number' && Number.isInteger(x) && x > 0) : undefined
+  return JSON.stringify(id ? { jotting: { id } } : { done: true })
 }
 /** The conversation in the form the server keeps, which is the form kept on the device and the one posted: the reader
  *  messages of the window (up to SENT_MOST, the last SENT once there are more or they are more than SENT_BYTES) with
@@ -80,15 +99,32 @@ export function trimmed(c: Conversation): Conversation {
   const readers = c.messages.flatMap((m, i) => (m.role === 'user' ? [i] : []))
   const latest = readers[readers.length - 1] ?? 0
   const names = callNames(c.messages)
-  const all = c.messages.map((m, i) => (m.role === 'tool' && i < latest ? { ...m, content: standIn(names.get(m.tool_call_id), m.content) } : m))
-  // measured with the latest message's results as stand-ins too, as the next post has them: what is kept while a turn
+  // before the latest reader message, a result is its stand-in, and a write of a jotting is left without its lines,
+  // which the model wrote after whatever it had read (rs/src/assistant.rs prompt)
+  const spent = (call: ToolCall): ToolCall => (WRITES.includes(call.function.name) ? { ...call, function: { ...call.function, arguments: '{}' } } : call)
+  const past = (m: ChatMessage): ChatMessage => (m.role === 'tool' ? { ...m, content: standIn(names.get(m.tool_call_id), m.content) }
+    : m.role === 'assistant' && m.tool_calls?.some(call => WRITES.includes(call.function.name)) ? { ...m, tool_calls: m.tool_calls.map(spent) }
+    : m)
+  const all = c.messages.map((m, i) => (i < latest ? past(m) : m))
+  // measured with the latest message as it will be once it is past, as the next post has it: what is kept while a turn
   // runs is then the window the turn was posted with
-  const posted = () => bytes(JSON.stringify(c.messages.map(m => (m.role === 'tool' ? { ...m, content: standIn(names.get(m.tool_call_id), m.content) } : m))))
+  const posted = () => bytes(JSON.stringify(c.messages.map(past)))
   const cut = readers.length > SENT_MOST || (readers.length > SENT && posted() > SENT_BYTES)
   const messages = cut ? all.slice(readers[readers.length - SENT]) : all
   const shownReaders = c.shown.flatMap((s, i) => (s.kind === 'reader' ? [i] : []))
   const shownFrom = shownReaders.length > KEPT ? shownReaders[shownReaders.length - KEPT] : 0
-  const shown = c.shown.slice(shownFrom)
+  // a jotting as it was before an edit is kept for that edit's Undo: the newest UNDO_CHARS of them, and none for a line
+  // already undone. A line whose jotting is no longer kept offers no Undo.
+  let room = UNDO_CHARS
+  const shown = c.shown.slice(shownFrom).reduceRight<Shown[]>((out, s) => {
+    if (s.kind === 'change' && s.change.undo.kind === 'jotting-edited') {
+      const size = JSON.stringify(s.change.undo.before).length
+      if (s.undone || s.changed || size > room) s = { ...s, change: { ...s.change, undo: { kind: 'none' } } }
+      else room -= size
+    }
+    out.unshift(s)
+    return out
+  }, [])
   const named = new Set([...shown.flatMap(s => (s.kind === 'answer' ? s.sentences.flatMap(x => x.ids) : [])), ...messages.flatMap(m => (m.role === 'tool' ? placesIn(m.content).map(p => p.id) : []))])
   return { messages, shown, places: Object.fromEntries(Object.entries(c.places).filter(([id]) => named.has(Number(id)))) }
 }
@@ -100,19 +136,33 @@ function placesIn(content: string): ParagraphRef[] {
   } catch { return [] }
 }
 
+/** Whether every call has an id of its own and every tool message answers, once, a call made before it: what the server
+ *  takes of a conversation. */
+function sound(messages: readonly ChatMessage[]): boolean {
+  const called = new Set<string>(), answered = new Set<string>()
+  for (const m of messages) {
+    if (m.role === 'assistant') for (const call of m.tool_calls ?? []) { if (!call.id || called.has(call.id)) return false; called.add(call.id) }
+    else if (m.role === 'tool') { if (!called.has(m.tool_call_id) || answered.has(m.tool_call_id)) return false; answered.add(m.tool_call_id) }
+  }
+  return true
+}
+
 /** The conversation kept on the device for account `uid`; one kept for another account is dropped. */
 export function loadConversation(uid: number): Promise<void> {
   if (owner === uid && loaded) return loaded
   aborter?.abort()
   owner = uid
   conv = EMPTY
-  setLive({ asking: false, words: '', draft: null })
+  const here = ++began
+  setLive(IDLE)
   loaded = AsyncStorage.getItem(KEY).then(raw => {
     if (!raw) return
     try {
       const c = JSON.parse(raw) as Conversation & { uid?: number }
       if (c.uid !== uid) { AsyncStorage.removeItem(KEY).catch(() => {}); return }
-      if (Array.isArray(c.messages) && Array.isArray(c.shown) && owner === uid) { conv = { messages: c.messages, shown: c.shown, places: c.places ?? {} }; emit() }
+      // one kept by a build that could leave a result with no call in it (New conversation while a tool ran) is
+      // shown as it was, and its messages begin again: the server would refuse them at every message
+      if (Array.isArray(c.messages) && Array.isArray(c.shown) && began === here) { conv = { messages: sound(c.messages) ? c.messages : [], shown: c.shown, places: c.places ?? {} }; emit() }
     } catch { /* a conversation that cannot be read is gone */ }
   }, () => {})
   return loaded
@@ -137,28 +187,69 @@ const TOO_LONG = N_('This conversation is too long for Ask. Start a new conversa
 /** Starts a new conversation: the old one is gone from the device. */
 export function newConversation() {
   aborter?.abort()
+  began++
   conv = EMPTY
-  setLive({ asking: false, words: '', draft: null })
+  setLive(IDLE)
   AsyncStorage.removeItem(KEY).catch(() => {})
 }
 export function stop() { aborter?.abort() }
 export function closeDraft() { setLive({ draft: null }) }
 
+/** The reader's answer to the proposal on screen: Apply writes it, once; anything else leaves it unwritten. */
+let decide: ((tapped: 'apply' | 'dismiss') => void) | null = null
+export function applyProposal() { decide?.('apply') }
+export function dismissProposal() { decide?.('dismiss') }
+/**
+ * A write the server held (docs/ASSISTANT.md): worked out with nothing written, shown to the reader as a proposal,
+ * and written only on their tap on Apply. Whether a write is held is the server's word in its own event; the call's
+ * arguments are the model's and cannot say. Null when the turn ended first (Stop, another account, a new
+ * conversation): nothing was written, and the call goes unanswered. A turn that ends after the tap, while the write is
+ * being made, has its write all the same: the reader asked for it.
+ */
+async function hold(name: string, args: Record<string, unknown>, signal: AbortSignal): Promise<Outcome | null> {
+  if (!WRITES.includes(name)) return { result: { error: 'not applied: the app holds only a write for the reader to apply, and this is not one' }, changes: [] }
+  const planned = await planWrite(name, args, context())
+  if ('refused' in planned) return planned.refused
+  if (signal.aborted) return null
+  const tapped = await new Promise<'apply' | 'dismiss' | 'stopped'>(resolve => {
+    decide = resolve
+    signal.addEventListener('abort', () => resolve('stopped'), { once: true })
+    setLive({ proposal: proposalOf(planned.plan) })
+  })
+  decide = null
+  setLive({ proposal: null })
+  if (tapped === 'stopped' || signal.aborted) return null
+  return tapped === 'apply' ? applyPlan(planned.plan, context(), 'tap') : notApplied()
+}
+
 export async function ask(text: string) {
   const content = text.trim()
   if (!content || live.asking || !loaded) return
+  const here = began
   await loaded
+  if (began !== here) return
   // posted as the server keeps it, so the hand-over's digest of what was posted is what the app goes on from
   commit(trimmed({ ...conv, messages: [...conv.messages, { role: 'user', content }], shown: [...conv.shown, { kind: 'reader', text: content }] }))
   await turn({ messages: conv.messages })
 }
 
-/** Undoes a change line's change, once. */
+/** Undoes a change line's change, once. A write of a jotting is undone only while the jotting is as Ask left it:
+ *  otherwise the line says it has changed since, and nothing is written. */
 export async function undoShown(index: number) {
   const s = conv.shown[index]
-  if (s?.kind !== 'change' || s.undone || !host) return
-  await undo(s.change.undo, context())
-  commit({ ...conv, shown: conv.shown.map((x, i) => (i === index ? { ...s, undone: true } : x)) })
+  if (s?.kind !== 'change' || s.undone || s.changed || !host) return
+  const here = began
+  const r = await undo(s.change.undo, context())
+  if (began !== here || conv.shown[index] !== s) return
+  if (r.did === 'failed') { note({ kind: 'error', text: t('That could not be undone just now. Check your connection and try again.') }); return }
+  const now = r.did === 'undone' ? r.now : undefined
+  commit({ ...conv, shown: conv.shown.map((x, i) => {
+    if (i === index) return r.did === 'undone' ? { ...s, undone: true } : { ...s, changed: true }
+    // the jotting is again as an earlier write of Ask's left it: that write's Undo holds for it as it is now
+    const u = x.kind === 'change' && !x.undone && !x.changed ? x.change.undo : null
+    return now && x.kind === 'change' && u && (u.kind === 'jotting-edited' || u.kind === 'jotting-created') && u.id === now.id && u.left.sum === now.left.sum
+      ? { ...x, change: { ...x.change, undo: { ...u, left: now.left } } } : x
+  }) })
 }
 
 function context(): ActionContext {
@@ -171,22 +262,28 @@ async function turn(req: TurnRequest) {
   const ctl = new AbortController()
   aborter = ctl
   setLive({ asking: true, words: '' })
-  let next: TurnRequest | null = req
-  const who = owner
+  let next: Next | null = { req, answered: false }
+  const here = began
   try {
-    while (next) next = await post(next, ctl.signal, who)
+    while (next) next = await post(next.req, ctl.signal, here, next.answered)
   } catch (e) {
-    if (!ctl.signal.aborted && owner === who) note({ kind: 'error', text: t('Ask could not be reached. Check your connection and try again.') })
+    if (!ctl.signal.aborted && began === here) note({ kind: 'error', text: t('Ask could not be reached. Check your connection and try again.') })
   } finally {
-    if (aborter === ctl) { aborter = null; setLive({ asking: false, words: '' }) }
+    if (aborter === ctl) { aborter = null; setLive({ asking: false, words: '', proposal: null }) }
   }
 }
 function note(s: Shown) { commit({ ...conv, shown: [...conv.shown, s] }) }
 
-/** One post of the turn of account `who`. Once the reader stops, or another account opens Ask, no tool runs, nothing
- *  goes back to the server, and nothing is kept unless it is still `who`'s conversation. */
-async function post(req: TurnRequest, signal: AbortSignal, who: number | null): Promise<TurnRequest | null> {
-  const ours = () => owner === who
+/** What a turn posts next. `answered`: among the calls it answers is a proposal the reader answered, however long
+ *  after it was shown. */
+interface Next { req: TurnRequest; answered: boolean }
+
+/** One post of the turn begun in conversation `here`. Once the reader stops or starts a new conversation, or another
+ *  account opens Ask, no further tool runs and nothing goes back to the server; and nothing is kept unless `here` is
+ *  still the conversation. `answered`: this post goes on from a proposal the reader answered. */
+async function post(req: TurnRequest, signal: AbortSignal, here: number, answered: boolean): Promise<Next | null> {
+  const ours = () => began === here
+  const who = owner
   const keep = (next: Conversation) => { if (ours()) commit(next) }
   const note = (s: Shown) => keep({ ...conv, shown: [...conv.shown, s] })
   await loadApiBase()
@@ -196,17 +293,20 @@ async function post(req: TurnRequest, signal: AbortSignal, who: number | null): 
   const device = await deviceId()
   if (device) headers['x-jottings-device'] = device
   const send = Platform.OS === 'web' ? globalThis.fetch : (expoFetch as unknown as typeof globalThis.fetch)
-  const res = await send(`${getApiBase()}/api/assistant/turn`, { method: 'POST', headers, body: JSON.stringify(req), signal })
+  const res = await send(`${getApiBase()}/api/assistant/turn`, { method: 'POST', headers, body: JSON.stringify({ ...req, can: CAN }), signal })
   if (res.status === 429) {
     const cap = await res.json() as CapReached
     note({ kind: 'cap', cap: cap.cap, resetsAt: cap.resets_at })
     return null
   }
+  // the hand-over of a held write is good for an hour, and the reader may take longer over a proposal: what they
+  // chose was done (the write has its line and its Undo), the server will not go on from it, and nothing went wrong
+  if (res.status === 400 && answered) { note({ kind: 'lapsed' }); return null }
   if (!res.ok || !res.body) {
     note({ kind: 'error', text: res.status === 401 ? t('Ask needs you to be signed in.') : res.status === 413 ? t(TOO_LONG) : t('Ask could not answer just now. Try again in a moment.') })
     return null
   }
-  let pending: { calls: ToolCall[]; token: string } | null = null
+  let pending: { calls: ToolCall[]; token: string; held?: string[] } | null = null
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buf = ''
@@ -236,20 +336,31 @@ async function post(req: TurnRequest, signal: AbortSignal, who: number | null): 
     }
   }
   if (!pending || signal.aborted) return null
-  const results: ChatMessage[] = []
-  const changes: Shown[] = []
+  const held = new Set(Array.isArray(pending.held) ? pending.held : [])
+  let proposed = false
   for (const call of pending.calls) {
     if (signal.aborted || !ours()) break
     const run = APP_TOOLS[call.function.name]
     let args: Record<string, unknown> = {}
     try { args = JSON.parse(call.function.arguments || '{}') } catch { /* the executor says what is missing */ }
-    const out = run ? await run(args, context()).catch(() => ({ result: { error: 'the app could not do this' }, changes: [] })) : { result: { error: `there is no tool ${call.function.name}` }, changes: [] }
-    results.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(out.result) })
-    changes.push(...out.changes.map((change): Shown => ({ kind: 'change', change, undone: false })))
+    const failed = (): Outcome => ({ result: { error: 'the app could not do this' }, changes: [] })
+    const out = !run ? { result: { error: `there is no tool ${call.function.name}` }, changes: [] }
+      : held.has(call.id) ? await hold(call.function.name, args, signal).catch(failed)
+      : await run(args, context()).catch(failed)
+    // a proposal the turn ended on: nothing was written, and nothing answers the call
+    if (!out) break
+    const lines = out.changes.map((change): Shown => ({ kind: 'change', change, undone: false }))
+    if (ours()) {
+      // kept as each tool ends: its result, and the line of what it changed with its Undo, which the reader sees at
+      // once, while a proposal later in the same reply waits
+      proposed ||= held.has(call.id)
+      commit({ ...conv, messages: [...conv.messages, { role: 'tool', tool_call_id: call.id, content: JSON.stringify(out.result) }], shown: [...conv.shown, ...lines] })
+    // the reader started a new conversation while this tool ran (a write they had tapped Apply on, a bookmark): it is
+    // made all the same, so its line and its Undo are theirs to have, in the conversation they are now in. Nothing
+    // else of the turn is kept there, and nothing at all under another account
+    } else if (owner === who && lines.length) commit({ ...conv, shown: [...conv.shown, ...lines] })
   }
-  // what did run is kept, its lines with their Undo, when the conversation is still this account's
-  keep({ ...conv, messages: [...conv.messages, ...results], shown: [...conv.shown, ...changes] })
-  return signal.aborted || !ours() ? null : { messages: conv.messages, token: pending.token }
+  return signal.aborted || !ours() ? null : { req: { messages: conv.messages, token: pending.token }, answered: proposed }
 }
 
 /** Whether Ask is on at this server: asked once a minute at most. */
