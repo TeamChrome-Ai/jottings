@@ -61,7 +61,7 @@ export const LEAVE_MS = 320
 export interface NewsShape { chars: number; groups: number[]; sentences: number; opens: number }
 export const shapeOf = (question: string): NewsShape => ({
   chars: [...question].length,
-  groups: [ASK.verses.length, ASK.phrases.length, ASK.related.length],
+  groups: [ASK.phrases.length + ASK.related.length, ASK.verses.length],
   sentences: ANSWER.sentences.length,
   opens: ANSWER.opens,
 })

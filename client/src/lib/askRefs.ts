@@ -7,9 +7,10 @@
  * is (its tools search and read J. N. Darby's English, the library cites it), and the app's own tools read the model's
  * references the same way (assistantActions.ts `place`). The book's name and a German comma are the reader's.
  */
-import { toolRow, type ChatMessage, type Sentence } from '@shared/assistantTools'
+import { callNames, toolRow, type ChatMessage, type Sentence } from '@shared/assistantTools'
 import { scanRefs, type Ref } from '@shared/ref'
 import { isPlace } from './backupFile'
+import { superscript } from './intro'
 
 /** A stretch of an answer's sentence: plain words, or a reference that opens `ref`. */
 export interface AnswerRun { text: string; ref?: Ref }
@@ -52,7 +53,6 @@ export function answerRuns(text: string): AnswerRun[] {
  *  figure). */
 export type SentencePart = AnswerRun | { text: string; cite: number }
 
-const SUPERIOR = '⁰¹²³⁴⁵⁶⁷⁸⁹'
 /** A space of plain words that does not break: a number is never left alone at the start of a line. A whole space,
  *  not a narrow one: with less between them the numbers 1 and 3 read as 13. */
 const GAP = '\u00A0'
@@ -75,7 +75,7 @@ export function sentenceParts(s: Pick<Sentence, 'text' | 'ids'>, number: (id: nu
     seen.add(id)
     const before = out[out.length - 1]
     if (before && ('cite' in before || before.ref)) out.push({ text: GAP })
-    out.push({ text: String(n).replace(/\d/g, d => SUPERIOR[+d]), cite: id })
+    out.push({ text: superscript(String(n)), cite: id })
   }
   return out
 }
@@ -90,7 +90,7 @@ const whole = (v: unknown): v is number => Number.isInteger(v)
  * read_verses' verses of the book and chapter it names. A result of any other tool, or of an earlier message, gives none.
  */
 export function suppliedVerses(messages: readonly ChatMessage[]): Set<string> {
-  const names = new Map(messages.flatMap(m => (m.role === 'assistant' ? m.tool_calls ?? [] : [])).map(c => [c.id, c.function.name]))
+  const names = callNames(messages)
   const latest = messages.map(m => m.role).lastIndexOf('user')
   const out = new Set<string>()
   for (const m of messages.slice(latest + 1)) {

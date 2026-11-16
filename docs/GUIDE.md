@@ -238,8 +238,9 @@ Settings, Offline.
 <!-- route: /settings/about -->
 <!-- setting: about -->
 
-About has About the translation, Credits and licences, Acknowledgments, Send feedback (a fault, a wish or a kind word,
-to the developer), and the Welcome and the Full tour again. Ask can draft feedback for you to read and send.
+About has About the translation, Credits and licences, Source code (a link to where the app's code is published, free
+and open, when the app names a place), Acknowledgments, Send feedback (a fault, a wish or a kind word, to the
+developer), and the Welcome and the Full tour again. Ask can draft feedback for you to read and send.
 
 ## Settings: Account (sign out, delete the account)
 <!-- route: /settings/account -->

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Platform, ScrollView, Text, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type StyleProp, type TextInput, type TextStyle, type ViewStyle } from 'react-native'
 import { Stack, useLocalSearchParams, useNavigation, useRouter } from 'expo-router'
 import type { Sentence } from '@shared/assistantTools'
@@ -10,6 +10,7 @@ import { ask, closeDraft, loadConversation, newConversation, placeOf, stop, stre
 import { changeText } from '../src/lib/assistantActions'
 import { ASK_MAX, draftOf, takeDraft } from '../src/lib/askDraft'
 import { sentenceParts } from '../src/lib/askRefs'
+import { paragraphLink } from '../src/lib/libraryNav'
 import { follows } from '../src/lib/askScroll'
 import { sourcesOf } from '../src/lib/askSources'
 import { openRef } from '../src/lib/outlines'
@@ -20,9 +21,9 @@ import { useKeyboardCover } from '../src/hooks/useKeyboardCover'
 import { useReadingFont } from '../src/hooks/useReadingFont'
 import { useInks } from '../src/hooks/useTheme'
 import { useAuth } from '../src/store/auth'
-import { ALIGN_SELF, WIDTH_PX, usePref } from '../src/store/prefs'
+import { usePref } from '../src/store/prefs'
 import { face } from '../src/theme'
-import { Button, Card, Enter, ErrorText, Input, Screen, SPACE, Spinner, T, Tap, TYPE } from '../src/components/ui'
+import { Button, Card, Enter, ErrorText, Input, Screen, SPACE, Spinner, T, Tap, TYPE, useColumn } from '../src/components/ui'
 
 /** The box to write in: one line tall when empty, growing with what is written as far as six lines, then scrolling. */
 const BOX_LINE = 22
@@ -64,7 +65,6 @@ function Conversation({ uid }: { uid: number }) {
   const live = useLive()
   const c = useInks()
   const foot = useBottomInset()
-  const width = usePref('width'), align = usePref('align')
   // a draft the route brought (Search's bubble, lib/askDraft.ts) is in the box from the first frame, and then taken
   // off the route: read once, and never sent from here. Cleared through the screen's own navigation, once it has
   // mounted: the router is not ready to be asked while a pushed screen is still mounting, and throws
@@ -98,7 +98,7 @@ function Conversation({ uid }: { uid: number }) {
   // the screen's foot rises by what the keyboard covers, so the box stands on it
   const frame = useRef<View>(null)
   const cover = useKeyboardCover(frame)
-  const column: ViewStyle = { width: '100%', maxWidth: WIDTH_PX[width] ?? undefined, alignSelf: ALIGN_SELF[align] }
+  const column = useColumn()
   return (
     <View ref={frame} style={{ flex: 1, backgroundColor: c.bg, paddingBottom: cover }}>
       <ScrollView ref={scroller} testID="ask-conversation" style={{ flex: 1 }} contentContainerStyle={[column, { paddingHorizontal: SPACE.xl, paddingVertical: SPACE.l }]}
@@ -154,7 +154,9 @@ function Box({ value, onChangeText }: { value: string; onChangeText: (text: stri
   )
 }
 
-function ShownRow({ s, index }: { s: Shown; index: number }) {
+/** One kept row. It is drawn again only when the row itself changes: the conversation above it re-renders at every
+ *  word of an answer as it comes, and a kept row holds none of those words. */
+const ShownRow = memo(function ShownRow({ s, index }: { s: Shown; index: number }) {
   switch (s.kind) {
     case 'reader': return <Card tone="soft" style={{ alignSelf: 'flex-end', maxWidth: '85%', paddingVertical: SPACE.m }}><T>{s.text}</T></Card>
     case 'answer': return <Answer sentences={s.sentences} />
@@ -171,7 +173,7 @@ function ShownRow({ s, index }: { s: Shown; index: number }) {
     }
     case 'error': return <ErrorText>{s.text}</ErrorText>
   }
-}
+})
 
 const authorOf = (id: string) => MINISTRY_AUTHORS.find(a => a.id === id)?.short ?? id
 const SANS = face('sans')
@@ -201,7 +203,7 @@ function Answer({ sentences, words }: { sentences?: Sentence[]; words?: string }
     return { sources, parts: (sentences ?? []).map(s => sentenceParts(s, number)) }
   }, [sentences, conv])
   const label = (id: number) => { const p = placeOf(conv, id); return p ? t('Open {author}, {work}', { author: authorOf(p.author), work: p.work.title }) : undefined }
-  const open = (id: number) => { const p = placeOf(conv, id); if (p) router.push({ pathname: '/companion', params: { author: p.author, work: p.work.id, n: String(p.n), p: String(p.para) } }) }
+  const open = (id: number) => { const p = placeOf(conv, id); if (p) router.push(paragraphLink(p.author, p)) }
   return (
     <View style={{ gap: SPACE.m }}>
       <Text style={[body, { color: c.text }]}>

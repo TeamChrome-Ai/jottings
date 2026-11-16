@@ -8,8 +8,7 @@ import com.facebook.react.ReactApplication
 
 /** The player as JavaScript last described it (src/lib/car.ts): the one thing the session shows. */
 internal data class Reading(
-  /** A reading is in hand: from Listen until Stop. Off, the session shows nothing on the phone. */
-  val on: Boolean = false,
+  /** "idle" is no reading in hand: the session then shows nothing on the phone. Any other is one, from Listen until Stop. */
   val status: String = "idle",
   val id: String? = null,
   val title: String? = null,

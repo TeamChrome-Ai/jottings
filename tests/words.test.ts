@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import { HAS_TEXTS } from './_texts'
 
-const words: Record<string, [string, string][]> = JSON.parse(readFileSync(path.resolve(__dirname, '../data/words.json'), 'utf8'))
+const words: Record<string, [string, string][]> = HAS_TEXTS ? JSON.parse(readFileSync(path.resolve(__dirname, '../data/words.json'), 'utf8')) : {}
 const codeOf = (key: string, word: string) => words[key]?.find(([w]) => w === word)?.[1]
 
-describe('data/words.json', () => {
+describe.skipIf(!HAS_TEXTS)('data/words.json', () => {
   it('tags Darby’s own renderings from the Greek of the verse', () => {
     // Acts 21:31, "a representation came to the chiliarch of the band": χιλίαρχος and σπεῖρα, which ebible left bare
     expect(codeOf('44.21.31', 'chiliarch')).toBe('G5506')

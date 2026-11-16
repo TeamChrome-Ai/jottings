@@ -3,6 +3,8 @@ import { createRequire } from 'node:module'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { BRAND, NOUN, SCHEMES, appUrl, linksOf, nounForms, possessive, siteUrl, withArticle, type Brand } from '../shared/brand'
+import { creditsFor } from '../client/src/lib/credits'
+import { SOURCE_URL } from '../client/src/lib/source'
 
 // The brand is data (docs/BRAND.md): shared/brand.json is the real one, brand.example/ holds the placeholder for
 // every brand file at the same path. These hold the two in step, whichever of them is in place.
@@ -53,6 +55,23 @@ describe('the brand file and its placeholder', () => {
       expect(w.x).toHaveLength(name.length)
       expect(w.advance).toHaveLength(name.length)
       if (w.seasonal !== undefined) expect(w.seasonal).toBeLessThan(name.length)
+    }
+  })
+})
+
+describe('where the source is published', () => {
+  it('is an https address, or nothing: the placeholder names none, for a copy names its own', () => {
+    for (const [, b] of sides) expect(b.source === '' || /^https:\/\/[^\s/]+\/\S+$/.test(b.source), b.source).toBe(true)
+    expect(example.source).toBe('')
+  })
+  it('is the link About offers, and none where the brand names none', () => {
+    expect(SOURCE_URL).toBe(BRAND.source || null)
+  })
+  it('is on the Credits entry for the app’s own code, in both editions', () => {
+    for (const edition of ['1961', '1890'] as const) {
+      const own = creditsFor(edition, false).at(-1)!.items[0]
+      expect(own.licence).toMatch(/AGPL/)
+      expect(own.url).toBe(BRAND.source || undefined)
     }
   })
 })

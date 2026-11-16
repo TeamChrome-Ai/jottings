@@ -16,6 +16,7 @@
   "owner": "Example Owner",
   "ownerShort": "Example Owner",
   "contactEmail": "hello@example.org",
+  "source": "",
   "copyrightYear": 2026,
   "googleClientIds": {"web": "", "android": ""}
 }

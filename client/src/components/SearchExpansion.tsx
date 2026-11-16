@@ -12,9 +12,9 @@ import { Chip, Enter, SPACE, T } from './ui'
 const ASK_WAIT_MS = 1000
 
 /**
- * Other wordings for a plain question the words search found little for (expandCore.ts): the verses the writers expound
- * on it, phrases in their own words and related subjects, each with the paragraphs it finds. A phrase or a subject is
- * searched for (`onSearch`); a verse opens Ministry on that verse. Nothing shows while the model is asked, when the
+ * Other wordings for a plain question the words search found little for (expandCore.ts): phrases in the writers' own
+ * words and related subjects in one row, as a tap on either searches for it (`onSearch`), then the verses the writers
+ * expound on it, each of which opens Ministry on that verse. Every chip says how many paragraphs it finds. Nothing shows while the model is asked, when the
  * server asks none or is busy, or when nothing it suggested finds a paragraph.
  */
 export default function SearchExpansion({ query, found, onSearch }: { query: string; /** the words search's paragraphs for `query`, null until it answers */ found: number | null; onSearch: (words: string) => void }) {
@@ -29,6 +29,8 @@ export default function SearchExpansion({ query, found, onSearch }: { query: str
   }, [ask, query])
   if (!ask || shown?.query !== query) return null
   const { verses, phrases, related } = shown.expansion
+  // a wording the model gave both as a phrase and as a subject is one chip
+  const wordings = [...phrases, ...related].filter((s, i, all) => all.findIndex(x => x.text === s.text) === i)
   const searchChip = (s: Suggestion) => (
     <Chip key={s.text} label={s.text} detail={s.total.toLocaleString()} onPress={() => onSearch(s.text)}
       accessibilityLabel={tn(s.total, 'Search for “{words}”: {n} paragraph', 'Search for “{words}”: {n} paragraphs', { words: s.text, n: s.total.toLocaleString() })} />
@@ -36,6 +38,7 @@ export default function SearchExpansion({ query, found, onSearch }: { query: str
   return (
     <Enter style={{ gap: SPACE.m }}>
       <T small muted accessibilityRole="header">{t('Other wordings')}</T>
+      <Group>{wordings.map(searchChip)}</Group>
       <Group title={t('Verses')}>
         {verses.map(v => {
           const ref = formatRef({ book: v.book, chapter: v.chapter, v1: v.verse })
@@ -46,18 +49,16 @@ export default function SearchExpansion({ query, found, onSearch }: { query: str
           )
         })}
       </Group>
-      <Group title={t('In the writers’ own words')}>{phrases.map(searchChip)}</Group>
-      <Group title={t('Related subjects')}>{related.map(searchChip)}</Group>
       <T small muted>{t('An AI model suggested these wordings. Every result is from the library.')}</T>
     </Enter>
   )
 }
 
-function Group({ title, children }: { title: string; children: ReactNode[] }) {
+function Group({ title, children }: { title?: string; children: ReactNode[] }) {
   if (!children.length) return null
   return (
     <View style={{ gap: SPACE.s }}>
-      <T small muted bold>{title}</T>
+      {title ? <T small muted bold>{title}</T> : null}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: SPACE.s }}>{children}</View>
     </View>
   )

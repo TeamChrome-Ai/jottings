@@ -7,13 +7,17 @@ import { isLettered } from '../shared/footnotes'
 import { WORD_RE_EN } from '../shared/texts'
 import type { Verse } from '../shared/types'
 import { nativeVerseAts } from '../client/src/lib/nativeVerseAt'
+import { HAS_TEXTS } from './_texts'
 
-const mark9 = JSON.parse(readFileSync(resolve(__dirname, '../client/public/bible/41/9.json'), 'utf8')) as { verses: Verse[] }
+/** A chapter as the app ships it; no verses in a copy without the texts, where the tests of them are skipped. */
+const chapter = (book: number, c: number): { verses: Verse[] } =>
+  HAS_TEXTS ? JSON.parse(readFileSync(resolve(__dirname, `../client/public/bible/${book}/${c}.json`), 'utf8')) : { verses: [] }
+const mark9 = chapter(41, 9)
 const going = mark9.verses.filter(v => v.v >= 30 && v.v <= 32)
 const at = (hits: { v: number; at: number }[], v: number) => hits.find(h => h.v === v)!.at
 
 describe('native verse positions', () => {
-  it('finds each verse in its own words when numbers are off and the verses share a paragraph', () => {
+  it.skipIf(!HAS_TEXTS)('finds each verse in its own words when numbers are off and the verses share a paragraph', () => {
     // Mark 9:30-32 is one paragraph; 9:31 begins "for" and 9:30 has "forth"
     const joined = going.map(v => v.t + ' ').join('')
     const hits = nativeVerseAts(joined, going, { showNumbers: false })
@@ -64,8 +68,8 @@ describe('native verse positions', () => {
 
 // A lettered note at word 0 is drawn before the first word. The other markers are joined to their word with U+2060;
 // 1.3.11 left this one bare, so "a" + "if" is the word "aif" and the search takes a later "if".
-const deut30 = JSON.parse(readFileSync(resolve(__dirname, '../client/public/bible/5/30.json'), 'utf8')) as { verses: Verse[] }
-const jer39 = JSON.parse(readFileSync(resolve(__dirname, '../client/public/bible/24/39.json'), 'utf8')) as { verses: Verse[] }
+const deut30 = chapter(5, 30)
+const jer39 = chapter(24, 39)
 const deutRun = deut30.verses.filter(v => v.v >= 9 && v.v <= 11)
 const jerRun = (() => {
   const out: Verse[] = []
@@ -127,7 +131,7 @@ function placed(verses: readonly Verse[], leadJoiner: boolean): { got: (number |
 }
 
 describe('a lettered note before the first word', () => {
-  it('keeps Deuteronomy 30:9-11 each on its own first word', () => {
+  it.skipIf(!HAS_TEXTS)('keeps Deuteronomy 30:9-11 each on its own first word', () => {
     // 30:10 is "a" then "if thou shalt hearken", and the verse also says "if thou turn"
     expect(drawVerse(deutRun[1], true).startsWith('a\u2060if thou')).toBe(true)
     const laid = placed(deutRun, true)
@@ -136,7 +140,7 @@ describe('a lettered note before the first word', () => {
     expect(drawVerse(deutRun[1], false).startsWith('aif thou')).toBe(true)
     expect(placed(deutRun, false).got).not.toEqual(placed(deutRun, false).want)
   })
-  it('keeps Jeremiah 39, whose first verse opens with note d, each on its own first word', () => {
+  it.skipIf(!HAS_TEXTS)('keeps Jeremiah 39, whose first verse opens with note d, each on its own first word', () => {
     expect(jerRun.map(v => v.v)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     expect(drawVerse(jerRun[0], true).startsWith('d\u2060And')).toBe(true)
     const laid = placed(jerRun, true)

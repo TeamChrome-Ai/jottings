@@ -40,6 +40,9 @@ export interface Brand {
   owner: string
   ownerShort: string
   contactEmail: string
+  /** Where the source of this copy is published, for About and Credits to link; '' and they offer no link. A changed
+   *  version that is run as a service names its own (LICENSING.md). */
+  source: string
   copyrightYear: number
   /** Absent: the name is drawn as plain text and the welcome shows it without the flight of dots. */
   wordmark?: BrandWordmark

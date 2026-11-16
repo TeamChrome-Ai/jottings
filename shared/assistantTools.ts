@@ -37,6 +37,9 @@ export type ChatMessage =
   | { role: 'tool'; tool_call_id: string; content: string }
 
 /** A paragraph of the library as a library tool returns it; `text` is left out once the reader has moved on. */
+/** Each call's id to the tool it named, for reading a tool message by what made it (the server's `call_names`). */
+export const callNames = (messages: readonly ChatMessage[]): Map<string, string> =>
+  new Map(messages.flatMap(m => (m.role === 'assistant' ? m.tool_calls ?? [] : [])).map(c => [c.id, c.function.name]))
 export interface ParagraphRef { id: number; author: string; work: { id: string; title: string; collection: string }; n: number; para: number; section: string; text?: string }
 
 /** One sentence of a finished answer: the paragraph ids it rests on, checked against those the tools gave in this

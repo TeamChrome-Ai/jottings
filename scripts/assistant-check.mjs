@@ -365,7 +365,10 @@ const fits = async (page, lane) => { const w = await page.evaluate(() => documen
   const onHome = await open(on.root, '/', main)
   ok('Home lists Ask when the server has it on and the reader is signed in', await visible(onHome, 'Questions on the Bible and the app, answered from the library'))
   const library = await open(on.root, '/companion', main)
-  ok('the ministry library lists Ask too', await visible(library, 'Questions on the Bible and the app, answered from the library'))
+  // one row on Home and the bubble on Search are the ways in: the library carries no second copy of Home's row
+  await library.getByPlaceholder('Search by passage, title or words').waitFor({ timeout: 30000 }).catch(() => {})
+  await library.waitForTimeout(1500)
+  ok('the ministry library is up and has no Ask row of its own', (await library.getByPlaceholder('Search by passage, title or words').count()) === 1 && (await library.getByText('Questions on the Bible and the app, answered from the library').count()) === 0)
   await shot(library, 'library-row')
 }
 

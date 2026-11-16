@@ -45,7 +45,7 @@ import PlayerBar from '../../../../src/components/PlayerBar'
 import FontLoading from '../../../../src/components/FontLoading'
 import { useLazyFontState } from '../../../../src/lib/fonts'
 import { usePlayer } from '../../../../src/store/player'
-import { Button, ErrorText, Sheet, SwitchRow, T } from '../../../../src/components/ui'
+import { Button, ErrorText, ListRow, Sheet, SwitchRow, T } from '../../../../src/components/ui'
 import { ToggleButton } from '../../../../src/components/motion/reader'
 import { edgesOf, type Edges, type PullDir } from '../../../../src/lib/edgePull'
 import { atEnd } from '@shared/reading'
@@ -861,12 +861,15 @@ function ReadScreenPage() {
             <Button icon title="A+" accessibilityLabel={t('Larger text')} disabled={prefs.fontSize >= FONT_MAX} onPress={() => set({ fontSize: prefs.fontSize + 1 })} textStyle={{ fontSize: 18 }} />
           </View> : null}
           {compact ? <View ref={tourRef('more-lookup')}><SwitchRow label={t('Word lookup')} hint={t('Tap a word: Strong’s concordance and Morrish')} value={wordMode} onChange={setWordMode} /></View> : null}
-          {compact ? <Button ref={tourRef('more-bookmark')} lead="bookmark" title={chapterMarked ? t('Remove chapter bookmark') : t('Bookmark this chapter')} onPress={() => { setMore(false); void toggleMark({ book: bookN, chapter: chapterN }) }} /> : null}
-          {compact && chapterMinistry ? <Button ref={tourRef('more-ministry')} lead="companion" title={chapterMinistry} onPress={() => openChapterMinistry(true)} /> : null}
-          {compact ? <Button ref={tourRef('more-paged')} lead="pages" title={t('Paged mode')} onPress={() => { setMore(false); openFlip() }} /> : null}
-          {user && groups.length ? <Button lead="users" title={t('Read with…')} onPress={() => { setMore(false); setTimeout(() => setReadWith(true), reduce ? 0 : scaleMs(EXIT_MS)) }} /> : null}
-          <Button lead="share" title={t('Share this chapter')} onPress={() => { setMore(false); void shareChapter(bookN, chapterN).then(r => { if (r === 'copied') toast.show(t('Link copied')) }) }} />
-          <Button lead="sliders" title={t('Reading settings')} onPress={() => { setMore(false); router.push('/settings/text') }} />
+          {/* what is done to the chapter, as quiet rows: the two controls above are set here, these lead somewhere */}
+          <View>
+            {compact ? <ListRow ref={tourRef('more-bookmark')} icon="bookmark" label={chapterMarked ? t('Remove chapter bookmark') : t('Bookmark this chapter')} onPress={() => { setMore(false); void toggleMark({ book: bookN, chapter: chapterN }) }} /> : null}
+            {compact && chapterMinistry ? <ListRow ref={tourRef('more-ministry')} icon="companion" label={chapterMinistry} onPress={() => openChapterMinistry(true)} /> : null}
+            {compact ? <ListRow ref={tourRef('more-paged')} icon="pages" label={t('Paged mode')} onPress={() => { setMore(false); openFlip() }} /> : null}
+            {user && groups.length ? <ListRow icon="users" label={t('Read with…')} onPress={() => { setMore(false); setTimeout(() => setReadWith(true), reduce ? 0 : scaleMs(EXIT_MS)) }} /> : null}
+            <ListRow icon="share" label={t('Share this chapter')} onPress={() => { setMore(false); void shareChapter(bookN, chapterN).then(r => { if (r === 'copied') toast.show(t('Link copied')) }) }} />
+            <ListRow icon="sliders" label={t('Reading settings')} onPress={() => { setMore(false); router.push('/settings/text') }} />
+          </View>
         </View>
       </Sheet>
 

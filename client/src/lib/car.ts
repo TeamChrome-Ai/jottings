@@ -48,7 +48,7 @@ export function registerCar(): void {
     // the chapter and what the player is doing with it, never how far in it is: the reading goes by verses with their
     // pauses and their numbers, and a clock for it shown to a driver would be a guess
     const d: Described = {
-      on: s.status !== 'idle', status: s.status, art, speed, speedLabel: `${t('Speed')} ${speed}×`, ack,
+      status: s.status, art, speed, speedLabel: `${t('Speed')} ${speed}×`, ack,
       ...(s.book ? { id: chapterId(s.book, s.chapter), title: formatRef({ book: s.book, chapter: s.chapter }), subtitle: `${BRAND.name} · Darby` } : {}),
       ...(s.error ? { error: s.error } : {}),
     }
@@ -89,15 +89,11 @@ export function registerCar(): void {
       if (asked) begin(asked)
       else if (s.status === 'paused') engine.toggle()
       else if (s.status === 'idle' || s.status === 'error') begin(await resume())
-    } else if (c.type === 'pause') {
+    } else if (c.type === 'pause' || (c.type === 'gone' && engine.isHeldOutside())) {
+      // `gone`, the drive is over: what the car asked for waits where it is; the screens' own reading was never the car's
       if (s.status === 'playing') engine.toggle()
       else if (s.status === 'loading') engine.stop()
     } else if (c.type === 'stop') engine.stop()
-    else if (c.type === 'gone') {
-      // the drive is over: what the car asked for waits where it is; the screens' own reading was never the car's
-      if (engine.isHeldOutside() && s.status === 'playing') engine.toggle()
-      else if (engine.isHeldOutside() && s.status === 'loading') engine.stop()
-    }
     else if (c.type === 'next' || c.type === 'previous') {
       const to = s.book ? (c.type === 'next' ? nextChapter : prevChapter)(s.book, s.chapter) : null
       if (to) begin({ ...to, verse: 1 })

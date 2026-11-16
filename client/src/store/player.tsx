@@ -151,8 +151,7 @@ function createEngine(): PlayerEngine {
   const onLockScreen = ref(false)
   const run = ref(0)                       // bumps on every start/stop/jump so stale loops exit
   const loading = ref<{ key: string; token: number } | null>(null) // the start() fetching (chapter, verse, options, its run), to swallow repeated taps
-  const nextCbs = ref(new Set<(from: Chapter, to: Chapter) => void>())
-  const startRef = ref<(book: number, chapter: number) => void>(() => {})
+  const nextCbs = new Set<(from: Chapter, to: Chapter) => void>()
   const paused = ref(false)
   /** A recorded reading on a sound of its own, in its run: a spoken number, the clip a Play resumes (none while it
    *  waits to be said), or a clause the device voice reads (none: it says the clause again by itself). The chapter's
@@ -161,8 +160,8 @@ function createEngine(): PlayerEngine {
   /** Started with `cue`: loaded and paused; Play starts the reading loop rather than resuming it. */
   const cued = ref(false)
   const current = ref<Current>({ book: 0, chapter: 0, verses: [], marks: null, index: 0, heading: false, stopAfter: null })
-  const heardCbs = ref(new Set<(book: number, chapter: number, v: number) => void>())
-  const heard = (book: number, chapter: number, v: number) => heardCbs.current.forEach(cb => cb(book, chapter, v))
+  const heardCbs = new Set<(book: number, chapter: number, v: number) => void>()
+  const heard = (book: number, chapter: number, v: number) => heardCbs.forEach(cb => cb(book, chapter, v))
   const status = ref<PlayerStatus>('idle')
   /** "Psalm 118:12", the verse being read, for the read-aloud log. */
   const where = (c: Current = current.current) => {
@@ -470,8 +469,8 @@ function createEngine(): PlayerEngine {
       const to = p ? { book: p.book, chapter: p.chapter } : nextChapter(c.book, c.chapter)
       if (!to) return note('no-next', 'the end of the path or of the Bible')
       note('next', undefined, place(to.book, to.chapter))
-      startRef.current(to.book, to.chapter)
-      nextCbs.current.forEach(cb => cb(from, to))
+      void start(to.book, to.chapter)
+      nextCbs.forEach(cb => cb(from, to))
     } catch (e) {
       if ((e as Error).message === STOPPED) return
       note('error', (e as Error).message, where(c))
@@ -528,7 +527,6 @@ function createEngine(): PlayerEngine {
     // a load stopped and started again under the same key is not this one's to release
     finally { if (loading.current?.token === token) loading.current = null }
   }
-  startRef.current = start
 
   const stop = () => {
     if (status.current !== 'idle') note('stop', undefined, where())
@@ -598,8 +596,8 @@ function createEngine(): PlayerEngine {
     if (i >= 0) { jumpTo(i); current.current.stopAfter = opts?.stopAfter ?? null }
   }
 
-  const onVerseHeard = (cb: (book: number, chapter: number, v: number) => void) => { heardCbs.current.add(cb); return () => { heardCbs.current.delete(cb) } }
-  const onNextChapter = (cb: (from: Chapter, to: Chapter) => void) => { nextCbs.current.add(cb); return () => { nextCbs.current.delete(cb) } }
+  const onVerseHeard = (cb: (book: number, chapter: number, v: number) => void) => { heardCbs.add(cb); return () => { heardCbs.delete(cb) } }
+  const onNextChapter = (cb: (from: Chapter, to: Chapter) => void) => { nextCbs.add(cb); return () => { nextCbs.delete(cb) } }
   const marksOf = (book: number, chapter: number) => { const c = current.current; return c.book === book && c.chapter === chapter ? c.marks : null }
   const warm = (book: number, chapter: number) => {
     warmChapter(book, chapter)

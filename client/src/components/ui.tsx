@@ -89,6 +89,13 @@ export function Tap({ children, style, scaleTo = 0.96, haptic = true, crisp = fa
   )
 }
 
+/** The page's column: as wide as Settings → Page allows and set where it says. `Screen` is this; a screen that lays
+ *  its own scroll view out, and anything pinned over one, takes the same so they stand on the same lines. */
+export function useColumn(): ViewStyle {
+  const width = usePref('width'), align = usePref('align')
+  return { width: '100%', maxWidth: WIDTH_PX[width] ?? undefined, alignSelf: ALIGN_SELF[align] }
+}
+
 /** A page: flat theme background, 20 px gutter, content capped at a readable width on tablets and desktop web. */
 export function Screen({ children, scroll = true, style, padded = true, safeTop = false, animate = true, scrollRef }: { children: ReactNode; scroll?: boolean; style?: StyleProp<ViewStyle>; padded?: boolean; safeTop?: boolean; animate?: boolean; /** the scrolling screen's ScrollView, for screens that move the reader to a block */ scrollRef?: Ref<ScrollView> }) {
   const c = useInks()
@@ -97,8 +104,7 @@ export function Screen({ children, scroll = true, style, padded = true, safeTop 
   const pad: ViewStyle | null = padded
     ? { padding: GUTTER, gap: SPACE.l, paddingTop: SPACE.l + (safeTop ? insets.top + SPACE.s : 0), paddingBottom: SPACE.xxxl + bottom }
     : { paddingTop: safeTop ? insets.top : 0, paddingBottom: bottom }
-  const width = usePref('width'), align = usePref('align')
-  const cap: ViewStyle = { width: '100%', maxWidth: WIDTH_PX[width] ?? undefined, alignSelf: ALIGN_SELF[align] }
+  const cap = useColumn()
   const keyboard = useKeyboardRoom(scroll)
   const body = animate ? <Enter style={[{ gap: pad ? SPACE.l : 0 }, scroll ? null : { flex: 1 }]}>{children}</Enter> : children
   // the screen's own ref, and the guided tour's (it scrolls a target into view)

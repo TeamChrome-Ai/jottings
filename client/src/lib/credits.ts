@@ -94,6 +94,7 @@ export const CREDITS: CreditSection[] = [
     { name: N_('argon2, jsonwebtoken, rust-embed and the rest of the Cargo and npm dependency trees'), what: N_('Password hashing, Google sign-in verification, static asset embedding and everything else.'), licence: N_('MIT / Apache-2.0 / BSD; see the lockfiles in the source'), url: 'https://github.com/' },
   ].map(shown) },
   { title: BRAND.name, items: [
+    ...(BRAND.source ? [{ name: N_('Source code'), what: N_('The code of the app and its server, for anyone to read, build and improve. The texts are not part of it.'), licence: N_('GNU AGPL 3.0, and MIT one year after each release'), url: BRAND.source }] : []),
     { name: N_('The {brand} name and mark'), what: N_('The app’s code is free and open source: anyone may use, change and share it, and a changed version that is shared or run as a service must share its source too. A year after each release is published, that release becomes free for any use. The name {brand}, the app icon and the wordmark are not part of that licence: they are © {year} {owner}, all rights reserved, so a copy or a changed version needs its own name and icon.'), licence: N_('Code: GNU AGPL 3.0, and MIT one year after each release. Name and artwork: all rights reserved') },
   ].map(shown) },
 ]

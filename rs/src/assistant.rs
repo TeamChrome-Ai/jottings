@@ -333,10 +333,7 @@ fn unmarked(text: &str) -> Vec<bool> {
 /// marks alone. A name at the very end is one only when the words have `ended`: the next letter may make it another
 /// word ("open air").
 fn named_in(text: &str, ended: bool) -> bool {
-    [vec![true; text.len()], outside(text), unmarked(text)].iter().any(|keep| {
-        let (left, _) = view(text, keep);
-        NAMES.find_iter(&left).any(|m| ended || m.end() < left.len())
-    })
+    views(text).iter().any(|(left, _)| NAMES.find_iter(left).any(|m| ended || m.end() < left.len()))
 }
 /// `text` as it is read under `keep`: the bytes kept, a run of space as one space, in small letters; and for each
 /// letter of that, where it stands in `text`.
@@ -350,6 +347,12 @@ fn view(text: &str, keep: &[bool]) -> (String, Vec<usize>) {
         }
     }
     (left, at)
+}
+/// The words in each of the ways a name is read (`named_in`), each with where its bytes stood: as they stand, without
+/// their brackets and what those hold, and without the brackets' marks alone. What is held back is sound only while
+/// it is read in the very ways a name is looked for, so both read these.
+fn views(text: &str) -> [(String, Vec<usize>); 3] {
+    [vec![true; text.len()], outside(text), unmarked(text)].map(|keep| view(text, &keep))
 }
 /// Every way `NAMES` lets a name be written, in small letters: what the words still held are measured against.
 static SPELT: Lazy<Vec<Vec<char>>> = Lazy::new(|| {
@@ -379,8 +382,7 @@ fn hold_from(all: &str) -> usize {
     let mut hold = first_unclosed(all).unwrap_or(all.len());
     let closed = &all[..hold];
     let longest = SPELT.iter().map(Vec::len).max().unwrap_or(0);
-    for keep in [vec![true; closed.len()], outside(closed), unmarked(closed)] {
-        let (left, at) = view(closed, &keep);
+    for (left, at) in views(closed) {
         let left: Vec<char> = left.chars().collect();
         if let Some(i) = (left.len().saturating_sub(longest)..left.len()).find(|&i| SPELT.iter().any(|w| w.starts_with(&left[i..]))) { hold = hold.min(at[i]) }
     }

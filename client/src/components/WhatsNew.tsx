@@ -186,9 +186,8 @@ function Ask({ b }: { b?: Motion['ask'] }) {
   const words = ASK.question.split(' ')
   let typed = 0, chip = 0
   const groups = [
+    { title: t('Other wordings'), chips: [...ASK.phrases, ...ASK.related].map(p => ({ label: p.words, total: p.total })) },
     { title: t('Verses'), chips: ASK.verses.map(v => ({ label: formatRef({ book: v.book, chapter: v.chapter, v1: v.verse }), total: v.total })) },
-    { title: t('In the writers’ own words'), chips: ASK.phrases.map(p => ({ label: p.words, total: p.total })) },
-    { title: t('Related subjects'), chips: ASK.related.map(p => ({ label: p.words, total: p.total })) },
   ]
   return (
     <View style={{ gap: SPACE.l }}>

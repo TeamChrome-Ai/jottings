@@ -8,8 +8,7 @@ import { useBottomInset } from '../hooks/useBottomInset'
 import { useDesktop } from '../hooks/useDesktop'
 import { useKeyboardUp } from '../hooks/useKeyboardUp'
 import { useAuth } from '../store/auth'
-import { ALIGN_SELF, WIDTH_PX, usePref } from '../store/prefs'
-import { Button, Enter, SPACE } from './ui'
+import { Button, Enter, SPACE, useColumn } from './ui'
 
 /** The bubble's height (a `Button`): the room Search leaves under its last row, so the row scrolls clear of it. */
 export const ASK_BUBBLE_H = 44
@@ -34,13 +33,13 @@ export default function AskBubble({ field }: { field: string }) {
   const insets = useSafeAreaInsets()
   const tabs = useBottomInset()
   const desktop = useDesktop()
-  const width = usePref('width'), align = usePref('align')
+  const column = useColumn()
   if (!on || keyboard) return null
   // beside the desktop's rail no tab bar covers the system's bottom inset
   const foot = desktop ? insets.bottom : tabs
   return (
     <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: SPACE.l + foot }}>
-      <View pointerEvents="box-none" style={{ width: '100%', maxWidth: WIDTH_PX[width] ?? undefined, alignSelf: ALIGN_SELF[align], paddingLeft: SPACE.xl + insets.left, paddingRight: SPACE.xl + insets.right, alignItems: 'flex-end' }}>
+      <View pointerEvents="box-none" style={{ ...column, paddingLeft: SPACE.xl + insets.left, paddingRight: SPACE.xl + insets.right, alignItems: 'flex-end' }}>
         <Enter>
           <Button primary lead="info" title={t('Ask')} testID="ask-bubble"
             accessibilityLabel={user ? undefined : `${t('Ask')}. ${t('Needs an account. Sign in to ask')}`}

@@ -18,8 +18,7 @@ export interface CarCommand {
 }
 /** The reading as the media session shows it. */
 export interface Described {
-  /** A reading is in hand; off, the phone shows no notification. */
-  on: boolean
+  /** `idle` is no reading in hand, and the phone then shows no notification. */
   status: 'idle' | 'loading' | 'playing' | 'paused' | 'error'
   id?: string
   title?: string

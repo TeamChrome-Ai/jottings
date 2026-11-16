@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { View } from 'react-native'
+import { Linking, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import FeedbackSheet from '../../src/components/FeedbackSheet'
 import { playWelcome } from '../../src/store/welcome'
@@ -10,9 +10,11 @@ import { useEdition } from '../../src/lib/edition'
 import { hasChronology } from '../../src/lib/editionCore'
 import { Card, ListRow, Screen, Sheet } from '../../src/components/ui'
 import { BRAND } from '@shared/brand'
+import { SOURCE_URL } from '../../src/lib/source'
 import { t } from '@shared/i18n'
 
-/** Settings → About: the translation's notices, credits, the people behind the app, feedback, and the welcome and tour. */
+/** Settings → About: the translation's notices, credits, where the source is published, the people behind the app,
+ *  feedback, and the welcome and tour. */
 export default function AboutSettings() {
   const edition = useEdition()
   const router = useRouter()
@@ -23,6 +25,7 @@ export default function AboutSettings() {
       <Card style={{ gap: 0, paddingVertical: 8 }}>
         <ListRow icon="info" label={t('About the translation')} detail={hasChronology(edition) ? t('Darby’s introductory notices and note on dates') : t('Darby’s introductory notices')} onPress={() => router.push('/about')} />
         <ListRow icon="list" label={t('Credits and licences')} detail={t('Sources, fonts, icons and open-source software')} onPress={() => router.push('/credits')} />
+        {SOURCE_URL && <ListRow icon="code" label={t('Source code')} detail={t('Free and open: read it, or help improve it')} onPress={() => { Linking.openURL(SOURCE_URL!).catch(() => {}) }} />}
         <ListRow icon="heart" label={t('Acknowledgments')} detail={t('The people behind {name}', { name: BRAND.name })} onPress={() => router.push('/acknowledgments')} />
         <ListRow icon="feedback" label={t('Send feedback')} detail={t('A fault, a wish or a kind word')} onPress={() => setSheet('feedback')} />
         <ListRow icon="play" label={t('Welcome and tour')} detail={t('Play them again, to show someone')} onPress={() => setSheet('again')} />

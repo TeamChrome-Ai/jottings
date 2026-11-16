@@ -187,22 +187,22 @@ function crossTail(text: string, start: number, end: number, v1: number, v2: num
  * the notes and the ministry are English whatever the app speaks; another language's words only when it is the app's
  * or the Bible's, so that Swedish "Del" and Dutch "Les" are not taken for numbering words in French or Italian.
  */
-const OWN_NUMBER: Record<NamesLang, { words: string; short: string; stopped: string }> = {
-  en: { words: 'chapter chapters verse verses page pages part parts section sections volume volumes book books number numbers question questions lesson lessons hymn hymns paragraph paragraphs', short: 'chap chaps ch chs vol vols vv vs vss pt pts pp bk para sect ques', stopped: 'no nos ver vers sec secs par' },
-  fr: { words: 'chapitre chapitres verset versets page pages partie parties section sections tome tomes volume volumes livre livres numéro numéros question questions leçon leçons cantique cantiques paragraphe paragraphes', short: 'chap ch vol', stopped: 'no vers' },
-  de: { words: 'kapitel vers verse seite seiten teil teile abschnitt abschnitte band bände buch bücher nummer nummern frage fragen lektion lektionen lied lieder absatz absätze', short: 'kap', stopped: 'bd nr abschn' },
-  it: { words: 'capitolo capitoli versetto versetti pagina pagine parte parti sezione sezioni volume volumi libro libri numero domanda domande lezione lezioni inno inni paragrafo paragrafi', short: 'cap capp vol', stopped: 'pag vers' },
-  nl: { words: 'hoofdstuk hoofdstukken vers verzen pagina bladzijde bladzijden deel delen sectie secties afdeling band boek boeken nummer nummers vraag vragen les lessen lied liederen paragraaf', short: 'hfdst hfst blz', stopped: 'nr dl' },
-  sv: { words: 'kapitel kapitlet vers verser versen sida sidan sidor del delar avsnitt band volym bok böcker nummer fråga frågor lektion lektioner sång stycke', short: 'kap', stopped: 'sid nr' },
+const words = (s: string) => new Set(s.split(' '))
+const OWN_NUMBER: Record<NamesLang, { words: Set<string>; short: Set<string>; stopped: Set<string> }> = {
+  en: { words: words('chapter chapters verse verses page pages part parts section sections volume volumes book books number numbers question questions lesson lessons hymn hymns paragraph paragraphs'), short: words('chap chaps ch chs vol vols vv vs vss pt pts pp bk para sect ques'), stopped: words('no nos ver vers sec secs par') },
+  fr: { words: words('chapitre chapitres verset versets page pages partie parties section sections tome tomes volume volumes livre livres numéro numéros question questions leçon leçons cantique cantiques paragraphe paragraphes'), short: words('chap ch vol'), stopped: words('no vers') },
+  de: { words: words('kapitel vers verse seite seiten teil teile abschnitt abschnitte band bände buch bücher nummer nummern frage fragen lektion lektionen lied lieder absatz absätze'), short: words('kap'), stopped: words('bd nr abschn') },
+  it: { words: words('capitolo capitoli versetto versetti pagina pagine parte parti sezione sezioni volume volumi libro libri numero domanda domande lezione lezioni inno inni paragrafo paragrafi'), short: words('cap capp vol'), stopped: words('pag vers') },
+  nl: { words: words('hoofdstuk hoofdstukken vers verzen pagina bladzijde bladzijden deel delen sectie secties afdeling band boek boeken nummer nummers vraag vragen les lessen lied liederen paragraaf'), short: words('hfdst hfst blz'), stopped: words('nr dl') },
+  sv: { words: words('kapitel kapitlet vers verser versen sida sidan sidor del delar avsnitt band volym bok böcker nummer fråga frågor lektion lektioner sång stycke'), short: words('kap'), stopped: words('sid nr') },
 }
-const OWN_NUMBER_SETS = Object.fromEntries(Object.entries(OWN_NUMBER).map(([l, o]) => [l, { words: new Set(o.words.split(' ')), short: new Set(o.short.split(' ')), stopped: new Set(o.stopped.split(' ')) }])) as Record<NamesLang, { words: Set<string>; short: Set<string>; stopped: Set<string> }>
 /** Whether `written`, the capitalised word before a figure ("Chapter", "Vol.", "Kapitel"), takes the figure as its own
  *  number, in English or in the language the app or the Bible shown is in. */
 function ownsItsFigure(written: string): boolean {
   const stop = written.endsWith('.')
   const word = (stop ? written.slice(0, -1) : written).toLocaleLowerCase()
   for (const l of ['en', peekNamesLang(), peekShownText()] as const) {
-    const o = OWN_NUMBER_SETS[l]
+    const o = OWN_NUMBER[l]
     if (o.short.has(word) || (stop ? o.stopped : o.words).has(word)) return true
   }
   return false

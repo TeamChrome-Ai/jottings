@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { existsSync, mkdtempSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { HAS_CONVERTERS } from './_texts'
 
 const ROOT = path.resolve(__dirname, '..')
 /** The tool needs numpy; a machine without it skips this file, as one without the texts skips theirs. */
@@ -19,7 +20,7 @@ c.executemany("INSERT INTO paras VALUES (?, 'darby', ?)", [(i, f"Paragraph {i} o
 c.commit()`, db, String(n)])
 }
 
-describe.skipIf(!HAS_NUMPY)('tools/embed_ministry.py', () => {
+describe.skipIf(!HAS_NUMPY || !HAS_CONVERTERS)('tools/embed_ministry.py', () => {
   it('tries again after an answer cut short or not JSON, and writes the file', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'embed-ministry-'))
     library(path.join(dir, 'ministry.db'), 450)

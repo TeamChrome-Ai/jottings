@@ -12,7 +12,6 @@ import { useServed } from '../src/lib/edition'
 import LibraryReader from '../src/components/LibraryReader'
 import MinistryItemRow from '../src/components/MinistryItemRow'
 import SearchExpansion from '../src/components/SearchExpansion'
-import AskRow from '../src/components/AskRow'
 import { SectionsList, WorksChooser } from '../src/components/ContentsPicker'
 import { CONFIRM_MS } from '../src/components/ChapterPicker'
 import { FadeSwap, Stagger, STAGGER_CAP, useFreshList } from '../src/components/motion/nav'
@@ -97,7 +96,6 @@ function IndexView({ initialQuery }: { initialQuery: string }) {
       <Input value={q} onChangeText={setQ} placeholder={t('Search by passage, title or words')} autoCorrect={false} autoCapitalize="none" returnKeyType="search" accessibilityLabel={t('Search the ministry by passage, title or words')} />
       {query ? <Results works={works} hits={hits} titlesPending={found.query !== query} places={places} text={text} library={library} query={query} scroll={scroll} onSearch={search} /> : library === undefined ? <Spinner /> : !library?.authors.length ? <ErrorText>{t(libraryUnavailable)}</ErrorText> : (
         <>
-          <AskRow alone />
           {last ? (
             <Stagger index={0}>
               <Card style={{ gap: 0, paddingVertical: 8 }}>

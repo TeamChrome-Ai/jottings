@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { existsSync } from 'node:fs'
+import { HAS_TEXTS } from './_texts'
 import { MENTIONS, MINISTRY_AUTHORS, authorNames, enabledAuthors, ministryAuthor } from '../shared/ministry'
 import { bibleWords, LIST_REFS, MARKER_RUN, mentionOfRank, onPassage, paragraphHits, plainOf, rankOf, RANGE_CAP, ROW_RANK, SECTION_CHAPTERS, sectionHits, snippetOf, verseId, verseOf } from '../shared/ministryIndex'
 import { paragraphsOf } from '../shared/companion'
@@ -34,6 +35,8 @@ describe('registry', () => {
     for (const id of ['bellett', 'wigram']) expect(ministryAuthor(id)!.source).toMatch(/Bible Truth Publishers/)
     for (const id of ['stoney', 'raven']) expect(ministryAuthor(id)!.source).toMatch(/^[A-Z]\. [A-Z]\. \w+ \(\d{4}–\d{4}\); public domain\.$/)
     expect(ministryAuthor('taylor')!.source).toMatch(/^[A-Z]\. \w+ Sr\. \(\d{4}–\d{4}\); public domain\.$/)
+  })
+  it.skipIf(!HAS_TEXTS)('has the texts of each of them', () => {
     for (const id of ['bellett', 'wigram', 'stoney', 'raven', 'taylor']) expect(existsSync(`data/ministry/${id}/index.json`)).toBe(true)
   })
   it('has no data for a disabled author', () => {

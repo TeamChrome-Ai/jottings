@@ -102,7 +102,7 @@ const shot = (page, name) => page.screenshot({ path: `${out}/${name}.png` })
 const sceneText = (page, k) => page.evaluate(k => document.querySelector(`[data-testid="news-scene-${k - 1}"]`).textContent.replace(/ /g, ' '), k)
 /** The search of the library scene 1 shows (lib/whatsNew.ts ASK): the question, and each wording with its count after it. */
 const QUESTION = 'how can I be sure I am saved'
-const FOUND = ['assurance of salvation33', 'the witness of the Spirit60', 'the new birth299']
+const FOUND = ['assurance of salvation33', 'the witness of the Spirit60', 'the new birth308']
 /** Where scene `k`'s block (title, body, vignette) sits in the space between the skip pill and the dots. */
 const placed = (page, k) => page.evaluate(k => {
   const rect = sel => document.querySelector(sel).getBoundingClientRect()
@@ -244,7 +244,7 @@ await lane(2, 'an onboarded reader with no seenNew: three scenes in order, then 
     await page.waitForTimeout(ms)
     const p = await placed(page, k), text = await sceneText(page, k)
     checks.push([`scene ${k} is centred between Skip and the dots (${where(p)})`, centred(p)])
-    if (k === 1) checks.push(['scene 1 shows the real search: the question, 1 John 5:13 and John 5:24, and each wording with its count', [QUESTION, '1 John 5:1333', 'John 5:2471', ...FOUND].every(s => text.includes(s))])
+    if (k === 1) checks.push(['scene 1 shows the real search: the question, 1 John 5:13 and John 5:24, and each wording with its count', [QUESTION, '1 John 5:1335', 'John 5:2473', ...FOUND].every(s => text.includes(s))])
     if (k === 2) checks.push(['scene 2 answers the same question', text.includes(QUESTION)])
     await shot(page, `scene-${k}`)
   }
@@ -333,7 +333,7 @@ await lane(5, 'Reduce animation: still pages, each until tapped or its time runs
   const b = await frame()
   checks.push([`the page is still: nothing moved or faded in 900 ms (${a.split(';').length} parts)`, a === b && a.length > 0])
   const texts = await page.evaluate(() => document.querySelector('[data-testid="news-scene-0"]').innerText)
-  checks.push(['all of scene 1 is there at once', ['Ask in your own words.', 'Verses', 'Related subjects', 'the new birth'].every(s => texts.includes(s))])
+  checks.push(['all of scene 1 is there at once', ['Ask in your own words.', 'Other wordings', 'Verses', 'the new birth'].every(s => texts.includes(s))])
   await shot(page, 'still')
   await page.waitForTimeout(Math.max(0, 3500 - (Date.now() - t0)))
   checks.push(['untapped, it stays 3.5 s', await showing(page) === 'scene-1'])

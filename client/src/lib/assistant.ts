@@ -8,7 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Platform } from 'react-native'
 import { fetch as expoFetch } from 'expo/fetch'
 import { useSyncExternalStore } from 'react'
-import { toolRow, type AssistantState, type CapReached, type ChatMessage, type ParagraphRef, type Sentence, type ToolCall, type TurnRequest } from '@shared/assistantTools'
+import { callNames, toolRow, type AssistantState, type CapReached, type ChatMessage, type ParagraphRef, type Sentence, type ToolCall, type TurnRequest } from '@shared/assistantTools'
 import { N_, t } from '@shared/i18n'
 import { cachedGet, getApiBase, getToken, loadApiBase } from './api'
 import { deviceId } from './device'
@@ -79,7 +79,7 @@ export function standIn(name: string | undefined, content: string): string {
 export function trimmed(c: Conversation): Conversation {
   const readers = c.messages.flatMap((m, i) => (m.role === 'user' ? [i] : []))
   const latest = readers[readers.length - 1] ?? 0
-  const names = new Map(c.messages.flatMap(m => (m.role === 'assistant' ? m.tool_calls ?? [] : [])).map(call => [call.id, call.function.name]))
+  const names = callNames(c.messages)
   const all = c.messages.map((m, i) => (m.role === 'tool' && i < latest ? { ...m, content: standIn(names.get(m.tool_call_id), m.content) } : m))
   // measured with the latest message's results as stand-ins too, as the next post has them: what is kept while a turn
   // runs is then the window the turn was posted with

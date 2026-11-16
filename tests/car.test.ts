@@ -207,9 +207,9 @@ describe('a car\'s commands, with no screen', () => {
 describe('what the session is told', () => {
   it('the chapter, its state and the speed, with the command it answers', async () => {
     await ask('play', { id: 'c/43/3' })
-    expect(last()).toMatchObject({ on: true, status: 'loading', id: 'c/43/3', title: 'John 3', art: 'file:///art.png', speed: 1, speedLabel: 'Speed 1×', ack: 1 })
+    expect(last()).toMatchObject({ status: 'loading', id: 'c/43/3', title: 'John 3', art: 'file:///art.png', speed: 1, speedLabel: 'Speed 1×', ack: 1 })
     set({ status: 'playing' })
-    expect(last()).toMatchObject({ on: true, status: 'playing', ack: 1 })
+    expect(last()).toMatchObject({ status: 'playing', ack: 1 })
     await ask('speed')
     expect(last()).toMatchObject({ speed: 1.1, speedLabel: 'Speed 1.1×', ack: 2 })
   })
@@ -217,7 +217,7 @@ describe('what the session is told', () => {
   it('nothing that claims a place in time: no length, no position, for a recording as for the device voice', async () => {
     await ask('play', { id: 'c/43/3' })
     set({ status: 'playing', spoken: { book: 43, chapter: 3, v: 16, off: null } })
-    expect(last()).toMatchObject({ on: true, status: 'playing', id: 'c/43/3' })
+    expect(last()).toMatchObject({ status: 'playing', id: 'c/43/3' })
     expect(last()).not.toHaveProperty('duration')
     expect(last()).not.toHaveProperty('position')
     const told = fx.described.length
@@ -232,7 +232,7 @@ describe('what the session is told', () => {
   it('nothing in hand once the reading is stopped', async () => {
     await ask('play', { id: 'c/43/3' })
     await ask('stop')
-    expect(last()).toMatchObject({ on: false, status: 'idle', ack: 2 })
+    expect(last()).toMatchObject({ status: 'idle', ack: 2 })
   })
 
   it('a change of speed in the Listening sheet', async () => {

@@ -65,20 +65,18 @@ internal class ProxyPlayer(private val context: Context) : SimpleBasePlayer(Brid
     val state = when {
       item == null -> Player.STATE_IDLE
       wanted == true && r.status != "playing" -> Player.STATE_BUFFERING
-      !r.on -> Player.STATE_IDLE
-      r.status == "error" -> Player.STATE_IDLE
+      r.status == "idle" || r.status == "error" -> Player.STATE_IDLE
       r.status == "loading" -> Player.STATE_BUFFERING
-      r.status == "idle" -> Player.STATE_ENDED
       else -> Player.STATE_READY
     }
     val builder = State.Builder()
       .setAvailableCommands(COMMANDS)
-      .setPlayWhenReady(playing && state != Player.STATE_IDLE && state != Player.STATE_ENDED, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+      .setPlayWhenReady(playing && state != Player.STATE_IDLE, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
       .setPlaybackState(state)
       .setPlaybackParameters(PlaybackParameters(r.speed))
     // no length and no position: the session shows the chapter and what is done with it, not a place in time
     if (item != null) builder.setPlaylist(listOf(MediaItemData.Builder(item.mediaId).setMediaItem(item).setMediaMetadata(item.mediaMetadata).build()))
-    if (r.on && r.status == "error" && wanted != true) builder.setPlayerError(PlaybackException(r.error, null, PlaybackException.ERROR_CODE_REMOTE_ERROR))
+    if (r.status == "error" && wanted != true) builder.setPlayerError(PlaybackException(r.error, null, PlaybackException.ERROR_CODE_REMOTE_ERROR))
     return builder.build()
   }
 

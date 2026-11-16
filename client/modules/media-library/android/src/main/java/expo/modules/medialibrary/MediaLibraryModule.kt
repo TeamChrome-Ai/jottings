@@ -33,7 +33,6 @@ class MediaLibraryModule : Module() {
 
     Function("describe") { r: Map<String, Any?> ->
       val reading = Reading(
-        on = r["on"] == true,
         status = r["status"] as? String ?: "idle",
         id = r["id"] as? String,
         title = r["title"] as? String,
@@ -46,7 +45,7 @@ class MediaLibraryModule : Module() {
       )
       Bridge.main.post {
         // the phone's own Listen: the service that shows it starts here, while the app is on screen
-        if (reading.on) bind()
+        if (reading.status != "idle") bind()
         Bridge.describe(reading)
       }
     }
